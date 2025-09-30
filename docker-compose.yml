@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15
+    platform: linux/amd64
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: cleanpress
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cleanpress-network
+
+  backend:
+    build: ./python_server
+    platform: linux/amd64
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/cleanpress
+      PYTHONUNBUFFERED: 1
+      PORT: 3001
+    ports:
+      - "3001:3001"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - cleanpress-network
+
+  frontend:
+    image: kacytunde/cleanpress:0.2
+    platform: linux/amd64
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - VITE_HOST=0.0.0.0
+      - VITE_API_URL=/api
+      - VITE_ALLOWED_HOSTS=xocleaners.com,www.xocleaners.com,localhost
+    depends_on:
+      - backend
+    networks:
+      - cleanpress-network
+
+  nginx:
+    image: nginx:alpine
+    platform: linux/amd64
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - cleanpress-network
+
+volumes:
+  postgres_data:
+
+networks:
+  cleanpress-network:
+    driver: bridge
