@@ -1,23 +1,57 @@
-from fastapi import FastAPI, HTTPException, Depends
+# FastAPI & dependencies
+from fastapi import FastAPI, HTTPException, Depends, APIRouter, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import OAuth2PasswordBearer
+
+
+# SQLAlchemy
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
-import json
-from datetime import datetime
-import os
-from typing import Optional, List
+
+# Pydantic
 from pydantic import BaseModel
 
-# Import required modules
-from fastapi import FastAPI, HTTPException, Depends, APIRouter
-from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
-from typing import Any, Dict
+# Utils & typing
+from datetime import datetime, timedelta
+from typing import Optional, List, Dict, Any
+import os
+import json
 
-# Initialize FastAPI app
+import jwt  # PyJWT
+from jwt import PyJWTError
+
+# Uvicorn (only for running locally)
+import uvicorn
+
+# ======================
+# CONFIG
+# ======================
+
+# JWT Config
+SECRET_KEY = "supersecretkey123"   # change to a secure secret!
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60
+
+ADMIN_USERNAME = "admin"
+ADMIN_PASSWORD = "password123"
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+
+
+
+search_router = APIRouter()
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+# ======================
+# INIT APP
+# ======================
 app = FastAPI(title="CleanPress API")
 
-# Create API routers
 search_router = APIRouter(prefix="/api")
 tickets_router = APIRouter(prefix="/api")
 
@@ -39,12 +73,75 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ======================
+# JWT HELPERS
+# ======================
+def get_current_user(token: str = Depends(oauth2_scheme)):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return {"username": username}
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has expired",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except PyJWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or malformed token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=15))
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)  # ✅ PyJWT encode
+
+def verify_token(token: str):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])  # ✅ PyJWT decode
+        username: str = payload.get("sub")
+        if username is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
+            )
+        return username
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired"
+        )
+    except jwt.DecodeError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
+        )
+
+    
+
+    
+    
 # Database setup
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5433/cleanpress")
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Pydantic models for request/response
+
+# Pydantic models for request/
+# response from
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+    
 class CustomerBase(BaseModel):
     name: str
     phone: str
@@ -461,29 +558,40 @@ async def search_tickets(query: str, db: Session = Depends(get_db)):
         return tickets
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+    
+    # ======================
+# LOGIN ROUTE
+# ======================
+@search_router.post("/auth/login")
+def login(request: LoginRequest):
+    if request.username == ADMIN_USERNAME and request.password == ADMIN_PASSWORD:
+        access_token = create_access_token(
+            data={"sub": request.username},
+            expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        )
+        return {"access_token": access_token, "token_type": "bearer"}
+    raise HTTPException(status_code=401, detail="Invalid credentials")
+
+
 
 @app.get("/api/dashboard/stats")
-def get_dashboard_stats():
+def get_dashboard_stats(user: dict = Depends(get_current_user)):
     try:
-        # Create a new session specifically for this request
         db = SessionLocal()
         try:
-            # Dictionary to store our stats
             stats = {}
-            
-            # Get total tickets - no transaction needed for read-only query
+
+            # same queries as you already have
             result = db.execute(text("SELECT COUNT(*) FROM tickets")).scalar()
             stats["total_tickets"] = result or 0
-            
-            # Get pending pickup count
+
             result = db.execute(text("SELECT COUNT(*) FROM tickets WHERE status = 'ready'")).scalar()
             stats["pending_pickup"] = result or 0
-            
-            # Get in process count
+
             result = db.execute(text("SELECT COUNT(*) FROM tickets WHERE status = 'in_process'")).scalar()
             stats["in_process"] = result or 0
-            
-            # Get occupied racks count
+
             result = db.execute(text("""
                 SELECT COUNT(*) FROM racks r
                 WHERE r.is_occupied = TRUE
@@ -494,8 +602,7 @@ def get_dashboard_stats():
                 )
             """)).scalar()
             stats["occupied_racks"] = result or 0
-            
-            # Get available racks count
+
             result = db.execute(text("""
                 SELECT COUNT(*) FROM racks r
                 WHERE r.is_occupied = FALSE
@@ -506,37 +613,18 @@ def get_dashboard_stats():
                 )
             """)).scalar()
             stats["available_racks"] = result or 0
-            
-            # Fix any inconsistent rack states in a separate transaction
-            try:
-                # Start a new transaction explicitly for the update
-                with db.begin():
-                    db.execute(text("""
-                        UPDATE racks
-                        SET is_occupied = FALSE,
-                            ticket_id = NULL,
-                            updated_at = CURRENT_TIMESTAMP
-                        WHERE number IN (
-                            SELECT r.number
-                            FROM racks r
-                            LEFT JOIN tickets t ON r.number = t.rack_number
-                            WHERE r.is_occupied = TRUE
-                            AND (t.id IS NULL OR t.status = 'picked_up')
-                        )
-                    """))
-            except Exception as update_error:
-                print(f"Warning: Rack cleanup failed: {str(update_error)}")
-                # Continue even if cleanup fails - it's not critical for stats
-                pass
-            
+
             return stats
-            
+
         finally:
             db.close()
     except Exception as e:
-        # Log the error for debugging
         print(f"Dashboard stats error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+    
+    
+    
+    
 
 @app.put("/api/tickets/{ticket_id}/pickup")
 def process_pickup(ticket_id: int):
