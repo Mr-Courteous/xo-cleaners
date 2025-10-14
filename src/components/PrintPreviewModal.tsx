@@ -6,9 +6,10 @@ interface PrintPreviewModalProps {
   onClose: () => void;
   onPrint: () => void;
   content: string;
+  extraActions?: React.ReactNode;
 }
 
-export default function PrintPreviewModal({ isOpen, onClose, onPrint, content }: PrintPreviewModalProps) {
+export default function PrintPreviewModal({ isOpen, onClose, onPrint, content, extraActions }: PrintPreviewModalProps) {
   if (!isOpen) return null;
 
   const handlePrint = () => {
@@ -69,6 +70,8 @@ export default function PrintPreviewModal({ isOpen, onClose, onPrint, content }:
           >
             Close
           </button>
+          {/* Extra actions (e.g., plant-print button) can be injected here */}
+          {extraActions}
           <button
             onClick={handlePrint}
             className="px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors flex items-center"

@@ -5,9 +5,10 @@ interface LayoutProps {
   children: React.ReactNode;
   currentView: string;
   onViewChange: (view: string) => void;
+  onLogout?: () => void;
 }
 
-export default function Layout({ children, currentView, onViewChange }: LayoutProps) {
+export default function Layout({ children, currentView, onViewChange, onLogout }: LayoutProps) {
   const primaryNavItems = [
     { id: 'dashboard', label: 'Dashboard', icon: Home },
     { id: 'dropoff', label: 'Drop Off', icon: Plus },
@@ -17,8 +18,10 @@ export default function Layout({ children, currentView, onViewChange }: LayoutPr
   const managementNavItems = [
     { id: 'tickets', label: 'Tickets', icon: Search },
     { id: 'status', label: 'Status', icon: Clock },
+    { id: 'users', label: 'Users', icon: Users },
     { id: 'customers', label: 'Customers', icon: Users },
     { id: 'racks', label: 'Racks', icon: BarChart3 },
+      { id: 'receipt-config', label: 'Receipt Config', icon: Settings },
     { id: 'clothing', label: 'Clothing Items', icon: Settings },
     { id: 'tags', label: 'Tags', icon: TagIcon },
   ];
@@ -58,6 +61,11 @@ export default function Layout({ children, currentView, onViewChange }: LayoutPr
                   </button>
                 );
               })}
+            </div>
+            <div className="flex items-center space-x-4">
+              {onLogout && (
+                <button onClick={onLogout} className="text-sm text-gray-600 hover:text-gray-900">Logout</button>
+              )}
             </div>
           </div>
         </div>

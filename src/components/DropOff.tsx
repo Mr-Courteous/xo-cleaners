@@ -3,6 +3,7 @@ import { Plus, Search, Trash2, User, Phone, Calendar } from 'lucide-react';
 import { apiCall } from '../hooks/useApi';
 import { Customer, ClothingType, TicketItem } from '../types';
 import Modal from './Modal';
+import PrintPreviewModal from './PrintPreviewModal';
 
 export default function DropOff() {
   const [step, setStep] = useState<'customer' | 'items' | 'review'>('customer');
@@ -22,6 +23,9 @@ export default function DropOff() {
     title: '', 
     type: 'error' as 'error' | 'success' 
   });
+  const [showPrintPreview, setShowPrintPreview] = useState(false);
+  const [printContent, setPrintContent] = useState('');
+  const [plantHtmlState, setPlantHtmlState] = useState('');
 
   useEffect(() => {
     console.log('Fetching clothing types...');
@@ -113,7 +117,8 @@ export default function DropOff() {
           paid_amount: paidAmount,
         }),
       });
-      
+      console.log("response from ticket creation:", response);
+
       // Get full ticket details
       const ticketDetails = await apiCall(`/tickets/${response.ticket.id}`);
 
@@ -126,12 +131,58 @@ export default function DropOff() {
       const envCharge = subtotal * 0.047;
       const tax = subtotal * 0.0825;
       const total = subtotal + envCharge + tax;
-      
-      setModal({
-        isOpen: true,
-        title: '',
-        type: 'success',
-        message: `
+      // Build a plant-only HTML snippet to allow printing 2 copies
+      const plantHtml = `
+        <div style="width: 400px; margin: 0 auto; font-family: system-ui, -apple-system, sans-serif; font-size: 16px;">
+          <div style="text-align: center;">
+            <div style="font-size: 36px; font-weight: 600; margin-bottom: 20px;">${response.ticket.ticket_number}</div>
+            <div style="font-size: 24px; font-weight: bold; margin-bottom: 8px;">Airport Cleaners</div>
+            <div style="font-size: 18px;">12300 Fondren Road, Houston TX 77035</div>
+            <div style="font-size: 18px;">(713) 723-5579</div>
+          </div>
+          <div style="display: flex; justify-content: space-between; margin: 20px 0; font-size: 18px;">
+            <div>${now.toLocaleDateString()} ${now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}</div>
+          </div>
+          <div style="margin: 20px 0; border-top: 2px solid #000; border-bottom: 2px solid #000; padding: 12px 0;">
+            ${ticketDetails.items.map((item: any) => `
+              <div style="margin-bottom: 12px; font-size: 18px;">
+                <div style="display: flex; justify-content: space-between;">
+                  <div style="font-weight: 500;">${item.clothing_name} x${item.quantity}</div>
+                  <div style="font-weight: 500;">$${(item.plant_price * item.quantity).toFixed(2)}</div>
+                </div>
+                ${item.starch_level !== 'no_starch' ? `<div style=\"color: #444;\">${item.starch_level} Starch</div>` : ''}
+                ${item.crease === 'crease' ? '<div style=\"color: #444;\">With Crease</div>' : ''}
+              </div>
+            `).join('')}
+          </div>
+          <div style="text-align: center; margin: 20px 0; font-size: 20px; font-weight: 500;">
+            <div style="font-size: 28px; font-weight: 600; margin-bottom: 8px;">PLANT RECEIPT</div>
+            <div style="font-size: 18px;">For Plant Use Only</div>
+          </div>
+        </div>`;
+
+      // Escape single quotes/newlines for embedding in inline onclick JS
+      const plantHtmlEscaped = plantHtml.replace(/'/g, "\\'").replace(/\r?\n/g, '');
+
+      // Build payment receipt HTML (single copy)
+      const paymentHtml = `
+        <div style="width: 400px; margin: 0 auto; font-family: system-ui, -apple-system, sans-serif; font-size: 16px;">
+          <div style="text-align: center;">
+            <div style="font-size: 28px; font-weight: 600; margin-bottom: 8px;">PAYMENT RECEIPT</div>
+            <div style="font-size: 18px;">${ticketDetails.customer_name}</div>
+          </div>
+          <div style="margin: 12px 0;">
+            <div style="display:flex; justify-content:space-between;"><div>Date:</div><div>${now.toLocaleDateString()} ${now.toLocaleTimeString()}</div></div>
+            <div style="display:flex; justify-content:space-between;"><div>Amount Paid:</div><div>$${paidAmount.toFixed(2)}</div></div>
+            <div style="display:flex; justify-content:space-between;"><div>Ticket #:</div><div>${response.ticket.ticket_number}</div></div>
+          </div>
+          <div style="text-align:center; margin-top:12px;">Thank you for your payment</div>
+        </div>
+      `;
+      const paymentHtmlEscaped = paymentHtml.replace(/'/g, "\\'").replace(/\r?\n/g, '');
+
+      // Build the modal content (same as before)
+      const modalHtml = `
           <div style="width: 400px; margin: 0 auto; font-family: system-ui, -apple-system, sans-serif; font-size: 16px;">
             <style>
               @media screen {
@@ -231,8 +282,8 @@ export default function DropOff() {
             </div>
             
             <div style="text-align: center; margin: 20px 0;">
-              <div style="font-size: 28px; font-weight: 600; margin-bottom: 8px;">REG/PICKUP</div>
-              <div style="font-size: 18px;">Thank You For Your Business</div>
+              <div style="display:inline-block; background:#000; color:#fff; padding:10px 18px; border-radius:4px; font-size:28px; font-weight:600; margin-bottom:8px;">REG/PICKUP</div>
+              <div style="font-size: 18px; margin-top:8px;">Thank You For Your Business</div>
             </div>
             
             </div>
@@ -243,10 +294,47 @@ export default function DropOff() {
               >
                 Print Receipt
               </button>
+              <button
+                onclick="(function(){const w=window.open('','_blank');w.document.write('${plantHtmlEscaped}${plantHtmlEscaped}');w.document.close();w.focus();w.print();setTimeout(function(){w.close();},500);})()"
+                class="ml-2 bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+              >
+                Print Plant (2 copies)
+              </button>
             </div>
           </div>
-        `,
-      });
+        `;
+
+  // Store plant HTML so preview action can access it
+  setPlantHtmlState(plantHtml);
+  // Show modal and also open preview so admin can review before printing
+  setModal({ isOpen: true, title: '', type: 'success', message: modalHtml });
+
+      // Prepare preview content for customer receipt
+      const customerHtml = `
+        <div style="width:400px;margin:0 auto;font-family:system-ui,-apple-system,sans-serif;font-size:16px;">
+          <div style="text-align:center;">
+            <div style="font-size:36px;font-weight:700;margin-bottom:12px;"><strong>${ticketDetails.ticket_number}</strong></div>
+            <div style="font-size:20px;font-weight:600;margin-bottom:8px;">Airport Cleaners</div>
+            <div style="font-size:18px;">12300 Fondren Road, Houston TX 77035</div>
+            <div style="font-size:18px;">(713) 723-5579</div>
+          </div>
+          <div style="margin:16px 0;">${now.toLocaleDateString()} ${now.toLocaleTimeString()}</div>
+          <div style="margin:20px 0;border-top:2px solid #000;border-bottom:2px solid #000;padding:12px 0;">
+            ${ticketDetails.items.map((item: any) => `
+              <div style="margin-bottom:12px;font-size:18px;">
+                <div style="display:flex;justify-content:space-between;">
+                  <div style="font-weight:500;">${item.clothing_name} x${item.quantity}</div>
+                  <div style="font-weight:500;">$${item.item_total.toFixed(2)}</div>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+
+      // Plant html already exists as `plantHtml` above; show preview and pass actions
+  setPrintContent(customerHtml);
+      setShowPrintPreview(true);
       
     } catch (error) {
       console.error('Failed to create ticket:', error);
@@ -656,6 +744,31 @@ export default function DropOff() {
         }}
         title={modal.title}
         message={modal.message}
+      />
+      <PrintPreviewModal
+        isOpen={showPrintPreview}
+        onClose={() => setShowPrintPreview(false)}
+        onPrint={() => setShowPrintPreview(false)}
+        content={printContent}
+        extraActions={(
+          <button
+            onClick={() => {
+              try {
+                const w = window.open('', '_blank');
+                if (w) {
+                  w.document.write(plantHtmlState + plantHtmlState);
+                  w.document.close();
+                  w.focus();
+                  w.print();
+                  setTimeout(() => { try { w.close(); } catch (e) {} }, 500);
+                }
+              } catch (e) { console.error(e); }
+            }}
+            className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+          >
+            Print Plant (2 copies)
+          </button>
+        )}
       />
     </div>
   );

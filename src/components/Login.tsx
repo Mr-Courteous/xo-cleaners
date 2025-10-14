@@ -1,10 +1,6 @@
 import React, { useState } from 'react';
-import axios from 'axios';
 import { setToken } from '../utils/authUtils';
-const API_BASE = import.meta.env.VITE_API_URL || "";
-
-
-const LOGIN_API_URL = `${API_BASE}/auth/login`;
+import { apiCall } from '../hooks/useApi';
 
 const Login = ({ onLoginSuccess }) => {
     const [username, setUsername] = useState('');
@@ -16,18 +12,27 @@ const Login = ({ onLoginSuccess }) => {
         setError('');
 
         try {
-            const response = await axios.post(LOGIN_API_URL, { username, password });
-            const token = response.data.access_token;
+            const response = await apiCall('/auth/login', {
+                method: 'POST',
+                body: JSON.stringify({ username, password }),
+            });
+            const token = response.access_token;
 
             if (token) {
                 setToken(token);
+                // Update SPA URL to /dashboard (no full reload) and to notify parent
+                try {
+                    window.history.replaceState({}, '', '/dashboard');
+                } catch (e) {
+                    // ignore if history manipulation fails in some environments
+                }
                 onLoginSuccess();
             } else {
                 setError('Login failed: No token received.');
             }
-        } catch (err) {
+        } catch (err: any) {
             setError('Login failed. Check credentials and server status.');
-            console.error('Login error:', err.response?.data || err.message);
+            console.error('Login error:', err.message || err);
         }
     };
 

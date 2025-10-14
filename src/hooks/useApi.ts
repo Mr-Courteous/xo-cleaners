@@ -1,8 +1,30 @@
 import { useState, useEffect } from "react";
-import { getToken, removeToken } from '../utils/authUtils';
+import { getToken, removeToken } from "../utils/authUtils";
 
+const API_BASE = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
 
-const API_BASE = import.meta.env.VITE_API_URL || "";
+function buildUrl(endpoint: string) {
+  if (!endpoint) return API_BASE;
+  if (endpoint.startsWith('http://') || endpoint.startsWith('https://')) return endpoint;
+  if (!endpoint.startsWith('/')) endpoint = '/' + endpoint;
+  // Prevent duplicate base path (e.g. API_BASE endsWith '/api' and endpoint startsWith '/api')
+  try {
+    const parsed = new URL(API_BASE);
+    const basePath = parsed.pathname.replace(/\/$/, ''); // e.g. '/api'
+    if (basePath && endpoint.startsWith(basePath)) {
+      // remove the duplicated basePath prefix from endpoint
+      endpoint = endpoint.slice(basePath.length) || '/';
+    }
+  } catch (e) {
+    // API_BASE might be a relative path like '/api' — handle that case
+    const basePath = API_BASE.startsWith('/') ? API_BASE.replace(/\/$/, '') : '';
+    if (basePath && endpoint.startsWith(basePath)) {
+      endpoint = endpoint.slice(basePath.length) || '/';
+    }
+  }
+
+  return `${API_BASE}${endpoint}`;
+}
 
 console.log("API_BASE is set to:", API_BASE);
 
@@ -16,8 +38,9 @@ export function useApi<T>(url: string, dependencies: any[] = []) {
       setLoading(true);
       setError(null);
 
-      const token = localStorage.getItem("adminAuthToken");
-      const response = await fetch(`${API_BASE}${url}`, {
+      const token = getToken();
+
+      const response = await fetch(buildUrl(url), {
         headers: {
           "Content-Type": "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -25,7 +48,10 @@ export function useApi<T>(url: string, dependencies: any[] = []) {
       });
 
       if (response.status === 401) {
-        localStorage.removeItem("adminAuthToken");
+        // 🚨 Token invalid/expired
+        removeToken();
+        // Notify App instantly
+        window.dispatchEvent(new Event("unauthorized"));
         throw new Error("Unauthorized – please log in again");
       }
 
@@ -50,11 +76,11 @@ export function useApi<T>(url: string, dependencies: any[] = []) {
   return { data, loading, error, refetch: fetchData };
 }
 
-
+// ✅ Same behavior for direct calls
 export async function apiCall(endpoint: string, options: RequestInit = {}) {
   const token = getToken();
 
-  const response = await fetch(`${API_BASE}${endpoint}`, {
+  const response = await fetch(buildUrl(endpoint), {
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -64,9 +90,7 @@ export async function apiCall(endpoint: string, options: RequestInit = {}) {
   });
 
   if (response.status === 401) {
-    // 🚨 Token invalid/expired, remove it
     removeToken();
-    // Optional: redirect or notify App
     window.dispatchEvent(new Event("unauthorized"));
     throw new Error("Unauthorized - Please login again");
   }

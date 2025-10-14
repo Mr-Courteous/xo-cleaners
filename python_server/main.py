@@ -6,7 +6,7 @@ from fastapi.security import OAuth2PasswordBearer
 
 
 # SQLAlchemy
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, text, inspect
 from sqlalchemy.orm import Session, sessionmaker
 
 # Pydantic
@@ -20,6 +20,8 @@ import json
 
 import jwt  # PyJWT
 from jwt import PyJWTError
+import hashlib
+import binascii
 
 # Uvicorn (only for running locally)
 import uvicorn
@@ -33,8 +35,8 @@ SECRET_KEY = "supersecretkey123"   # change to a secure secret!
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
-ADMIN_USERNAME = "admin"
-ADMIN_PASSWORD = "password123"
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "password123")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 
@@ -80,13 +82,20 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
+        role: str = payload.get("role")
         if username is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid authentication credentials",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        return {"username": username}
+        # Debug log: show decoded token (dev only)
+        try:
+            print(f"[DEBUG] Decoded JWT payload for user={username}: {payload}")
+        except Exception:
+            pass
+        # Return both username and role (if present in token)
+        return {"username": username, "role": role}
     except jwt.ExpiredSignatureError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -180,6 +189,80 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+# ============
+# Password helpers
+# ============
+def hash_password(password: str) -> str:
+    """Hash password using sha256 for simplicity (replace with bcrypt in prod)."""
+    if password is None:
+        return ""
+    dk = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), b'salt1234', 100000)
+    return binascii.hexlify(dk).decode('ascii')
+
+def verify_password(password: str, hashed: str) -> bool:
+    return hash_password(password) == hashed
+
+
+# Run simple migration if users table is missing
+def run_migrations():
+    try:
+        with engine.begin() as conn:
+            # Execute migration files in migrations/ folder in alphabetical order
+            migrations_dir = os.path.join(os.path.dirname(__file__), 'migrations')
+            if os.path.isdir(migrations_dir):
+                for fname in sorted(os.listdir(migrations_dir)):
+                    if fname.endswith('.sql'):
+                        path = os.path.join(migrations_dir, fname)
+                        with open(path, 'r') as f:
+                            sql = f.read()
+                            conn.execute(text(sql))
+    except Exception as e:
+        print(f"Migration error: {e}")
+
+
+def ensure_users_table():
+    try:
+        inspector = inspect(engine)
+        tables = inspector.get_table_names()
+        if 'users' not in tables:
+            # If migrations didn't create the users table for some reason, try to create it from the migration file
+            migrations_dir = os.path.join(os.path.dirname(__file__), 'migrations')
+            path = os.path.join(migrations_dir, '001_create_users_table.sql')
+            if os.path.isfile(path):
+                with engine.begin() as conn:
+                    with open(path, 'r') as f:
+                        sql = f.read()
+                        conn.execute(text(sql))
+                        print('Applied users table migration fallback')
+            else:
+                print('Users migration file not found; cannot create users table automatically')
+    except Exception as e:
+        print(f"Error ensuring users table: {e}")
+
+
+@app.on_event('startup')
+def startup_tasks():
+    # Ensure migrations are applied and seed initial admin user if missing
+    run_migrations()
+    ensure_users_table()
+    # Seed admin user if not present
+    try:
+        db = SessionLocal()
+        res = db.execute(text("SELECT id FROM users WHERE username = :u"), {"u": ADMIN_USERNAME}).fetchone()
+        if not res:
+            print('Seeding admin user')
+            pw_hash = hash_password(ADMIN_PASSWORD)
+            db.execute(text("INSERT INTO users (username, password_hash, role) VALUES (:u, :p, 'admin')"), {"u": ADMIN_USERNAME, "p": pw_hash})
+            db.commit()
+    except Exception as e:
+        print(f"Admin seed error: {e}")
+    finally:
+        try:
+            db.close()
+        except:
+            pass
 
 def generate_ticket_number(db: Session) -> str:
     """
@@ -316,7 +399,9 @@ def create_ticket(ticket: TicketCreate, db: Session = Depends(get_db)):
                 }
             }
     except Exception as e:
+        print(f"Error creating ticket: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+    
 
 @app.get("/api/customers/search")
 def search_customers(query: str, db: Session = Depends(get_db)):
@@ -565,13 +650,256 @@ async def search_tickets(query: str, db: Session = Depends(get_db)):
 # ======================
 @search_router.post("/auth/login")
 def login(request: LoginRequest):
-    if request.username == ADMIN_USERNAME and request.password == ADMIN_PASSWORD:
-        access_token = create_access_token(
-            data={"sub": request.username},
-            expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-        )
-        return {"access_token": access_token, "token_type": "bearer"}
-    raise HTTPException(status_code=401, detail="Invalid credentials")
+    # Try to find user in DB
+    try:
+        db = SessionLocal()
+        row = db.execute(text("SELECT id, username, password_hash, role FROM users WHERE username = :u"), {"u": request.username}).fetchone()
+        if row:
+            user_id, username, password_hash, role = row[0], row[1], row[2], row[3]
+            if verify_password(request.password, password_hash):
+                access_token = create_access_token(
+                    data={"sub": username, "role": role},
+                    expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+                )
+                return {"access_token": access_token, "token_type": "bearer"}
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+        # Fallback to legacy hardcoded admin (only if DB user doesn't exist)
+        if request.username == ADMIN_USERNAME and request.password == ADMIN_PASSWORD:
+            access_token = create_access_token(
+                data={"sub": request.username, "role": "admin"},
+                expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+            )
+            return {"access_token": access_token, "token_type": "bearer"}
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    finally:
+        try:
+            db.close()
+        except:
+            pass
+
+
+# Helper to assert admin
+def require_admin(user: dict = Depends(get_current_user)):
+    # user should have username and optionally role
+    token_role = user.get('role') if isinstance(user, dict) else None
+    # If role isn't present in token, fetch from DB
+    if not token_role:
+        try:
+            db = SessionLocal()
+            row = db.execute(text("SELECT role FROM users WHERE username = :u"), {"u": user.get('username')}).fetchone()
+            if row:
+                token_role = row[0]
+            # Debug log: show DB role lookup
+            try:
+                print(f"[DEBUG] require_admin: token_role from token=None, db role for {user.get('username')} = {row[0] if row else None}")
+            except Exception:
+                pass
+        finally:
+            try:
+                db.close()
+            except:
+                pass
+    else:
+        try:
+            print(f"[DEBUG] require_admin: token_role from token for {user.get('username')} = {token_role}")
+        except Exception:
+            pass
+    if token_role != 'admin':
+        raise HTTPException(status_code=403, detail='Admin privileges required')
+    return user
+
+
+@app.get('/api/users')
+def list_users(admin: dict = Depends(require_admin)):
+    try:
+        db = SessionLocal()
+        result = db.execute(text('SELECT id, username, email, role, created_at FROM users ORDER BY created_at DESC'))
+        users = []
+        for r in result:
+            users.append({
+                'id': r[0], 'username': r[1], 'email': r[2], 'role': r[3], 'created_at': r[4]
+            })
+        return users
+    finally:
+        try:
+            db.close()
+        except:
+            pass
+
+
+class CreateUserRequest(BaseModel):
+    username: str
+    password: str
+    email: Optional[str] = None
+    role: Optional[str] = 'user'
+
+
+class UpdateUserRequest(BaseModel):
+    username: Optional[str] = None
+    password: Optional[str] = None
+    email: Optional[str] = None
+    role: Optional[str] = None
+
+
+@app.post('/api/users')
+def create_user(req: CreateUserRequest, admin: dict = Depends(require_admin)):
+    try:
+        db = SessionLocal()
+        # Check uniqueness
+        existing = db.execute(text('SELECT id FROM users WHERE username = :u'), {'u': req.username}).fetchone()
+        if existing:
+            raise HTTPException(status_code=400, detail='User already exists')
+        pw_hash = hash_password(req.password)
+        res = db.execute(text('INSERT INTO users (username, password_hash, email, role) VALUES (:u, :p, :e, :r) RETURNING id, username, email, role, created_at'),
+                         {'u': req.username, 'p': pw_hash, 'e': req.email or '', 'r': req.role or 'user'})
+        db.commit()
+        row = res.fetchone()
+        return {'id': row[0], 'username': row[1], 'email': row[2], 'role': row[3], 'created_at': row[4]}
+    finally:
+        try:
+            db.close()
+        except:
+            pass
+
+
+@app.delete('/api/users/{user_id}')
+def delete_user(user_id: int, admin: dict = Depends(require_admin)):
+    """Delete a user by id. Admin-only. Prevent deleting the last remaining admin."""
+    try:
+        db = SessionLocal()
+        # Check if the user exists
+        row = db.execute(text('SELECT id, username, role FROM users WHERE id = :id'), {'id': user_id}).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail='User not found')
+
+        target_role = row[2]
+
+        # If target is an admin, ensure there is at least one other admin
+        if target_role == 'admin':
+            admin_count = db.execute(text("SELECT COUNT(*) FROM users WHERE role = 'admin'")).scalar() or 0
+            if admin_count <= 1:
+                raise HTTPException(status_code=400, detail='Cannot delete the last admin user')
+
+        db.execute(text('DELETE FROM users WHERE id = :id'), {'id': user_id})
+        db.commit()
+        return {'success': True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        try:
+            db.close()
+        except:
+            pass
+
+
+@app.put('/api/users/{user_id}')
+def update_user(user_id: int, req: UpdateUserRequest, admin: dict = Depends(require_admin)):
+    try:
+        db = SessionLocal()
+        row = db.execute(text('SELECT id, username, role FROM users WHERE id = :id'), {'id': user_id}).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail='User not found')
+
+        # If username is being changed, ensure uniqueness
+        if req.username and req.username != row[1]:
+            exists = db.execute(text('SELECT id FROM users WHERE username = :u'), {'u': req.username}).fetchone()
+            if exists:
+                raise HTTPException(status_code=400, detail='Username already taken')
+
+        # If role is being changed from admin to non-admin, ensure we don't remove last admin
+        if req.role and row[2] == 'admin' and req.role != 'admin':
+            admin_count = db.execute(text("SELECT COUNT(*) FROM users WHERE role = 'admin'")).scalar() or 0
+            if admin_count <= 1:
+                raise HTTPException(status_code=400, detail='Cannot remove admin role from the last admin user')
+
+        # Build update
+        updates = []
+        params: Dict[str, Any] = {'id': user_id}
+        if req.username:
+            updates.append('username = :username')
+            params['username'] = req.username
+        if req.email is not None:
+            updates.append('email = :email')
+            params['email'] = req.email
+        if req.role is not None:
+            updates.append('role = :role')
+            params['role'] = req.role
+        if req.password:
+            pw_hash = hash_password(req.password)
+            updates.append('password_hash = :pw')
+            params['pw'] = pw_hash
+
+        if updates:
+            sql = f"UPDATE users SET {', '.join(updates)} WHERE id = :id"
+            db.execute(text(sql), params)
+            db.commit()
+
+        # Return updated user
+        updated = db.execute(text('SELECT id, username, email, role, created_at FROM users WHERE id = :id'), {'id': user_id}).fetchone()
+        return {'id': updated[0], 'username': updated[1], 'email': updated[2], 'role': updated[3], 'created_at': updated[4]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        try:
+            db.close()
+        except:
+            pass
+
+
+class UpdateTicketRequest(BaseModel):
+    ticket_number: Optional[str] = None
+    pickup_date: Optional[str] = None  # ISO string
+
+
+@app.put('/api/tickets/{ticket_id}')
+def update_ticket(ticket_id: int, req: UpdateTicketRequest, admin: dict = Depends(require_admin)):
+    try:
+        db = SessionLocal()
+        row = db.execute(text('SELECT id, ticket_number FROM tickets WHERE id = :id'), {'id': ticket_id}).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail='Ticket not found')
+
+        updates = []
+        params = {'id': ticket_id}
+        if req.ticket_number is not None:
+            updates.append('ticket_number = :ticket_number')
+            params['ticket_number'] = req.ticket_number
+        if req.pickup_date is not None:
+            updates.append('pickup_date = :pickup_date')
+            params['pickup_date'] = req.pickup_date
+
+        if updates:
+            sql = f"UPDATE tickets SET {', '.join(updates)} WHERE id = :id RETURNING *"
+            updated = db.execute(text(sql), params).fetchone()
+            db.commit()
+        else:
+            updated = row
+
+        return {
+            'success': True,
+            'ticket': {
+                'id': updated[0],
+                'ticket_number': updated[1],
+                'customer_id': updated[2] if len(updated) > 2 else None,
+                'pickup_date': updated[7] if len(updated) > 7 else None,
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        try:
+            db.close()
+        except:
+            pass
 
 
 

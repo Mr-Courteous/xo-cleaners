@@ -1,78 +1,93 @@
-import React, { useState, useEffect } from 'react';
-import Layout from './components/Layout';
-import Dashboard from './components/Dashboard';
-import DropOff from './components/DropOff'; 
-import PickUp from './components/PickUp';
-import TicketManagement from './components/TicketManagement';
-import StatusManagement from './components/StatusManagement';
-import CustomerManagement from './components/CustomerManagement';
-import RackManagement from './components/RackManagement';
-import ClothingManagement from './components/ClothingManagement';
-import Tag from './components/Tag';
-import Login from './components/Login';
-import { getToken, removeToken } from './utils/authUtils';
+import React, { useState, useEffect } from "react";
+import Layout from "./components/Layout";
+import Dashboard from "./components/Dashboard";
+import DropOff from "./components/DropOff";
+import PickUp from "./components/PickUp";
+import TicketManagement from "./components/TicketManagement";
+import StatusManagement from "./components/StatusManagement";
+import CustomerManagement from "./components/CustomerManagement";
+import RackManagement from "./components/RackManagement";
+import ClothingManagement from "./components/ClothingManagement";
+import Tag from "./components/Tag";
+import Login from "./components/Login";
+import { getToken, removeToken } from "./utils/authUtils";
+import UsersManagement from "./components/UsersManagement";
+import ReceiptConfig from "./components/ReceiptConfig";
 
 function App() {
-  const [currentView, setCurrentView] = useState('dashboard');
+  const [currentView, setCurrentView] = useState("dashboard");
   const [isLoggedIn, setIsLoggedIn] = useState(!!getToken());
 
-  // 🔥 Listen for unauthorized events triggered by apiCall/useApi
   useEffect(() => {
+    let timeoutId: NodeJS.Timeout;
+
     const handleUnauthorized = () => {
-      removeToken();
-      setIsLoggedIn(false);
-      setCurrentView('dashboard');
+      // Prevent multiple rapid triggers
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        removeToken();
+        setIsLoggedIn(false);
+        setCurrentView("dashboard");
+      }, 50);
     };
 
     window.addEventListener("unauthorized", handleUnauthorized);
-    return () => window.removeEventListener("unauthorized", handleUnauthorized);
+    return () => {
+      clearTimeout(timeoutId);
+      window.removeEventListener("unauthorized", handleUnauthorized);
+    };
   }, []);
 
-  // Called when login succeeds
   const handleLoginSuccess = () => {
     setIsLoggedIn(true);
   };
 
-  // Handle manual logout
   const handleLogout = () => {
     removeToken();
     setIsLoggedIn(false);
-    setCurrentView('dashboard');
+    setCurrentView("dashboard");
   };
 
   const renderView = () => {
     switch (currentView) {
-      case 'dashboard':
+      case "dashboard":
         return <Dashboard />;
-      case 'dropoff':
+      case "dropoff":
         return <DropOff />;
-      case 'pickup':
+      case "pickup":
         return <PickUp />;
-      case 'tickets':
+      case "tickets":
         return <TicketManagement />;
-      case 'status':
+      case "status":
         return <StatusManagement />;
-      case 'customers':
+      case "customers":
         return <CustomerManagement />;
-      case 'racks':
+      case "racks":
         return <RackManagement />;
-      case 'clothing':
+      case "clothing":
         return <ClothingManagement />;
-      case 'tags':
+      case "tags":
         return <Tag />;
+      case "users":
+        return <UsersManagement />;
+      case "receipt-config":
+        return <ReceiptConfig />;
       default:
         return <Dashboard />;
     }
   };
 
-  // 🚨 If not logged in, always render Login
+  // 🚨 Instantly render login if not logged in
   if (!isLoggedIn) {
     return <Login onLoginSuccess={handleLoginSuccess} />;
   }
 
-  // ✅ If logged in, show dashboard layout
   return (
-    <Layout currentView={currentView} onViewChange={setCurrentView} onLogout={handleLogout}>
+    <Layout
+      currentView={currentView}
+      onViewChange={setCurrentView}
+      onLogout={handleLogout}
+    >
       {renderView()}
     </Layout>
   );

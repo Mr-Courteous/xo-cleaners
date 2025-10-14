@@ -12,6 +12,41 @@ export default function TicketManagement() {
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [printContent, setPrintContent] = useState('');
 
+  // Receipt config read from localStorage (platform admin can edit via ReceiptConfig UI)
+  const RECEIPT_STORAGE_KEY = 'receipt_elements_v1';
+  type ReceiptElements = {
+    ticketNumber: { enabled: boolean; label: string };
+    readyDate: { enabled: boolean; label: string };
+    items: { enabled: boolean; label: string };
+    subtotal: { enabled: boolean; label: string };
+    envCharge: { enabled: boolean; label: string };
+    tax: { enabled: boolean; label: string };
+    total: { enabled: boolean; label: string };
+    paid: { enabled: boolean; label: string };
+    balance: { enabled: boolean; label: string };
+  };
+  const DEFAULT_RECEIPT_CONFIG: ReceiptElements = {
+    ticketNumber: { enabled: true, label: 'Ticket Number' },
+    readyDate: { enabled: true, label: 'Ready Date/Time' },
+    items: { enabled: true, label: 'Items' },
+    subtotal: { enabled: true, label: 'SubTotal' },
+    envCharge: { enabled: true, label: 'Env Charge' },
+    tax: { enabled: true, label: 'Tax' },
+    total: { enabled: true, label: 'Total' },
+    paid: { enabled: true, label: 'Paid Amount' },
+    balance: { enabled: true, label: 'Balance' },
+  };
+
+  const readReceiptConfig = (): ReceiptElements => {
+    try {
+      const raw = localStorage.getItem(RECEIPT_STORAGE_KEY);
+      if (!raw) return DEFAULT_RECEIPT_CONFIG;
+      return JSON.parse(raw) as ReceiptElements;
+    } catch (e) {
+      return DEFAULT_RECEIPT_CONFIG;
+    }
+  };
+
   // Add state for modal
   const [showEditModal, setShowEditModal] = useState(false);
   const [editableItems, setEditableItems] = useState<any[]>([]);
@@ -27,6 +62,40 @@ export default function TicketManagement() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const generatePaymentReceiptHtml = (ticketParam?: Ticket) => {
+    const ticket = ticketParam || selectedTicket;
+    if (!ticket) return '';
+    const cfg = readReceiptConfig();
+    const now = new Date();
+    const items = ticket.items || [];
+    const subtotal = items.reduce((sum, item) => sum + (typeof item.item_total === 'number' ? item.item_total : 0), 0);
+    const envCharge = subtotal * 0.047;
+    const tax = subtotal * 0.0825;
+    const total = subtotal + envCharge + tax;
+    const paid = ticket.paid_amount || 0;
+    const balance = total - paid;
+
+    return `
+      <div style="width: 400px; margin: 0 auto; font-family: system-ui, -apple-system, sans-serif; font-size: 16px;">
+        <div style="text-align: center;">
+          ${cfg.ticketNumber.enabled ? `<div style="font-size: 36px; font-weight: 700; margin-bottom: 12px;">${cfg.ticketNumber.label ? `<strong>${ticket.ticket_number ?? ''}</strong>` : (ticket.ticket_number ?? '')}</div>` : ''}
+          <div style="font-size: 20px; font-weight: 600; margin-bottom: 8px;">PAYMENT RECEIPT</div>
+          <div style="font-size: 18px;">${ticket.customer_name ?? ''}</div>
+        </div>
+        <div style="margin: 16px 0; font-size: 16px;">
+          ${cfg.readyDate.enabled ? `<div style="display:flex; justify-content: space-between; margin-bottom:8px;"><div>${cfg.readyDate.label}:</div><div>${now.toLocaleDateString()} ${now.toLocaleTimeString()}</div></div>` : ''}
+          ${cfg.subtotal.enabled ? `<div style="display:flex; justify-content: space-between; margin-bottom:8px;"><div>${cfg.subtotal.label}:</div><div>$${subtotal.toFixed(2)}</div></div>` : ''}
+          ${cfg.envCharge.enabled ? `<div style="display:flex; justify-content: space-between; margin-bottom:8px;"><div>${cfg.envCharge.label}:</div><div>$${envCharge.toFixed(2)}</div></div>` : ''}
+          ${cfg.tax.enabled ? `<div style="display:flex; justify-content: space-between; margin-bottom:8px;"><div>${cfg.tax.label}:</div><div>$${tax.toFixed(2)}</div></div>` : ''}
+          ${cfg.total.enabled ? `<div style="display:flex; justify-content: space-between; margin-bottom:8px; font-weight:600;"><div>${cfg.total.label}:</div><div>$${total.toFixed(2)}</div></div>` : ''}
+          ${cfg.paid.enabled ? `<div style="display:flex; justify-content: space-between; margin-bottom:8px;"><div>${cfg.paid.label}:</div><div>$${paid.toFixed(2)}</div></div>` : ''}
+          ${cfg.balance.enabled ? `<div style="display:flex; justify-content: space-between; font-weight:600;"><div>${cfg.balance.label}:</div><div>$${balance.toFixed(2)}</div></div>` : ''}
+        </div>
+        <div style="text-align:center; margin-top:18px; font-size:14px;">Thank you for your payment</div>
+      </div>
+    `;
   };
 
   const loadTicketDetails = async (ticketId: number) => {
@@ -58,80 +127,89 @@ export default function TicketManagement() {
     }
   };
 
-  const generateTicketHtml = () => {
-    if (!selectedTicket) return '';
+  const generateTicketHtml = (ticketParam?: Ticket) => {
+    const ticket = ticketParam || selectedTicket;
+    if (!ticket) return '';
     const now = new Date();
-    const items = selectedTicket.items || [];
-    // Customer receipt: show item_total and full price
+    const items = ticket.items || [];
+
     const subtotal = items.reduce((sum, item) => {
-      const price = typeof item.item_total === 'number' ? item.item_total : 0;
-      const qty = typeof item.quantity === 'number' ? item.quantity : 0;
-      return sum + price * qty;
+      const line = typeof item.item_total === 'number' ? item.item_total : 0;
+      return sum + line;
     }, 0);
     const envCharge = subtotal * 0.047;
     const tax = subtotal * 0.0825;
     const total = subtotal + envCharge + tax;
-    const readyDate = new Date(selectedTicket.created_at);
+    const readyDate = new Date(ticket.created_at);
     readyDate.setDate(readyDate.getDate() + 2);
+
     return `
-      <div style="font-family: monospace; font-size: 12px; width: 300px; margin: 0 auto;">
+      <div style="width: 400px; margin: 0 auto; font-family: system-ui, -apple-system, sans-serif; font-size: 16px;">
         <div style="text-align: center;">
-          <div style="font-size: 16px; font-weight: bold;">Airport Cleaners</div>
-          <div>12300 Fondren Road, Houston TX 77035</div>
-          <div>(713) 723-5579</div>
+          <div style="font-size: 36px; font-weight: 600; margin-bottom: 20px;"><strong>${ticket.ticket_number ?? ''}</strong></div>
+          <div style="font-size: 24px; font-weight: bold; margin-bottom: 8px;">Airport Cleaners</div>
+          <div style="font-size: 18px;">12300 Fondren Road, Houston TX 77035</div>
+          <div style="font-size: 18px;">(713) 723-5579</div>
         </div>
-        <div style="display: flex; justify-content: space-between; margin: 16px 0;">
-          <div>${now.toLocaleDateString()} ${now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}</div>
-          <div style="text-align: right;">Ticket #${selectedTicket.ticket_number}</div>
+        <div style="display: flex; justify-content: space-between; margin: 20px 0; font-size: 18px;">
+          <div><strong>${now.toLocaleDateString()}</strong> <strong>${now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}</strong></div>
         </div>
-        <div>
-          ${selectedTicket.customer_name}<br/>
-          ACCT: ${selectedTicket.customer_id || ''}<br/>
-          ${selectedTicket.customer_phone || ''}
+        <div style="font-size: 20px; margin-bottom: 16px;">
+          <div style="font-weight: 500; margin-bottom: 4px;">${ticket.customer_name ?? ''}</div>
+          <div style="margin-bottom: 4px;">Phone: ${ticket.customer_phone ?? ''}</div>
+          <div>ACCT: ${ticket.customer_id ?? ''}</div>
         </div>
-        <div style="margin: 16px 0; border-top: 1px solid #000; border-bottom: 1px solid #000; padding: 8px 0;">
-          ${items.map(item => `
-            <div style="margin-bottom: 8px;">
-              <div style="display: flex; justify-content: space-between;">
-                <div>${typeof item.item_total === 'number' ? item.item_total.toFixed(2) : ''} x${item.quantity}</div>
-                <div>$${(typeof item.item_total === 'number' ? item.item_total : 0).toFixed(2)}</div>
+        <div style="margin: 20px 0; border-top: 2px solid #000; border-bottom: 2px solid #000; padding: 12px 0;">
+          ${items.map((item) => {
+            const qty = typeof item.quantity === 'number' ? item.quantity : 0;
+            const line = typeof item.item_total === 'number' ? item.item_total : 0;
+            return `
+              <div style="margin-bottom: 12px; font-size: 18px;">
+                <div style="display: flex; justify-content: space-between;">
+                  <div style="font-weight: 500;">${item.clothing_name ?? ''} x${qty}</div>
+                  <div style="font-weight: 500;">$${line.toFixed(2)}</div>
+                </div>
+                ${item.starch_level && item.starch_level !== 'no_starch' ? `<div style="color: #444;">${item.starch_level} Starch</div>` : ''}
+                ${item.crease === 'crease' ? '<div style="color: #444;">With Crease</div>' : ''}
               </div>
-              ${item.starch_level !== 'no_starch' ? `<div>${item.starch_level} Starch</div>` : ''}
-              ${item.crease === 'crease' ? '<div>With Crease</div>' : ''}
-            </div>
-          `).join('')}
+            `;
+          }).join('')}
         </div>
-        <div>${items.reduce((sum, item) => sum + (typeof item.quantity === 'number' ? item.quantity : 0), 0)} PIECES</div>
-        <div style="margin: 8px 0;">
-          <div style="display: flex; justify-content: space-between;">
-            <div>SubTotal:</div>
-            <div>$${subtotal.toFixed(2)}</div>
+        <div style="font-size: 20px; font-weight: 600; margin: 16px 0;">
+          ${items.reduce((sum, item) => sum + (typeof item.quantity === 'number' ? item.quantity : 0), 0)} PIECES
+        </div>
+        <div style="margin: 16px 0; font-size: 18px;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+            <div><strong>SubTotal:</strong></div>
+            <div><strong>$${subtotal.toFixed(2)}</strong></div>
           </div>
-          <div style="display: flex; justify-content: space-between;">
-            <div>Env Charge:</div>
-            <div>$${envCharge.toFixed(2)}</div>
+          <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+            <div><strong>Env Charge:</strong></div>
+            <div><strong>$${envCharge.toFixed(2)}</strong></div>
           </div>
-          <div style="display: flex; justify-content: space-between;">
-            <div>Tax:</div>
-            <div>$${tax.toFixed(2)}</div>
+          <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+            <div><strong>Tax:</strong></div>
+            <div><strong>$${tax.toFixed(2)}</strong></div>
           </div>
-          <div style="display: flex; justify-content: space-between;">
-            <div>Total:</div>
-            <div>$${total.toFixed(2)}</div>
+          <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 20px; font-weight: 600;">
+            <div><strong>Total:</strong></div>
+            <div><strong>$${total.toFixed(2)}</strong></div>
           </div>
-          <div style="display: flex; justify-content: space-between;">
-            <div>Paid Amount:</div>
-            <div>$${(selectedTicket.paid_amount || 0).toFixed(2)}</div>
+          <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+            <div><strong>Paid Amount:</strong></div>
+            <div><strong>$${(ticket.paid_amount || 0).toFixed(2)}</strong></div>
           </div>
-          <div style="display: flex; justify-content: space-between;">
-            <div>Balance:</div>
-            <div>$${(total - (selectedTicket.paid_amount || 0)).toFixed(2)}</div>
+          <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+            <div><strong>Balance:</strong></div>
+            <div><strong>$${(total - (ticket.paid_amount || 0)).toFixed(2)}</strong></div>
           </div>
         </div>
-        <div style="text-align: center; margin: 16px 0;">Ready: ${readyDate.toLocaleDateString()} 05:00 PM</div>
-        <div style="text-align: center; margin: 16px 0;">
-          <div style="font-size: 24px;">REG/PICKUP</div>
-          <div>Thank You For Your Business</div>
+        <div style="text-align: center; margin: 20px 0; font-size: 20px; font-weight: 500;">
+          <strong>Ready:</strong> <strong>${readyDate.toLocaleDateString()} 05:00 PM</strong>
+        </div>
+        <div style="text-align: center; margin: 20px 0;">
+          <div style="display:inline-block; background:#000; color:#fff; padding:10px 18px; border-radius:4px; font-size:24px;">REG/PICKUP</div>
+          <div style="margin-top:8px;">Thank You For Your Business</div>
         </div>
       </div>
     `;
@@ -152,17 +230,16 @@ export default function TicketManagement() {
     const total = subtotal + envCharge + tax;
     const readyDate = new Date(selectedTicket.created_at);
     readyDate.setDate(readyDate.getDate() + 2);
+    const cfg = readReceiptConfig();
     return `
       <div style="width: 400px; margin: 0 auto; font-family: system-ui, -apple-system, sans-serif; font-size: 16px;">
         <div style="text-align: center;">
-          <div style="font-size: 36px; font-weight: 600; margin-bottom: 20px;">${selectedTicket.ticket_number ?? ''}</div>
+          ${cfg.ticketNumber.enabled ? `<div style="font-size:36px;font-weight:700;margin-bottom:20px;"><strong>${selectedTicket.ticket_number ?? ''}</strong></div>` : ''}
           <div style="font-size: 24px; font-weight: bold; margin-bottom: 8px;">Airport Cleaners</div>
           <div style="font-size: 18px;">12300 Fondren Road, Houston TX 77035</div>
           <div style="font-size: 18px;">(713) 723-5579</div>
         </div>
-        <div style="display: flex; justify-content: space-between; margin: 20px 0; font-size: 18px;">
-          <div>${now.toLocaleDateString()} ${now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}</div>
-        </div>
+        ${cfg.readyDate.enabled ? `<div style="display: flex; justify-content: space-between; margin: 20px 0; font-size: 18px;"><div><strong>${new Date().toLocaleDateString()}</strong> <strong>${new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}</strong></div></div>` : ''}
         <div style="font-size: 20px; margin-bottom: 16px;">
           <div style="font-weight: 500; margin-bottom: 4px;">${selectedTicket.customer_name ?? ''}</div>
           <div style="margin-bottom: 4px;">Phone: ${selectedTicket.customer_phone ?? ''}</div>
@@ -175,8 +252,8 @@ export default function TicketManagement() {
             return `
               <div style=\"margin-bottom: 12px; font-size: 18px;\">
                 <div style=\"display: flex; justify-content: space-between;\">
-                  <div style=\"font-weight: 500;\">${item.clothing_name ?? ''} x${qty}</div>
-                  <div style=\"font-weight: 500;\">$${(price * qty).toFixed(2)}</div>
+                  <div style=\"font-weight: 700;\">${item.clothing_name ?? ''} x${qty}</div>
+                  <div style=\"font-weight: 700;\">$${(price * qty).toFixed(2)}</div>
                 </div>
                 ${item.starch_level && item.starch_level !== 'no_starch' ? `<div style=\\"color: #444;\\">${item.starch_level} Starch</div>` : ''}
                 ${item.crease === 'crease' ? '<div style=\\"color: #444;\\">With Crease</div>' : ''}
@@ -184,30 +261,14 @@ export default function TicketManagement() {
             `;
           }).join('')}
         </div>
-        <div style="font-size: 20px; font-weight: 600; margin: 16px 0;">
-          ${items.reduce((sum, item) => sum + (typeof item.quantity === 'number' ? item.quantity : 0), 0)} PIECES
-        </div>
+        ${cfg.items.enabled ? `<div style="font-size: 20px; font-weight: 600; margin: 16px 0;">${items.reduce((sum, item) => sum + (typeof item.quantity === 'number' ? item.quantity : 0), 0)} PIECES</div>` : ''}
         <div style="margin: 16px 0; font-size: 18px;">
-          <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-            <div>SubTotal:</div>
-            <div>$${subtotal.toFixed(2)}</div>
-          </div>
-          <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-            <div>Env Charge:</div>
-            <div>$${envCharge.toFixed(2)}</div>
-          </div>
-          <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-            <div>Tax:</div>
-            <div>$${tax.toFixed(2)}</div>
-          </div>
-          <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 20px; font-weight: 600;">
-            <div>Total:</div>
-            <div>$${total.toFixed(2)}</div>
-          </div>
+          ${cfg.subtotal.enabled ? `<div style="display: flex; justify-content: space-between; margin-bottom: 8px;"><div><strong>${cfg.subtotal.label}:</strong></div><div><strong>$${subtotal.toFixed(2)}</strong></div></div>` : ''}
+          ${cfg.envCharge.enabled ? `<div style="display: flex; justify-content: space-between; margin-bottom: 8px;"><div><strong>${cfg.envCharge.label}:</strong></div><div><strong>$${envCharge.toFixed(2)}</strong></div></div>` : ''}
+          ${cfg.tax.enabled ? `<div style="display: flex; justify-content: space-between; margin-bottom: 8px;"><div><strong>${cfg.tax.label}:</strong></div><div><strong>$${tax.toFixed(2)}</strong></div></div>` : ''}
+          ${cfg.total.enabled ? `<div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 20px; font-weight: 600;"><div><strong>${cfg.total.label}:</strong></div><div><strong>$${total.toFixed(2)}</strong></div></div>` : ''}
         </div>
-        <div style="text-align: center; margin: 20px 0; font-size: 20px; font-weight: 500;">
-          Ready: ${readyDate.toLocaleDateString()} 05:00 PM
-        </div>
+        ${cfg.readyDate.enabled ? `<div style="text-align: center; margin: 20px 0; font-size: 20px; font-weight: 500;">Ready: ${readyDate.toLocaleDateString()} 05:00 PM</div>` : ''}
         <div style="text-align: center; margin: 20px 0;">
           <div style="font-size: 28px; font-weight: 600; margin-bottom: 8px;">PLANT RECEIPT</div>
           <div style="font-size: 18px;">For Plant Use Only</div>
