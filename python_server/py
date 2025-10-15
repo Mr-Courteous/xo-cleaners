@@ -1,0 +1,94 @@
+@app.get("/api/tickets/{ticket_id}", response_model=TicketResponse, tags=["Tickets"])
+async def get_ticket(
+    ticket_id: int,
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)
+):
+    """Retrieves a single ticket by its ID, including all customer and item details, and calculates the balance."""
+    print(f"User {current_user} is retrieving ticket ID: {ticket_id}")
+
+    try:
+        # 1. Fetch main ticket and customer data (using JOIN)
+        ticket_query = text("""
+            SELECT 
+                t.id, t.ticket_number, t.customer_id, t.total_amount, t.paid_amount, 
+                t.status, t.rack_number, t.special_instructions, t.pickup_date, t.created_at,
+                c.name AS customer_name, c.phone AS customer_phone
+            FROM tickets t
+            JOIN customers c ON t.customer_id = c.id
+            WHERE t.id = :ticket_id
+        """)
+        
+        ticket_result = db.execute(ticket_query, {"ticket_id": ticket_id}).fetchone()
+        
+        if not ticket_result:
+            raise HTTPException(status_code=404, detail=f"Ticket with ID {ticket_id} not found.")
+
+        # Map result to easier names
+        (
+            t_id, ticket_number, customer_id, total_amount, paid_amount, 
+            status_val, rack_number_val, instructions_val, pickup_date_val, created_at,
+            customer_name, customer_phone
+        ) = ticket_result
+        
+        # Convert Decimals to float for Pydantic response
+        total_amount_float = float(total_amount)
+        paid_amount_float = float(paid_amount)
+        
+        # 2. Fetch all items for this ticket
+        items_query = text("""
+            SELECT 
+                ti.id, ti.clothing_type_id, ti.quantity, ti.starch_level, ti.crease, 
+                ti.item_total, ti.plant_price, ti.margin,
+                ct.name AS clothing_name
+            FROM ticket_items ti
+            JOIN clothing_types ct ON ti.clothing_type_id = ct.id
+            WHERE ti.ticket_id = :ticket_id
+            ORDER BY ti.id
+        """)
+        
+        items_result = db.execute(items_query, {"ticket_id": ticket_id}).fetchall()
+        
+        # 3. Build the response items list
+        response_items = []
+        for item in items_result:
+            response_items.append(
+                TicketItemResponse(
+                    id=item[0],
+                    ticket_id=t_id,
+                    clothing_type_id=item[1],
+                    clothing_name=item[8], # clothing_name from JOIN
+                    quantity=item[2],
+                    starch_level=item[3],
+                    crease=item[4],
+                    item_total=float(item[5]),
+                    plant_price=float(item[6]),
+                    margin=float(item[7]),
+                    additional_charge=0.0
+                )
+            )
+
+        # 4. Return the complete TicketResponse
+        # Note: The balance (total_amount - paid_amount) can be calculated on the front-end
+        # using the total_amount and paid_amount fields returned here.
+        return TicketResponse(
+            id=t_id,
+            ticket_number=ticket_number,
+            customer_id=customer_id,
+            customer_name=customer_name,
+            customer_phone=customer_phone,
+            total_amount=total_amount_float,
+            paid_amount=paid_amount_float,
+            status=status_val,
+            rack_number=rack_number_val,
+            special_instructions=instructions_val,
+            pickup_date=pickup_date_val,
+            created_at=created_at,
+            items=response_items
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error during ticket retrieval: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred during ticket retrieval.")

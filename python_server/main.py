@@ -10,13 +10,15 @@ from sqlalchemy import create_engine, text, inspect
 from sqlalchemy.orm import Session, sessionmaker
 
 # Pydantic
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 # Utils & typing
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 import os
 import json
+
+import decimal # ADDED: Import for handling DECIMAL types
 
 import jwt  # PyJWT
 from jwt import PyJWTError
@@ -171,11 +173,25 @@ class TicketItem(BaseModel):
     margin: float
     item_total: float
 
+# Updated main model for the request body
+class TicketItemCreate(BaseModel):
+    clothing_type_id: int
+    quantity: int
+    starch_level: str
+    crease: str
+
+# 2. Pydantic Model for the main request body
 class TicketCreate(BaseModel):
     customer_id: int
-    items: List[TicketItem]
+    # Use float for paid_amount input, it will be converted to Decimal in the route function
+    paid_amount: float = 0.0  
     special_instructions: Optional[str] = None
-    paid_amount: float = 0  # Default to 0 if not provided
+    # Use datetime for pickup_date
+    pickup_date: Optional[datetime] = None 
+    rack_number: Optional[str] = None
+    
+    # CRITICAL FIX: The list of items must use the lean input model
+    items: List[TicketItemCreate] 
 
 class TicketStatusUpdate(BaseModel):
     status: str
@@ -190,6 +206,49 @@ def get_db():
     finally:
         db.close()
 
+
+# --- NEW SCHEMAS FOR COST/MARGIN EDITING ---
+class TicketItemEdit(BaseModel):
+    """Schema for updating a single item's cost and margin."""
+    id: int = Field(..., description="ID of the specific ticket_items row to update.")
+    plant_price: float = Field(..., ge=0, description="New plant cost (float).")
+    margin: float = Field(..., ge=0, description="New margin (float).")
+
+class TicketItemsUpdateRequest(BaseModel):
+    """Payload schema for the PUT endpoint to update multiple items."""
+    items: List[TicketItemEdit] = Field(..., description="List of ticket items with updated costs/margins.")
+    
+    
+class TicketItemResponse(BaseModel):
+    id: int
+    ticket_id: int
+    clothing_type_id: int
+    clothing_name: str  # Added by server lookup
+    quantity: int
+    starch_level: str
+    crease: str
+    item_total: float  # Calculated by server
+    plant_price: float # Looked up by server
+    margin: float      # Looked up by server
+    additional_charge: float
+
+# Pydantic Model for the main response body
+class TicketResponse(BaseModel):
+    id: int
+    ticket_number: str
+    customer_id: int
+    customer_name: str
+    customer_phone: str
+    total_amount: float
+    paid_amount: float
+    status: str
+    rack_number: Optional[str]
+    special_instructions: Optional[str]
+    pickup_date: Optional[datetime]
+    created_at: datetime
+    # The list of items must use the rich response model
+    items: List[TicketItemResponse]     
+# --------------------------------------------
 
 # ============
 # Password helpers
@@ -295,113 +354,328 @@ def generate_ticket_number(db: Session) -> str:
     # Format: 01-XXXXXX where X is a digit, padded with zeros
     return f"01-{str(next_number).zfill(6)}"
 
-@app.post("/api/tickets")
-def create_ticket(ticket: TicketCreate, db: Session = Depends(get_db)):
-    try:
-        total_amount = sum(item.item_total for item in ticket.items)
-        
-        # Start transaction using context manager
-        with db.begin():
-            # Generate ticket number within the transaction
-            ticket_number = generate_ticket_number(db)
-            
-            # Create ticket
-            result = db.execute(
-                text("""
-                    INSERT INTO tickets (ticket_number, customer_id, total_amount, special_instructions, paid_amount)
-                    VALUES (:ticket_number, :customer_id, :total_amount, :special_instructions, :paid_amount)
-                    RETURNING id
-                """),
-                {
-                    "ticket_number": ticket_number,
-                    "customer_id": ticket.customer_id,
-                    "total_amount": total_amount,
-                    "special_instructions": ticket.special_instructions or "",
-                    "paid_amount": ticket.paid_amount
-                }
-            )
-            ticket_id = result.scalar()
-            
-            # Update customer's last visit date
-            db.execute(
-                text("""
-                    UPDATE customers 
-                    SET last_visit_date = CURRENT_TIMESTAMP 
-                    WHERE id = :customer_id
-                """),
-                {"customer_id": ticket.customer_id}
-            )
-            
-            # Insert ticket items
-            for item in ticket.items:
-                db.execute(
-                    text("""
-                        INSERT INTO ticket_items 
-                        (ticket_id, clothing_type_id, quantity, starch_level, crease, item_total, plant_price, margin)
-                        VALUES (:ticket_id, :clothing_type_id, :quantity, :starch_level, :crease, :item_total, :plant_price, :margin)
-                    """),
-                    {
-                        "ticket_id": ticket_id,
-                        "clothing_type_id": item.clothing_type_id,
-                        "quantity": item.quantity,
-                        "starch_level": item.starch_level,
-                        "crease": item.crease,
-                        "item_total": item.item_total,
-                        "plant_price": item.plant_price,
-                        "margin": item.margin
-                    }
-                )
-            
-            # Get complete ticket data with customer information
-            result = db.execute(
-                text("""
-                    SELECT 
-                        t.id,
-                        t.ticket_number,
-                        t.customer_id,
-                        t.total_amount,
-                        t.status,
-                        t.rack_number,
-                        t.special_instructions,
-                        t.pickup_date,
-                        t.created_at,
-                        t.paid_amount,
-                        c.name as customer_name,
-                        c.phone as customer_phone
-                    FROM tickets t
-                    JOIN customers c ON t.customer_id = c.id
-                    WHERE t.id = :ticket_id
-                """),
-                {"ticket_id": ticket_id}
-            ).fetchone()
-
-            # Calculate items summary for the message
-            items_count = sum(item.quantity for item in ticket.items)
-            success_message = f"Ticket {ticket_number} created successfully for {result[10]} with {items_count} items"
-            
-            return {
-                "success": True,
-                "message": success_message,
-                "ticket": {
-                    "id": result[0],
-                    "ticket_number": result[1],
-                    "customer_id": result[2],
-                    "total_amount": float(result[3]),
-                    "status": result[4],
-                    "rack_number": result[5],
-                    "special_instructions": result[6],
-                    "pickup_date": result[7],
-                    "created_at": result[8],
-                    "paid_amount": float(result[9]) if result[9] is not None else 0,
-                    "customer_name": result[10],
-                    "customer_phone": result[11],
-                    "paid_amount": float(result[11]) if result[11] is not None else 0
-                }
-            }
-    except Exception as e:
-        print(f"Error creating ticket: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+@app.post("/api/tickets", response_model=TicketResponse, status_code=status.HTTP_201_CREATED, tags=["Tickets"])
+async def create_ticket(
+    ticket_data: TicketCreate,
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)
+):
+    """Creates a new ticket, saving all item details and financial data."""
+    print(f"User {current_user} is creating a new ticket.")
     
+    try:
+        # 1. Check customer existence
+        customer = db.execute(text("SELECT id, name, phone FROM customers WHERE id = :id"), 
+                              {"id": ticket_data.customer_id}).fetchone()
+        if not customer:
+            raise HTTPException(status_code=404, detail="Customer not found")
+
+        total_amount = decimal.Decimal('0.00')
+        ticket_items_to_insert = []
+        type_ids = [item.clothing_type_id for item in ticket_data.items]
+        
+        # 2. Fetch prices, margin, and name for all clothing types
+        types_result = db.execute(text("SELECT id, name, plant_price, margin, total_price FROM clothing_types WHERE id IN :ids"), 
+                                  {"ids": tuple(type_ids)}).fetchall()
+
+        type_prices = {
+            row[0]: {
+                "name": row[1], 
+                "plant_price": decimal.Decimal(str(row[2])),
+                "margin": decimal.Decimal(str(row[3])),
+                "total_price": decimal.Decimal(str(row[4]))
+            } for row in types_result
+        }
+        
+        # 3. Calculate total_amount and prepare items for batch insert
+        for item_create in ticket_data.items:
+            prices = type_prices.get(item_create.clothing_type_id)
+            
+            # Check for missing clothing type price data (prevents NoneType error)
+            if prices is None:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Invalid item: Clothing type ID {item_create.clothing_type_id} not found in price list."
+                )
+
+            item_total_price = prices["total_price"] * item_create.quantity
+            total_amount += item_total_price
+
+            ticket_items_to_insert.append({
+                "clothing_type_id": item_create.clothing_type_id,
+                "quantity": item_create.quantity,
+                "starch_level": item_create.starch_level,
+                "crease": item_create.crease,
+                "plant_price": prices["plant_price"],
+                "margin": prices["margin"],
+                "item_total": item_total_price
+            })
+
+        # --- CRITICAL FIX: DYNAMIC TICKET NUMBER GENERATION ---
+        date_prefix = datetime.now().strftime("%y%m%d")
+        
+        # Query the database for the highest existing ticket number for today
+        latest_ticket_query = text("""
+            SELECT ticket_number FROM tickets 
+            WHERE ticket_number LIKE :prefix || '-%'
+            ORDER BY ticket_number DESC 
+            LIMIT 1
+        """)
+        latest_ticket_result = db.execute(latest_ticket_query, {"prefix": date_prefix}).fetchone()
+        
+        new_sequence = 1
+        if latest_ticket_result:
+            # Extract the sequence part (e.g., '001' from '251015-001')
+            latest_number_str = latest_ticket_result[0].split('-')[-1]
+            try:
+                latest_sequence = int(latest_number_str)
+                new_sequence = latest_sequence + 1
+            except ValueError:
+                # Fallback to 1 if sequence parsing fails (shouldn't happen with the current format)
+                new_sequence = 1
+
+        ticket_number = f"{date_prefix}-{new_sequence:03d}" 
+        # -----------------------------------------------------
+
+        # Safely access optional fields and convert paid_amount 
+        rack_number_val = ticket_data.rack_number
+        instructions_val = ticket_data.special_instructions
+        paid_amount_val = decimal.Decimal(str(ticket_data.paid_amount)) # Convert from float input
+        pickup_date_val = ticket_data.pickup_date
+
+        # 4. Insert Ticket
+        ticket_insert_query = text("""
+            INSERT INTO tickets (ticket_number, customer_id, total_amount, rack_number, special_instructions, paid_amount, pickup_date)
+            VALUES (:ticket_number, :customer_id, :total_amount, :rack_number, :special_instructions, :paid_amount, :pickup_date)
+            RETURNING id, created_at, status
+        """)
+        
+        ticket_result = db.execute(ticket_insert_query, {
+            "ticket_number": ticket_number,
+            "customer_id": ticket_data.customer_id,
+            "total_amount": total_amount,
+            "rack_number": rack_number_val,
+            "special_instructions": instructions_val,
+            "paid_amount": paid_amount_val,
+            "pickup_date": pickup_date_val
+        }).fetchone()
+
+        if ticket_result is None:
+            db.rollback()
+            raise HTTPException(status_code=500, detail="Database failed to insert ticket.")
+
+        ticket_id = ticket_result[0]
+        created_at = ticket_result[1]
+        status_val = ticket_result[2] 
+
+        # 5. Insert Ticket Items (Batch insertion logic)
+        item_rows = []
+        for item in ticket_items_to_insert:
+            item["ticket_id"] = ticket_id
+            item_rows.append(item)
+
+        item_insert_query = text("""
+            INSERT INTO ticket_items (ticket_id, clothing_type_id, quantity, starch_level, crease, plant_price, margin, item_total)
+            VALUES (:ticket_id, :clothing_type_id, :quantity, :starch_level, :crease, :plant_price, :margin, :item_total)
+            RETURNING id
+        """)
+        db.execute(item_insert_query, item_rows)
+        
+        # 6. Commit transaction
+        db.commit()
+
+        # 7. Build the complete response object
+        response_items = []
+        for i, item in enumerate(ticket_items_to_insert, 1):
+            clothing_type_id = item['clothing_type_id']
+            clothing_name = type_prices[clothing_type_id]['name']
+
+            response_items.append(
+                TicketItemResponse(
+                    id=i, 
+                    ticket_id=ticket_id,
+                    clothing_type_id=clothing_type_id,
+                    clothing_name=clothing_name,
+                    quantity=item['quantity'],
+                    starch_level=item['starch_level'],
+                    crease=item['crease'],
+                    item_total=float(item['item_total']),
+                    plant_price=float(item['plant_price']),
+                    margin=float(item['margin']),
+                    additional_charge=0.0
+                )
+            )
+
+        return TicketResponse(
+            id=ticket_id,
+            ticket_number=ticket_number,
+            customer_id=ticket_data.customer_id,
+            customer_name=customer[1],
+            customer_phone=customer[2],
+            total_amount=float(total_amount),
+            paid_amount=float(paid_amount_val), 
+            status=status_val,
+            rack_number=rack_number_val,
+            special_instructions=instructions_val,
+            pickup_date=pickup_date_val,
+            created_at=created_at,
+            items=response_items
+        )
+
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"Error during ticket creation: {e}")
+        # Raising a generic 500 error prevents leaking internal details
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred during ticket processing.")
+
+        
+        
+@app.get("/api/tickets/{ticket_id}", response_model=TicketResponse, tags=["Tickets"])
+async def get_ticket_details(
+    ticket_id: int,
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user)
+):
+    """Retrieves a single ticket by ID with all item and customer details."""
+    
+    # 1. Fetch main ticket and customer details
+    ticket_query = text("""
+        SELECT 
+            t.id, t.ticket_number, t.customer_id, t.total_amount, t.paid_amount, 
+            t.status, t.rack_number, t.special_instructions, t.pickup_date, t.created_at,
+            c.name, c.phone
+        FROM tickets t
+        JOIN customers c ON t.customer_id = c.id
+        WHERE t.id = :id
+    """)
+    ticket_result = db.execute(ticket_query, {"id": ticket_id}).fetchone()
+
+    if not ticket_result:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+
+    (t_id, t_num, c_id, total_amt, paid_amt, status_val, rack_num, instructions, pickup_date, created_at, c_name, c_phone) = ticket_result
+    
+    # 2. Fetch all ticket items for this ticket
+    items_query = text("""
+        SELECT
+            ti.id, ti.clothing_type_id, ti.quantity, ti.starch_level, ti.crease, 
+            ti.item_total, ti.plant_price, ti.margin,
+            ct.name as clothing_name
+        FROM ticket_items ti
+        JOIN clothing_types ct ON ti.clothing_type_id = ct.id
+        WHERE ti.ticket_id = :ticket_id
+    """)
+    item_results = db.execute(items_query, {"ticket_id": t_id}).fetchall()
+
+    # 3. Map item results to TicketItemResponse model
+    response_items = []
+    for item in item_results:
+        (i_id, ct_id, qty, starch, crease, total, plant_price, margin, name) = item
+        response_items.append(
+            TicketItemResponse(
+                id=i_id,
+                ticket_id=t_id,
+                clothing_type_id=ct_id,
+                clothing_name=name,
+                quantity=qty,
+                starch_level=starch,
+                crease=crease,
+                item_total=float(total),
+                plant_price=float(plant_price),
+                margin=float(margin),
+                additional_charge=0.0 # Assuming you load this if it exists
+            )
+        )
+
+    # 4. Construct and return the final TicketResponse
+    return TicketResponse(
+        id=t_id,
+        ticket_number=t_num,
+        customer_id=c_id,
+        customer_name=c_name,
+        customer_phone=c_phone,
+        total_amount=float(total_amt),
+        paid_amount=float(paid_amt) if paid_amt is not None else 0.0,
+        status=status_val,
+        rack_number=rack_num,
+        special_instructions=instructions,
+        pickup_date=pickup_date,
+        created_at=created_at,
+        items=response_items
+    )
+        
+@app.get("/api/tickets", response_model=List[TicketResponse], tags=["Tickets"])
+async def list_tickets(db: Session = Depends(get_db)):
+    """Retrieves a list of tickets, including customer details."""
+    
+    # 1. Query the main ticket details
+    # NOTE: You must include t.paid_amount in the SELECT statement
+    ticket_query = text("""
+        SELECT 
+            t.id, t.ticket_number, t.customer_id, t.total_amount, 
+            COALESCE(t.paid_amount, 0.0), t.status, t.rack_number, t.special_instructions, 
+            t.pickup_date, t.created_at, c.name, c.phone
+        FROM tickets t
+        JOIN customers c ON t.customer_id = c.id
+        ORDER BY t.created_at DESC
+        LIMIT 100 
+    """)
+    ticket_results = db.execute(ticket_query).fetchall()
+
+    if not ticket_results:
+        # If no results are found, return an empty list [] to satisfy the response_model=List[...]
+        return [] 
+
+    # Extract all fetched ticket IDs
+    ticket_ids = [row[0] for row in ticket_results]
+
+    # 2. Query all ticket items for the fetched tickets
+    items_query = text("""
+        SELECT
+            ti.id, ti.ticket_id, ti.clothing_type_id, ti.quantity, ti.starch_level,
+            ti.crease, COALESCE(ti.item_total, 0.0), ct.name as clothing_name,
+            COALESCE(ti.plant_price, 0.0), COALESCE(ti.margin, 0.0)
+        FROM ticket_items ti
+        JOIN clothing_types ct ON ti.clothing_type_id = ct.id
+        WHERE ti.ticket_id IN :ticket_ids
+    """)
+    item_results = db.execute(items_query, {"ticket_ids": tuple(ticket_ids)}).fetchall()
+
+    # 3. Map items back to their respective tickets
+    ticket_items_map = {}
+    for item in item_results:
+        (i_id, t_id, ct_id, qty, starch, crease, total, name, plant_price, margin) = item
+        item_response = TicketItemResponse(
+            id=i_id, ticket_id=t_id, clothing_type_id=ct_id, quantity=qty, 
+            starch_level=starch, crease=crease, item_total=float(total), 
+            clothing_name=name, plant_price=float(plant_price), margin=float(margin),
+            additional_charge=0.0
+        )
+        if t_id not in ticket_items_map:
+            ticket_items_map[t_id] = []
+        ticket_items_map[t_id].append(item_response)
+
+    # 4. Construct the final list of TicketResponse objects
+    response_tickets: List[TicketResponse] = []
+    for row in ticket_results:
+        (t_id, t_num, c_id, total_amt, paid_amt, status_val, rack_num, instructions, pickup_date, created_at, c_name, c_phone) = row
+        
+        response_tickets.append(
+            TicketResponse(
+                id=t_id, ticket_number=t_num, customer_id=c_id, 
+                customer_name=c_name, customer_phone=c_phone, 
+                total_amount=float(total_amt), paid_amount=float(paid_amt), # Include paid_amount
+                status=status_val, rack_number=rack_num, 
+                special_instructions=instructions, pickup_date=pickup_date, 
+                created_at=created_at, 
+                items=ticket_items_map.get(t_id, [])
+            )
+        )
+        
+    return response_tickets
 
 @app.get("/api/customers/search")
 def search_customers(query: str, db: Session = Depends(get_db)):
@@ -521,8 +795,8 @@ def find_ticket(ticket_id: str, db: Session = Depends(get_db)):
         return {"error": str(e)}
 
 # Make sure this route comes after more specific routes like /search
-@app.get("/api/tickets/{id}")
-async def get_ticket(id: int, db: Session = Depends(get_db)):
+@app.get("/api/ticketsd/{id}")
+async def get_ticket(id: int, db: Session = Depends(get_db), current_user: str = Depends(verify_token)):
     try:
         # First check if ticket exists
         result = db.execute(
@@ -546,6 +820,7 @@ async def get_ticket(id: int, db: Session = Depends(get_db)):
         if not result:
             raise HTTPException(status_code=404, detail="Ticket not found")
         
+        # MAPPING: pickup_date is at index 7. We use isoformat() for JSON serialization.
         ticket = {
             "id": result[0],
             "ticket_number": result[1],
@@ -554,8 +829,8 @@ async def get_ticket(id: int, db: Session = Depends(get_db)):
             "status": result[4],
             "rack_number": result[5],
             "special_instructions": result[6],
-            "pickup_date": result[7],
-            "created_at": result[8],
+            "pickup_date": result[7].isoformat() if result[7] else None, # <-- NEW DETAIL
+            "created_at": result[8].isoformat(),
             "customer_name": result[9],
             "customer_phone": result[10],
             "customer_address": result[11],
@@ -565,7 +840,10 @@ async def get_ticket(id: int, db: Session = Depends(get_db)):
         # Get ticket items
         items_result = db.execute(
             text("""
-                SELECT ti.*, ct.name as clothing_name
+                SELECT 
+                    ti.id, ti.ticket_id, ti.clothing_type_id, ti.quantity, 
+                    ti.starch_level, ti.crease, ti.item_total, ct.name as clothing_name,
+                    ti.plant_price, ti.margin -- <-- NEW DETAILS IN SELECT
                 FROM ticket_items ti
                 JOIN clothing_types ct ON ti.clothing_type_id = ct.id
                 WHERE ti.ticket_id = :ticket_id
@@ -575,6 +853,7 @@ async def get_ticket(id: int, db: Session = Depends(get_db)):
         
         items = []
         for row in items_result:
+            # MAPPING: plant_price is at index 8, margin is at index 9
             items.append({
                 "id": row[0],
                 "ticket_id": row[1],
@@ -583,15 +862,19 @@ async def get_ticket(id: int, db: Session = Depends(get_db)):
                 "starch_level": row[4],
                 "crease": row[5],
                 "item_total": float(row[6]),
-                "clothing_name": row[7]
+                "clothing_name": row[7],
+                "plant_price": float(row[8]), # <-- NEW DETAIL
+                "margin": float(row[9])      # <-- NEW DETAIL
             })
         
+        # Return the combined ticket and items data
         return {**ticket, "items": items}
     except HTTPException:
         raise
     except Exception as e:
+        print(f"Error in get_ticket: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
+    
 @app.get("/api/tickets/_search")  # Changed to _search to avoid conflict with {id} route
 async def search_tickets(query: str, db: Session = Depends(get_db)):
     try:

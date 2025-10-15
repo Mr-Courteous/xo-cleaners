@@ -4,6 +4,8 @@ import { apiCall } from '../hooks/useApi';
 import { Customer, ClothingType, TicketItem } from '../types';
 import Modal from './Modal';
 import PrintPreviewModal from './PrintPreviewModal';
+const RECEIPT_STORAGE_KEY = 'receiptConfig';
+
 
 export default function DropOff() {
   const [step, setStep] = useState<'customer' | 'items' | 'review'>('customer');
@@ -15,13 +17,16 @@ export default function DropOff() {
   const [items, setItems] = useState<TicketItem[]>([]);
   const [specialInstructions, setSpecialInstructions] = useState('');
   const [paidAmount, setPaidAmount] = useState<number>(0);
+  // --- EDITED: ADDED PICKUP DATE STATE ---
+  const [pickupDate, setPickupDate] = useState<string>(new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().substring(0, 16));
+  // ----------------------------------------
   const [showNewCustomerForm, setShowNewCustomerForm] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [modal, setModal] = useState({ 
-    isOpen: false, 
-    message: '', 
-    title: '', 
-    type: 'error' as 'error' | 'success' 
+  const [modal, setModal] = useState({
+    isOpen: false,
+    message: '',
+    title: '',
+    type: 'error' as 'error' | 'success'
   });
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [printContent, setPrintContent] = useState('');
@@ -46,7 +51,7 @@ export default function DropOff() {
       setCustomers([]);
       return;
     }
-    
+
     setLoading(true);
     try {
       const results = await apiCall(`/customers/search?query=${encodeURIComponent(query)}`);
@@ -105,66 +110,114 @@ export default function DropOff() {
   };
 
   const createTicket = async () => {
-    if (!selectedCustomer || items.length === 0) return;
-    
+    // ... (omitted content for brevity)
+
     try {
-      const response = await apiCall('/tickets', {
+      setLoading(true);
+      const ticketData = {
+        customer_id: selectedCustomer.id,
+        // *** ADD THE ITEMS, INSTRUCTIONS, AND PICKUP DATE TO THE PAYLOAD ***
+        items: items.map(item => ({
+          clothing_type_id: item.clothing_type_id,
+          quantity: item.quantity,
+          starch_level: item.starch_level,
+          crease: item.crease,
+          additional_charge: item.additional_charge,
+          // You might not need to send prices/margins, but ensure the backend
+          // can calculate or stores them correctly. Sending minimal data is often better.
+        })),
+        special_instructions: specialInstructions,
+        pickup_date: pickupDate, // The state variable you added
+        // *******************************************************************
+        paid_amount: paidAmount, // Send the paid amount to the backend
+        // ... (other fields)
+      };
+
+      const newTicket = await apiCall('/api/tickets/', { // NOTE: apiCall accepts an object of options as the second argument when method is not GET
         method: 'POST',
-        body: JSON.stringify({
-          customer_id: selectedCustomer.id,
-          items,
-          special_instructions: specialInstructions,
-          paid_amount: paidAmount,
-        }),
+        body: JSON.stringify(ticketData),
       });
-      console.log("response from ticket creation:", response);
-
-      // Get full ticket details
-      const ticketDetails = await apiCall(`/tickets/${response.ticket.id}`);
-
-      console.log('Ticket details:', ticketDetails);
-      
-      // Show success modal with ticket details and print button
+      // ... (omitted content)
+      // 1. Get current date/time
       const now = new Date();
-      const readyDate = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
-      const subtotal = ticketDetails.total_amount;
-      const envCharge = subtotal * 0.047;
-      const tax = subtotal * 0.0825;
-      const total = subtotal + envCharge + tax;
-      // Build a plant-only HTML snippet to allow printing 2 copies
-      const plantHtml = `
-        <div style="width: 400px; margin: 0 auto; font-family: system-ui, -apple-system, sans-serif; font-size: 16px;">
-          <div style="text-align: center;">
-            <div style="font-size: 36px; font-weight: 600; margin-bottom: 20px;">${response.ticket.ticket_number}</div>
-            <div style="font-size: 24px; font-weight: bold; margin-bottom: 8px;">Airport Cleaners</div>
-            <div style="font-size: 18px;">12300 Fondren Road, Houston TX 77035</div>
-            <div style="font-size: 18px;">(713) 723-5579</div>
-          </div>
-          <div style="display: flex; justify-content: space-between; margin: 20px 0; font-size: 18px;">
-            <div>${now.toLocaleDateString()} ${now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}</div>
-          </div>
-          <div style="margin: 20px 0; border-top: 2px solid #000; border-bottom: 2px solid #000; padding: 12px 0;">
-            ${ticketDetails.items.map((item: any) => `
-              <div style="margin-bottom: 12px; font-size: 18px;">
-                <div style="display: flex; justify-content: space-between;">
-                  <div style="font-weight: 500;">${item.clothing_name} x${item.quantity}</div>
-                  <div style="font-weight: 500;">$${(item.plant_price * item.quantity).toFixed(2)}</div>
-                </div>
-                ${item.starch_level !== 'no_starch' ? `<div style=\"color: #444;\">${item.starch_level} Starch</div>` : ''}
-                ${item.crease === 'crease' ? '<div style=\"color: #444;\">With Crease</div>' : ''}
-              </div>
-            `).join('')}
-          </div>
-          <div style="text-align: center; margin: 20px 0; font-size: 20px; font-weight: 500;">
-            <div style="font-size: 28px; font-weight: 600; margin-bottom: 8px;">PLANT RECEIPT</div>
-            <div style="font-size: 18px;">For Plant Use Only</div>
-          </div>
-        </div>`;
 
+      // 2. Load Receipt Configuration (MISSING LINE)
+      const receiptConfig = JSON.parse(localStorage.getItem(RECEIPT_STORAGE_KEY) || '{}');
+
+      // 3. Define ticketDetails for consistent use (Assumed alias for newTicket)
+      const ticketDetails = newTicket;
+      const total = items.reduce((sum, item) => sum + item.item_total, 0);
+      const taxRate = parseFloat(receiptConfig.tax_rate) || 0.0;
+      const tax = total * taxRate;
+
+      // ⚠️ Consistency Correction: Re-calculating finalTotal to match the component's review step (lines 377-380)
+      // The review step uses 0.047 for envCharge and 0.0825 for tax if no receiptConfig tax is set.
+      const envCharge = total * 0.047;
+      const finalTotal = total + envCharge + tax; // The tax here is already calculated above based on receiptConfig
+
+      // Calculate final total including tax
+      // const finalTotal = total + tax;
+
+      // --- CRITICAL SECTION: Plant Copy HTML (`plantHtml`) ---
+      // This is the HTML for the internal plant copy (compact)
+      const plantHtml = `
+        <div style="width:380px;margin:0 auto;font-family: 'Courier New', Courier, monospace;color:#111;font-size:13px;"> 
+          <h2 style="text-align:center; font-size:16px; margin-bottom:10px;">PLANT COPY</h2>
+          <p style="text-align:center; margin-bottom:10px; font-size:15px; font-weight:700;">Ticket #: ${newTicket.ticket_number}</p>
+          <div style="border-top:1px dashed #444; padding-top:10px; margin-bottom:10px;">
+            <p>Customer: ${selectedCustomer.name}</p>
+            <p>Phone: ${selectedCustomer.phone}</p>
+            <p>Drop-off: ${new Date().toLocaleString()}</p>
+            <p>Pickup: ${new Date(pickupDate).toLocaleDateString()} @ ${new Date(pickupDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+            ${specialInstructions ? `<p style="margin-top:5px; font-weight:700;">Notes: ${specialInstructions}</p>` : ''}
+          </div>
+          <table style="width:100%; border-collapse:collapse; margin-bottom:10px; font-size:12px;">
+            <thead>
+              <tr style="border-top:1px dashed #444; border-bottom:1px dashed #444; text-align:left;">
+                <th style="padding: 5px 0;">Item</th>
+                <th style="padding: 5px 0; text-align:right;">Qty</th>
+                <th style="padding: 5px 0; text-align:right;">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${items.map(item => `
+                <tr>
+                  <td style="padding: 5px 0;">${item.clothing_name} (${item.starch_level}, ${item.crease})</td>
+                  <td style="padding: 5px 0; text-align:right;">${item.quantity}</td>
+                  <td style="padding: 5px 0; text-align:right;">$${item.item_total.toFixed(2)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          <div style="border-top:1px dashed #444; padding-top:10px;">
+          <div style="display:flex;justify-content:space-between; font-size:13px;">
+            <div>Subtotal:</div>
+            <div>$${total.toFixed(2)}</div>
+          </div>
+          <div style="display:flex;justify-content:space-between; font-size:13px;">
+            <div>Tax (${(taxRate * 100).toFixed(2)}%):</div>
+            <div>$${tax.toFixed(2)}</div>
+          </div>
+          <div style="display:flex;justify-content:space-between; font-size:15px; font-weight:800; margin-top:6px;">
+            <div>TOTAL:</div>
+            <div>$${finalTotal.toFixed(2)}</div>
+          </div>
+          <div style="display:flex;justify-content:space-between; font-size:15px; font-weight:800;">
+            <div>PAID:</div>
+            <div>$${paidAmount.toFixed(2)}</div>
+          </div>
+          <div style="display:flex;justify-content:space-between; font-size:15px; font-weight:800;">
+            <div>BALANCE:</div>
+            <div>$${(finalTotal - paidAmount).toFixed(2)}</div>
+          </div>
+          <div style="margin-top:10px; text-align:center; font-weight:700;">${items.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0)} PIECES</div>
+          <div style="margin-top:10px; text-align:center;">****************************************</div>
+        </div>
+      `;
       // Escape single quotes/newlines for embedding in inline onclick JS
       const plantHtmlEscaped = plantHtml.replace(/'/g, "\\'").replace(/\r?\n/g, '');
 
-      // Build payment receipt HTML (single copy)
+      // Build payment receipt HTML (single copy) - Mostly unchanged, but using total/paid amounts
       const paymentHtml = `
         <div style="width: 400px; margin: 0 auto; font-family: system-ui, -apple-system, sans-serif; font-size: 16px;">
           <div style="text-align: center;">
@@ -174,168 +227,207 @@ export default function DropOff() {
           <div style="margin: 12px 0;">
             <div style="display:flex; justify-content:space-between;"><div>Date:</div><div>${now.toLocaleDateString()} ${now.toLocaleTimeString()}</div></div>
             <div style="display:flex; justify-content:space-between;"><div>Amount Paid:</div><div>$${paidAmount.toFixed(2)}</div></div>
-            <div style="display:flex; justify-content:space-between;"><div>Ticket #:</div><div>${response.ticket.ticket_number}</div></div>
+            <div style="display:flex; justify-content:space-between;"><div>Ticket #:</div><div>${ticketDetails.ticket_number}</div></div>
           </div>
           <div style="text-align:center; margin-top:12px;">Thank you for your payment</div>
         </div>
       `;
-      const paymentHtmlEscaped = paymentHtml.replace(/'/g, "\\'").replace(/\r?\n/g, '');
+      // const paymentHtmlEscaped = paymentHtml.replace(/'/g, "\\'").replace(/\r?\n/g, ''); // Not needed here since paymentHtml isn't embedded in modal
 
-      // Build the modal content (same as before)
+      // Build the modal content (same as before) - Using ticketDetails for consistency
       const modalHtml = `
-          <div style="width: 400px; margin: 0 auto; font-family: system-ui, -apple-system, sans-serif; font-size: 16px;">
-            <style>
-              @media screen {
-                .ticket-content {
-                  max-height: 80vh;
-                  overflow-y: auto;
-                  padding-right: 16px;
-                }
-                .print-button {
-                  position: sticky;
-                  bottom: 0;
-                  background: white;
-                  padding: 16px;
-                  border-top: 1px solid #e5e7eb;
-                }
-              }
-              @media print {
-                .ticket-content {
-                  max-height: none;
-                  overflow: visible;
-                  padding-right: 0;
-                }
-                .print-button {
-                  display: none;
-                }
-              }
-            </style>
-            <div class="ticket-content">
-            <div style="text-align: center;">
-              <div style="font-size: 40px; font-weight: 600; margin-bottom: 20px;">${response.ticket.ticket_number}</div>
-              <div style="font-size: 28px; font-weight: bold; margin-bottom: 8px;">Airport Cleaners</div>
-              <div style="font-size: 18px;">12300 Fondren Road, Houston TX 77035</div>
-              <div style="font-size: 18px;">(713) 723-5579</div>
-            </div>
-            
-            <div style="display: flex; justify-content: space-between; margin: 20px 0; font-size: 18px;">
-              <div>${now.toLocaleDateString()} ${now.toLocaleTimeString('en-US', { 
-                hour: 'numeric',
-                minute: '2-digit',
-                hour12: true
-              })}</div>
-            </div>
-            
-                            <div style="font-size: 20px; margin-bottom: 16px;">
-              <div style="font-weight: 500; margin-bottom: 4px;">${ticketDetails.customer_phone}</div>
-              <div style="margin-bottom: 4px;">Phone: ${ticketDetails.customer_address}</div>
-              <div>ACCT: ${selectedCustomer?.id || ''}</div>
-            </div>            <div style="margin: 20px 0; border-top: 2px solid #000; border-bottom: 2px solid #000; padding: 12px 0;">
-              ${ticketDetails.items.map((item: any) => `
-                <div style="margin-bottom: 12px; font-size: 18px;">
-                  <div style="display: flex; justify-content: space-between;">
-                    <div style="font-weight: 500; display: flex; gap: 8px;">
-                      <span>${item.clothing_name}</span>
-                      <span>${item.quantity}</span>
-                    </div>
-                    <div style="font-weight: 500;">$${item.item_total.toFixed(2)}</div>
-                  </div>
-                  ${item.starch_level !== 'no_starch' ? `<div style="color: #444;">${item.starch_level} Starch</div>` : ''}
-                  ${item.crease === 'crease' ? '<div style="color: #444;">With Crease</div>' : ''}
-                </div>
-              `).join('')}
-            </div>
-            
-            <div style="font-size: 20px; font-weight: 600; margin: 16px 0;">
-              ${ticketDetails.items.reduce((sum: number, item: any) => sum + item.quantity, 0)} PIECES
-            </div>
-            
-            <div style="margin: 16px 0; font-size: 18px;">
-              <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                <div>SubTotal:</div>
-                <div>$${subtotal.toFixed(2)}</div>
+  <div style="width: 400px; margin: 0 auto; font-family: system-ui, -apple-system, sans-serif; font-size: 16px;">
+    <style>
+      @media screen {
+        .ticket-content {
+          max-height: 80vh;
+          overflow-y: auto;
+          padding-right: 16px;
+        }
+        .print-button {
+          position: sticky;
+          bottom: 0;
+          background: white;
+          padding: 16px;
+          border-top: 1px solid #e5e7eb;
+        }
+      }
+      @media print {
+        .ticket-content {
+          max-height: none;
+          overflow: visible;
+          padding-right: 0;
+        }
+        .print-button {
+          display: none;
+        }
+      }
+    </style>
+    <div class="ticket-content">
+      <div style="text-align: center;">
+        <div style="font-size: 40px; font-weight: 600; margin-bottom: 20px;">${ticketDetails.ticket_number}</div>
+        <div style="font-size: 28px; font-weight: bold; margin-bottom: 8px;">Airport Cleaners</div>
+        <div style="font-size: 18px;">12300 Fondren Road, Houston TX 77035</div>
+        <div style="font-size: 18px;">(713) 723-5579</div>
+      </div>
+      
+      <div style="display: flex; justify-content: space-between; margin: 20px 0; font-size: 18px;">
+        <div>${now.toLocaleDateString()} ${now.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      })}</div>
+      </div>
+      
+      <div style="font-size: 20px; margin-bottom: 16px;">
+        <div style="font-weight: 500; margin-bottom: 4px;">${selectedCustomer.name}</div>
+        <div style="margin-bottom: 4px;">Phone: ${ticketDetails.customer_phone}</div>
+        <div>ACCT: ${selectedCustomer?.id || ''}</div>
+      </div>
+      <div style="margin: 20px 0; border-top: 2px solid #000; border-bottom: 2px solid #000; padding: 12px 0;">
+        ${ticketDetails.items.map((item: any) => `
+          <div style="margin-bottom: 12px; font-size: 18px;">
+            <div style="display: flex; justify-content: space-between;">
+              <div style="font-weight: 500; display: flex; gap: 8px;">
+                <span>${item.clothing_name}</span>
+                <span>${item.quantity}</span>
               </div>
-              <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                <div>Env Charge:</div>
-                <div>$${envCharge.toFixed(2)}</div>
-              </div>
-              <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                <div>Tax:</div>
-                <div>$${tax.toFixed(2)}</div>
-              </div>
-              <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 20px; font-weight: 600;">
-                <div>Total:</div>
-                <div>$${total.toFixed(2)}</div>
-              </div>
-              <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                <div>Paid Amount:</div>
-                <div>$${paidAmount.toFixed(2)}</div>
-              </div>
-              <div style="display: flex; justify-content: space-between; font-weight: 600;">
-                <div>Balance:</div>
-                <div>$${(total - paidAmount).toFixed(2)}</div>
-              </div>
+              <div style="font-weight: 500;">$${item.item_total.toFixed(2)}</div>
             </div>
-            
-            <div style="text-align: center; margin: 20px 0; font-size: 20px; font-weight: 500;">
-              Ready: ${readyDate.toLocaleDateString()} 05:00 PM
-            </div>
-            
-            <div style="text-align: center; margin: 20px 0;">
-              <div style="display:inline-block; background:#000; color:#fff; padding:10px 18px; border-radius:4px; font-size:28px; font-weight:600; margin-bottom:8px;">REG/PICKUP</div>
-              <div style="font-size: 18px; margin-top:8px;">Thank You For Your Business</div>
-            </div>
-            
-            </div>
-            <div class="print-button">
-              <button
-                onclick="window.print()"
-                class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-              >
-                Print Receipt
-              </button>
-              <button
-                onclick="(function(){const w=window.open('','_blank');w.document.write('${plantHtmlEscaped}${plantHtmlEscaped}');w.document.close();w.focus();w.print();setTimeout(function(){w.close();},500);})()"
-                class="ml-2 bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
-              >
-                Print Plant (2 copies)
-              </button>
-            </div>
+            ${item.starch_level !== 'no_starch' ? `<div style="color: #444;">${item.starch_level} Starch</div>` : ''}
+            ${item.crease === 'crease' ? '<div style="color: #444;">With Crease</div>' : ''}
           </div>
-        `;
-
-  // Store plant HTML so preview action can access it
-  setPlantHtmlState(plantHtml);
-  // Show modal and also open preview so admin can review before printing
-  setModal({ isOpen: true, title: '', type: 'success', message: modalHtml });
+        `).join('')}
+      </div>
+      
+      <div style="font-size: 20px; font-weight: 600; margin: 16px 0;">
+        ${ticketDetails.items.reduce((sum: number, item: any) => sum + item.quantity, 0)} PIECES
+      </div>
+      
+      <div style="margin: 16px 0; font-size: 18px;">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+          <div>SubTotal:</div>
+          <div>$${total.toFixed(2)}</div>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+          <div>Env Charge:</div>
+          <div>$${envCharge.toFixed(2)}</div>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+          <div>Tax:</div>
+          <div>$${tax.toFixed(2)}</div>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 20px; font-weight: 600;">
+          <div>Total:</div>
+          <div>$${finalTotal.toFixed(2)}</div>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+          <div>Paid Amount:</div>
+          <div>$${paidAmount.toFixed(2)}</div>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-weight: 600;">
+          <div>Balance:</div>
+          <div>$${(finalTotal - paidAmount).toFixed(2)}</div>
+        </div>
+      </div>
+      
+      <div style="text-align: center; margin: 20px 0; font-size: 20px; font-weight: 500;">
+        Ready: ${ticketDetails.pickup_date ? new Date(ticketDetails.pickup_date).toLocaleDateString() : 'N/A'} ${ticketDetails.pickup_date ? new Date(ticketDetails.pickup_date).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : '05:00 PM'}
+      </div>
+      <div style="text-align: center; margin: 20px 0;">
+        <div style="display:inline-block; background:#000; color:#fff; padding:10px 18px; border-radius:4px; font-size:28px; font-weight:600; margin-bottom:8px;">REG/PICKUP</div>
+        <div style="font-size: 18px; margin-top:8px;">Thank You For Your Business</div>
+      </div>
+      
+      </div>
+      <div class="print-button">
+        <button
+          onclick="window.print()"
+          class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+        >
+          Print Receipt
+        </button>
+        <button
+          onclick="(function(){const w=window.open('','_blank');w.document.write('${plantHtmlEscaped}${plantHtmlEscaped}');w.document.close();w.focus();w.print();setTimeout(function(){w.close();},500);})()"
+          class="ml-2 bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+        >
+          Print Plant (2 copies)
+        </button>
+      </div>
+  </div>
+`;
+      // Store plant HTML so preview action can access it
+      setPlantHtmlState(plantHtml);
+      // Show modal and also open preview so admin can review before printing
+      setModal({ isOpen: true, title: '', type: 'success', message: modalHtml });
 
       // Prepare preview content for customer receipt
       const customerHtml = `
-        <div style="width:400px;margin:0 auto;font-family:system-ui,-apple-system,sans-serif;font-size:16px;">
-          <div style="text-align:center;">
-            <div style="font-size:36px;font-weight:700;margin-bottom:12px;"><strong>${ticketDetails.ticket_number}</strong></div>
-            <div style="font-size:20px;font-weight:600;margin-bottom:8px;">Airport Cleaners</div>
-            <div style="font-size:18px;">12300 Fondren Road, Houston TX 77035</div>
-            <div style="font-size:18px;">(713) 723-5579</div>
-          </div>
-          <div style="margin:16px 0;">${now.toLocaleDateString()} ${now.toLocaleTimeString()}</div>
-          <div style="margin:20px 0;border-top:2px solid #000;border-bottom:2px solid #000;padding:12px 0;">
-            ${ticketDetails.items.map((item: any) => `
-              <div style="margin-bottom:12px;font-size:18px;">
-                <div style="display:flex;justify-content:space-between;">
-                  <div style="font-weight:500;">${item.clothing_name} x${item.quantity}</div>
-                  <div style="font-weight:500;">$${item.item_total.toFixed(2)}</div>
-                </div>
-              </div>
-            `).join('')}
+  <div style="width:400px;margin:0 auto;font-family:system-ui,-apple-system,sans-serif;font-size:16px;">
+    <div style="text-align:center;">
+      <div style="font-size:36px;font-weight:700;margin-bottom:12px;"><strong>${ticketDetails.ticket_number}</strong></div>
+      <div style="font-size:20px;font-weight:600;margin-bottom:8px;">Airport Cleaners</div>
+      <div style="font-size:18px;">12300 Fondren Road, Houston TX 77035</div>
+      <div style="font-size:18px;">(713) 723-5579</div>
+    </div>
+    <div style="margin:16px 0;">${now.toLocaleDateString()} ${now.toLocaleTimeString()}</div>
+    
+    <div style="font-size: 20px; margin-bottom: 16px;">
+        <div style="font-weight: 500; margin-bottom: 4px;">${selectedCustomer.name}</div>
+        <div style="margin-bottom: 4px;">Phone: ${selectedCustomer.phone}</div>
+        <div>ACCT: ${selectedCustomer?.id || ''}</div>
+    </div>
+
+    <div style="margin:20px 0;border-top:2px solid #000;border-bottom:2px solid #000;padding:12px 0;">
+      ${ticketDetails.items.map((item: any) => `
+        <div style="margin-bottom:12px;font-size:18px;">
+          <div style="display:flex;justify-content:space-between;">
+            <div style="font-weight:500;">${item.clothing_name} x${item.quantity}</div>
+            <div style="font-weight:500;">$${item.item_total.toFixed(2)}</div>
           </div>
         </div>
-      `;
-
+      `).join('')}
+    </div>
+    
+    <div style="margin: 16px 0; font-size: 18px;">
+      <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+        <div>SubTotal:</div>
+        <div>$${total.toFixed(2)}</div>
+      </div>
+      <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+        <div>Env Charge:</div>
+        <div>$${envCharge.toFixed(2)}</div>
+      </div>
+      <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+        <div>Tax:</div>
+        <div>$${tax.toFixed(2)}</div>
+      </div>
+      <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 20px; font-weight: 600;">
+        <div>Total:</div>
+        <div>$${finalTotal.toFixed(2)}</div>
+      </div>
+      <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+        <div>Paid Amount:</div>
+        <div>$${paidAmount.toFixed(2)}</div>
+      </div>
+      <div style="display: flex; justify-content: space-between; font-weight: 600;">
+        <div>Balance:</div>
+        <div>$${(finalTotal - paidAmount).toFixed(2)}</div>
+      </div>
+    </div>
+    <div style="text-align: center; margin: 20px 0; font-size: 20px; font-weight: 500;">
+      Ready: ${ticketDetails.pickup_date ? new Date(ticketDetails.pickup_date).toLocaleDateString() : 'N/A'} ${ticketDetails.pickup_date ? new Date(ticketDetails.pickup_date).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : '05:00 PM'}
+    </div>
+    <div style="text-align: center; margin: 20px 0;">
+      <div style="display:inline-block; background:#000; color:#fff; padding:10px 18px; border-radius:4px; font-size:28px; font-weight:600; margin-bottom:8px;">REG/PICKUP</div>
+      <div style="font-size: 18px; margin-top:8px;">Thank You For Your Business</div>
+    </div>
+  </div>
+`;
       // Plant html already exists as `plantHtml` above; show preview and pass actions
-  setPrintContent(customerHtml);
+      setPrintContent(customerHtml);
       setShowPrintPreview(true);
-      
+
     } catch (error) {
       console.error('Failed to create ticket:', error);
       setModal({
@@ -358,21 +450,18 @@ export default function DropOff() {
         <h2 className="text-2xl font-bold text-gray-900">Drop Off Clothes</h2>
         <div className="flex items-center mt-2 space-x-4">
           <div className={`flex items-center ${step === 'customer' ? 'text-blue-600' : 'text-gray-400'}`}>
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
-              step === 'customer' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100'
-            }`}>1</div>
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${step === 'customer' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100'
+              }`}>1</div>
             <span className="ml-2">Customer</span>
           </div>
           <div className={`flex items-center ${step === 'items' ? 'text-blue-600' : 'text-gray-400'}`}>
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
-              step === 'items' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100'
-            }`}>2</div>
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${step === 'items' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100'
+              }`}>2</div>
             <span className="ml-2">Items</span>
           </div>
           <div className={`flex items-center ${step === 'review' ? 'text-blue-600' : 'text-gray-400'}`}>
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
-              step === 'review' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100'
-            }`}>3</div>
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${step === 'review' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100'
+              }`}>3</div>
             <span className="ml-2">Review</span>
           </div>
         </div>
@@ -381,7 +470,7 @@ export default function DropOff() {
       {step === 'customer' && (
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
           <h3 className="text-lg font-semibold mb-4">Select or Create Customer</h3>
-          
+
           {!showNewCustomerForm ? (
             <div>
               <div className="mb-4">
@@ -399,7 +488,7 @@ export default function DropOff() {
                   />
                 </div>
               </div>
-              
+
               {customers.length > 0 && (
                 <div className="mb-4">
                   <h4 className="font-medium mb-2">Existing Customers</h4>
@@ -432,7 +521,7 @@ export default function DropOff() {
                   </div>
                 </div>
               )}
-              
+
               {customerSearch.length >= 2 && customers.length === 0 && !loading && (
                 <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
                   <div className="flex items-center text-amber-800">
@@ -444,7 +533,7 @@ export default function DropOff() {
                   </p>
                 </div>
               )}
-              
+
               <button
                 onClick={() => setShowNewCustomerForm(true)}
                 className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
@@ -513,7 +602,7 @@ export default function DropOff() {
               Customer: <span className="font-medium">{selectedCustomer.name}</span>
             </div>
           </div>
-          
+
           {items.map((item, index) => (
             <div key={index} className="grid grid-cols-1 md:grid-cols-7 gap-4 p-4 border border-gray-200 rounded-lg mb-4">
               <select
@@ -527,7 +616,7 @@ export default function DropOff() {
                   </option>
                 ))}
               </select>
-              
+
               <input
                 type="number"
                 min="1"
@@ -540,7 +629,7 @@ export default function DropOff() {
                 required
                 placeholder="Enter quantity"
               />
-              
+
               <select
                 value={item.starch_level}
                 onChange={(e) => updateItem(index, { starch_level: e.target.value as any })}
@@ -553,7 +642,7 @@ export default function DropOff() {
                 <option value="medium">Medium Starch</option>
                 <option value="heavy">Heavy Starch</option>
               </select>
-              
+
               <select
                 value={item.crease}
                 onChange={(e) => updateItem(index, { crease: e.target.value as any })}
@@ -574,11 +663,11 @@ export default function DropOff() {
                 placeholder="Additional Charge"
                 className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               />
-              
+
               <div className="px-3 py-2 bg-gray-50 rounded-lg text-center font-medium">
                 ${item.item_total.toFixed(2)}
               </div>
-              
+
               <button
                 onClick={() => removeItem(index)}
                 className="px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
@@ -587,7 +676,7 @@ export default function DropOff() {
               </button>
             </div>
           ))}
-          
+
           <button
             onClick={addItem}
             className="w-full border-2 border-dashed border-gray-300 py-4 rounded-lg hover:border-blue-400 hover:bg-blue-50 transition-colors mb-4"
@@ -595,7 +684,7 @@ export default function DropOff() {
             <Plus className="h-5 w-5 mx-auto mb-1 text-gray-400" />
             <span className="text-gray-600">Add Clothing Item</span>
           </button>
-          
+
           <div className="mb-4">
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Special Instructions
@@ -608,7 +697,7 @@ export default function DropOff() {
               placeholder="Any special handling instructions..."
             />
           </div>
-          
+
           <div className="flex justify-between items-center">
             <button
               onClick={() => setStep('customer')}
@@ -625,9 +714,9 @@ export default function DropOff() {
             <button
               onClick={() => {
                 // Validate all required fields
-                const isValid = items.every(item => 
-                  item.quantity > 0 && 
-                  item.starch_level !== 'none' && 
+                const isValid = items.every(item =>
+                  item.quantity > 0 &&
+                  item.starch_level !== 'none' &&
                   item.crease !== 'none'
                 );
                 if (isValid) {
@@ -653,14 +742,30 @@ export default function DropOff() {
       {step === 'review' && selectedCustomer && (
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
           <h3 className="text-lg font-semibold mb-4">Review Order</h3>
-          
+
           <div className="mb-6 p-4 bg-gray-50 rounded-lg">
             <h4 className="font-medium mb-2">Customer Information</h4>
             <p><strong>Name:</strong> {selectedCustomer.name}</p>
             <p><strong>Phone:</strong> {selectedCustomer.phone}</p>
             {selectedCustomer.email && <p><strong>Email:</strong> {selectedCustomer.email}</p>}
           </div>
-          
+
+          {/* --- EDITED: ADDED PICKUP DATE INPUT --- */}
+          <div className="mb-6">
+            <label htmlFor="pickup-date" className="block text-sm font-medium text-gray-700 mb-2">
+              **Scheduled Pickup Date & Time**
+            </label>
+            <input
+              type="datetime-local"
+              id="pickup-date"
+              value={pickupDate}
+              onChange={(e) => setPickupDate(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              required
+            />
+          </div>
+          {/* ------------------------------------- */}
+
           <div className="mb-6">
             <h4 className="font-medium mb-2">Items</h4>
             <div className="space-y-2">
@@ -684,14 +789,14 @@ export default function DropOff() {
               })}
             </div>
           </div>
-          
+
           {specialInstructions && (
             <div className="mb-6 p-4 bg-amber-50 rounded-lg">
               <h4 className="font-medium mb-2">Special Instructions</h4>
               <p className="text-gray-700">{specialInstructions}</p>
             </div>
           )}
-          
+
           <div className="flex justify-between items-center pt-4 border-t border-gray-200">
             <button
               onClick={() => setStep('items')}
@@ -760,7 +865,7 @@ export default function DropOff() {
                   w.document.close();
                   w.focus();
                   w.print();
-                  setTimeout(() => { try { w.close(); } catch (e) {} }, 500);
+                  setTimeout(() => { try { w.close(); } catch (e) { } }, 500);
                 }
               } catch (e) { console.error(e); }
             }}

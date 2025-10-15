@@ -339,8 +339,8 @@ def find_ticket(ticket_id: str, db: Session = Depends(get_db)):
         return {"error": str(e)}
 
 # Make sure this route comes after more specific routes like /search
-@app.get("/api/tickets/{id}")
-async def get_ticket(id: int, db: Session = Depends(get_db)):
+@app.get("/api/ticketsn/{id}")
+async def get_ticket(id: int, db: Session = Depends(get_db), current_user: str = Depends(verify_token)):
     try:
         # First check if ticket exists
         result = db.execute(
@@ -364,6 +364,7 @@ async def get_ticket(id: int, db: Session = Depends(get_db)):
         if not result:
             raise HTTPException(status_code=404, detail="Ticket not found")
         
+        # MAPPING: pickup_date is at index 7. We use isoformat() for JSON serialization.
         ticket = {
             "id": result[0],
             "ticket_number": result[1],
@@ -372,8 +373,8 @@ async def get_ticket(id: int, db: Session = Depends(get_db)):
             "status": result[4],
             "rack_number": result[5],
             "special_instructions": result[6],
-            "pickup_date": result[7],
-            "created_at": result[8],
+            "pickup_date": result[7].isoformat() if result[7] else None, # <-- NEW DETAIL
+            "created_at": result[8].isoformat(),
             "customer_name": result[9],
             "customer_phone": result[10],
             "customer_address": result[11],
@@ -383,7 +384,10 @@ async def get_ticket(id: int, db: Session = Depends(get_db)):
         # Get ticket items
         items_result = db.execute(
             text("""
-                SELECT ti.*, ct.name as clothing_name
+                SELECT 
+                    ti.id, ti.ticket_id, ti.clothing_type_id, ti.quantity, 
+                    ti.starch_level, ti.crease, ti.item_total, ct.name as clothing_name,
+                    ti.plant_price, ti.margin -- <-- NEW DETAILS IN SELECT
                 FROM ticket_items ti
                 JOIN clothing_types ct ON ti.clothing_type_id = ct.id
                 WHERE ti.ticket_id = :ticket_id
@@ -393,6 +397,7 @@ async def get_ticket(id: int, db: Session = Depends(get_db)):
         
         items = []
         for row in items_result:
+            # MAPPING: plant_price is at index 8, margin is at index 9
             items.append({
                 "id": row[0],
                 "ticket_id": row[1],
@@ -401,15 +406,20 @@ async def get_ticket(id: int, db: Session = Depends(get_db)):
                 "starch_level": row[4],
                 "crease": row[5],
                 "item_total": float(row[6]),
-                "clothing_name": row[7]
+                "clothing_name": row[7],
+                "plant_price": float(row[8]), # <-- NEW DETAIL
+                "margin": float(row[9])      # <-- NEW DETAIL
             })
         
+        # Return the combined ticket and items data
         return {**ticket, "items": items}
     except HTTPException:
         raise
     except Exception as e:
+        print(f"Error in get_ticket: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
+    
+    
 @app.get("/api/tickets/_search")  # Changed to _search to avoid conflict with {id} route
 async def search_tickets(query: str, db: Session = Depends(get_db)):
     try:

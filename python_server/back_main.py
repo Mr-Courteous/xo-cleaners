@@ -411,7 +411,7 @@ def create_ticket(ticket: TicketCreate, db: Session = Depends(get_db)):
 @app.get("/api/tickets/{id}")
 def get_ticket(id: int, db: Session = Depends(get_db)):
     try:
-        # First check if ticket exists
+        # First check if ticket exists (Query 1)
         result = db.execute(
             text("""
                 SELECT 
@@ -449,7 +449,7 @@ def get_ticket(id: int, db: Session = Depends(get_db)):
             "rack_display": result[12]
         }
         
-        # Get ticket items
+        # Get ticket items (Query 2)
         items_result = db.execute(
             text("""
                 SELECT ti.*, ct.name as clothing_name
@@ -466,172 +466,21 @@ def get_ticket(id: int, db: Session = Depends(get_db)):
                 "id": row[0],
                 "ticket_id": row[1],
                 "clothing_type_id": row[2],
-                "quantity": row[3],
+                "quantity": row[3],          # <-- Quantity of items
                 "starch_level": row[4],
                 "crease": row[5],
                 "item_total": float(row[6]),
-                "clothing_name": row[7]
+                "clothing_name": row[7]       # <-- Name of the clothing item
             })
         
+        # Combine ticket details and item list before returning
         return {**ticket, "items": items}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.put("/api/tickets/{ticket_id}/rack")
-async def assign_rack(ticket_id: str, rack: RackAssignment):
-    """
-    Assign or reassign a rack to a ticket.
-    If the ticket is already assigned to a different rack, 
-    the old rack will be freed before assigning the new one.
-    """
-    try:
-        print(f"Attempting to assign rack {rack.rack_number} to ticket {ticket_id}")
         
-        # Create a new session for reading ticket data
-        read_session = SessionLocal()
-        try:
-            # Try to find by ticket number in different formats
-            ticket = read_session.execute(
-                text("""
-                    SELECT t.*, c.name as customer_name, r.number as current_rack
-                    FROM tickets t 
-                    JOIN customers c ON t.customer_id = c.id
-                    LEFT JOIN racks r ON t.rack_number = r.number
-                    WHERE t.ticket_number = :ticket_number
-                       OR t.ticket_number = :dc_ticket_number
-                       OR t.ticket_number LIKE :ticket_number_pattern
-                       OR CAST(t.id AS TEXT) = :ticket_number
-                """),
-                {
-                    "ticket_number": ticket_id,
-                    "dc_ticket_number": f"DC{ticket_id}",
-                    "ticket_number_pattern": f"%{ticket_id}"
-                }
-            ).fetchone()
-            
-            if not ticket:
-                raise HTTPException(status_code=404, detail=f"Ticket not found: {ticket_id}")
-
-            # Check if ticket is already assigned to this rack
-            current_rack = ticket[5]  # rack_number from tickets table
-            if current_rack == rack.rack_number:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Ticket is already assigned to rack #{rack.rack_number}"
-                )
-
-            # Check if new rack exists and is available
-            rack_result = read_session.execute(
-                text("""
-                    SELECT r.*, t.ticket_number as occupied_by
-                    FROM racks r
-                    LEFT JOIN tickets t ON r.ticket_id = t.id
-                    WHERE r.number = :number
-                """),
-                {"number": rack.rack_number}
-            ).fetchone()
-
-            if not rack_result:
-                raise HTTPException(status_code=404, detail="Rack not found")
-
-            if rack_result[2]:  # is_occupied
-                occupied_by = rack_result[-1]  # last column from our SELECT
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Rack #{rack.rack_number} is already occupied by ticket {occupied_by}"
-                )
-
-        finally:
-            read_session.close()
-
-        # Create a new session for the update transaction
-        update_session = SessionLocal()
-        try:
-            # Perform all updates in a single transaction
-            with update_session.begin():
-                # If ticket is already assigned to a different rack, free it first
-                if current_rack is not None:
-                    print(f"Freeing up current rack #{current_rack}")
-                    update_session.execute(
-                        text("""
-                            UPDATE racks 
-                            SET is_occupied = FALSE, 
-                                ticket_id = NULL, 
-                                updated_at = CURRENT_TIMESTAMP 
-                            WHERE number = :number
-                        """),
-                        {"number": current_rack}
-                    )
-
-                # Update ticket with new rack number
-                update_session.execute(
-                    text("""
-                        UPDATE tickets 
-                        SET rack_number = :rack_number, 
-                            status = 'ready' 
-                        WHERE id = :id
-                    """),
-                    {"rack_number": rack.rack_number, "id": ticket[0]}
-                )
-
-                # Update new rack
-                update_session.execute(
-                    text("""
-                        UPDATE racks 
-                        SET is_occupied = TRUE, 
-                            ticket_id = :ticket_id, 
-                            updated_at = CURRENT_TIMESTAMP 
-                        WHERE number = :number
-                    """),
-                    {"ticket_id": ticket[0], "number": rack.rack_number}
-                )
-
-                # Get updated ticket details within the same transaction
-                result = update_session.execute(
-                    text("""
-                        SELECT t.*, c.name as customer_name
-                        FROM tickets t
-                        JOIN customers c ON t.customer_id = c.id
-                        WHERE t.id = :id
-                    """),
-                    {"id": ticket[0]}
-                ).fetchone()
-
-                success_message = (
-                    f"Ticket reassigned from Rack #{current_rack} to Rack #{rack.rack_number}"
-                    if current_rack is not None else
-                    f"Ticket assigned to Rack #{rack.rack_number}"
-                )
-
-                return {
-                    "success": True,
-                    "message": success_message,
-                    "ticket": {
-                        "id": result[0],
-                        "ticket_number": result[1],
-                        "status": result[4],
-                        "rack_number": result[5],
-                        "customer_name": result[9]
-                    }
-                }
-        except Exception as e:
-            print(f"Error in update transaction: {str(e)}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to assign rack: {str(e)}"
-            )
-        finally:
-            update_session.close()
-            
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Outer error in rack assignment: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-
-
+    
 @app.put("/api/tickets/{ticket_id}/pickup")
 def process_pickup(ticket_id: int):
     try:
