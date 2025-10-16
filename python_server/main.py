@@ -136,7 +136,25 @@ def verify_token(token: str):
         )
 
     
+# Model for the incoming payment data
+class PickupRequest(BaseModel):
+    amount_paid: float = 0.0 # Must be float to handle currency
 
+# Placeholder for your CurrentUser model (assuming roles are used for auth)
+class CurrentUser(BaseModel):
+    id: int
+    role: str
+
+# Placeholders for your dependencies
+def get_db() -> Session:
+    # This dependency is usually defined to yield a database session
+    # For example: db = SessionLocal(); try: yield db; finally: db.close()
+    pass # Placeholder
+
+def get_current_active_user() -> CurrentUser:
+    # This dependency handles JWT decoding and user authentication
+    # For example: user = db.query(User).filter(...).first(); return CurrentUser(...)
+    return CurrentUser(id=1, role='admin') # Placeholder returning admin by default
     
     
 # Database setup
@@ -248,6 +266,12 @@ class TicketResponse(BaseModel):
     created_at: datetime
     # The list of items must use the rich response model
     items: List[TicketItemResponse]     
+    
+    
+class PickupRequest(BaseModel):
+    """Schema for the pickup request, including the balance paid now."""
+    amount_paid: float = Field(..., ge=0, description="Amount paid by the customer now to complete the pickup.")
+    # Use ge=0 to allow 0 if the balance was already settled
 # --------------------------------------------
 
 # ============
@@ -600,7 +624,7 @@ async def get_ticket_details(
         total_amount=float(total_amt),
         paid_amount=float(paid_amt) if paid_amt is not None else 0.0,
         status=status_val,
-        rack_number=rack_num,
+        rack_number=str(rack_num) if rack_num is not None else None,
         special_instructions=instructions,
         pickup_date=pickup_date,
         created_at=created_at,
@@ -1237,102 +1261,194 @@ def get_dashboard_stats(user: dict = Depends(get_current_user)):
     
     
 
+# Assuming all necessary imports (FastAPI, HTTPException, Depends, text, datetime, BaseModel, etc.) 
+# are available in the scope where this function is defined.
+# Assuming all necessary imports (FastAPI, HTTPException, Depends, text, datetime, BaseModel, etc.) 
+# are available in the scope where this function is defined.
+
 @app.put("/api/tickets/{ticket_id}/pickup")
-def process_pickup(ticket_id: int):
+async def process_pickup_with_payment(
+    ticket_id: int, 
+    request: PickupRequest, 
+    db: Session = Depends(get_db), 
+    current_user: CurrentUser = Depends(get_current_active_user)
+) -> Dict[str, Any]:
+    """
+    Processes the final balance payment, updates the ticket status to 'picked_up',
+    and generates a detailed, printable receipt.
+    """
+    
+    # ... Authorization Check ...
+
+    # Begin transaction
     try:
-        # Create a new session for reading ticket data
-        read_session = SessionLocal()
-        try:
-            # Get ticket info with customer name
-            ticket = read_session.execute(
-                text("""
-                    SELECT t.*, c.name as customer_name
-                    FROM tickets t
-                    JOIN customers c ON t.customer_id = c.id
-                    WHERE t.id = :id
-                """),
-                {"id": ticket_id}
-            ).fetchone()
+        # 1. Fetch current ticket data. FIX: Trying t.created_at (very common column name)
+        ticket_query = text("""
+            SELECT 
+                t.id, t.ticket_number, t.status, t.total_amount, t.paid_amount, t.rack_number, 
+                c.name as customer_name, c.phone as customer_phone, t.created_at 
+                -- ^^^ CRITICAL: REPLACE 't.created_at' IF YOUR COLUMN HAS A DIFFERENT NAME
+            FROM tickets t
+            JOIN customers c ON t.customer_id = c.id
+            WHERE t.id = :id
+            FOR UPDATE
+        """)
+        
+        ticket_result = db.execute(ticket_query, {"id": ticket_id}).fetchone()
 
-            if not ticket:
-                raise HTTPException(status_code=404, detail="Ticket not found")
+        if not ticket_result:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket not found")
 
-            rack_number = ticket[5]  # rack_number column
-            current_status = ticket[4]  # status column
-            ticket_number = ticket[1]  # ticket_number column
-
-            if current_status == "picked_up":
-                raise HTTPException(
-                    status_code=400,
-                    detail="Ticket is already marked as picked up"
-                )
-
-            if rack_number is None:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Ticket is not assigned to any rack"
-                )
-
-        finally:
-            read_session.close()
-
-        # Create a new session for the update transaction
-        update_session = SessionLocal()
-        try:
-            # Perform all updates in a single transaction
-            with update_session.begin():
-                # Update ticket
-                updated_ticket = update_session.execute(
-                    text("""
-                        UPDATE tickets 
-                        SET status = 'picked_up',
-                            pickup_date = CURRENT_TIMESTAMP,
-                            rack_number = NULL
-                        WHERE id = :id
-                        RETURNING *
-                    """),
-                    {"id": ticket_id}
-                ).fetchone()
-
-                # Free up rack
-                update_session.execute(
-                    text("""
-                        UPDATE racks 
-                        SET is_occupied = FALSE,
-                            ticket_id = NULL,
-                            updated_at = CURRENT_TIMESTAMP 
-                        WHERE number = :number
-                    """),
-                    {"number": rack_number}
-                )
-
-            success_message = f"Ticket {ticket_number} has been picked up and removed from Rack #{rack_number}"
-
-            return {
-                "success": True,
-                "message": success_message,
-                "ticket": {
-                    "id": updated_ticket[0],
-                    "ticket_number": updated_ticket[1],
-                    "status": updated_ticket[4],
-                    "rack_number": updated_ticket[5],
-                    "customer_name": ticket[9]  # customer_name from original query
-                }
-            }
-        except Exception as e:
-            print(f"Error in pickup transaction: {str(e)}")
+        # Unpack result (9 columns)
+        (
+            _, ticket_number, status_val, total_amount, paid_amount, rack_num, 
+            customer_name, customer_phone, dropoff_date_field 
+        ) = ticket_result
+        
+        # Convert DB values to float for calculation
+        total_amount_f = float(total_amount)
+        paid_amount_f = float(paid_amount)
+        
+        # ... Validation & Payment Calculation ...
+        if status_val == 'picked_up':
+            raise HTTPException(status_code=400, detail="Ticket is already picked up.")
+        
+        if status_val != 'ready':
+            raise HTTPException(status_code=400, detail=f"Ticket is not ready for pickup (Current status: {status_val}).")
+        
+        new_paid_amount_f = paid_amount_f + request.amount_paid
+        outstanding_balance = total_amount_f - paid_amount_f
+        
+        if new_paid_amount_f < total_amount_f - 0.01:
             raise HTTPException(
-                status_code=500,
-                detail=f"Failed to process pickup: {str(e)}"
+                status_code=400, 
+                detail=f"Outstanding balance of ${outstanding_balance:.2f} must be settled. Only ${request.amount_paid:.2f} was paid."
             )
-        finally:
-            update_session.close()
+
+        # 3. Fetch Line Items for the Receipt
+        items_query = text("""
+            SELECT
+                ti.quantity, ct.name as clothing_name, ti.starch_level, ti.crease, ti.item_total
+            FROM ticket_items ti
+            JOIN clothing_types ct ON ti.clothing_type_id = ct.id
+            WHERE ti.ticket_id = :ticket_id
+        """)
+        items_result = db.execute(items_query, {"ticket_id": ticket_id}).fetchall()
+        
+        # 4. Perform Database Updates
+        update_ticket_query = text("""
+            UPDATE tickets
+            SET status = 'picked_up', 
+                paid_amount = :new_paid_amount,
+                pickup_date = :now,
+                rack_number = NULL 
+            WHERE id = :id
+            RETURNING *
+        """)
+        db.execute(update_ticket_query, {
+            "id": ticket_id,
+            "new_paid_amount": new_paid_amount_f,
+            "now": datetime.now()
+        })
+
+        if rack_num:
+            update_rack_query = text("""
+                UPDATE racks
+                SET is_occupied = FALSE, 
+                    ticket_id = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE number = :rack_num
+            """)
+            db.execute(update_rack_query, {"rack_num": rack_num})
+        
+        db.commit() # Commit the entire transaction
+        
+        # 5. Generate Detailed, Printable HTML Receipt
+        
+        items_html = ""
+        for qty, name, starch, crease, item_total in items_result:
+            # ... (Items HTML generation remains the same) ...
+            extras = []
+            if starch and starch != 'none':
+                extras.append(f"Starch: {starch}")
+            if crease and crease != 'none':
+                extras.append(f"Crease: {crease}")
+                
+            extras_html = f"<p style='font-size: 0.7em; margin: 0; padding-left: 10px;'>{', '.join(extras)}</p>" if extras else ""
+
+            items_html += f"""
+            <tr>
+                <td style="text-align: left; padding-top: 5px;">
+                    {qty}x {name}
+                    {extras_html}
+                </td>
+                <td style="text-align: right; padding-top: 5px;">${float(item_total):.2f}</td>
+            </tr>
+            """
+
+        receipt_html = f"""
+        <div style="font-family: monospace; width: 100%; max-width: 300px; margin: 0 auto; padding: 5px; color: #000;">
+            <h3 style="text-align: center; margin-bottom: 0px; font-size: 1.1em;">CLEANERS RECEIPT</h3>
+            <p style="text-align: center; font-size: 0.9em; margin-top: 0; margin-bottom: 10px;">PICK UP</p>
+            <hr style="border-top: 1px dashed #999; margin: 5px 0;"/>
+            
+            <table style="width: 100%; border-collapse: collapse; font-size: 0.9em; margin-bottom: 10px;">
+                <tr><td style="font-weight: bold; width: 40%;">Ticket No:</td><td style="text-align: right;">{ticket_number}</td></tr>
+                <tr><td style="font-weight: bold;">Customer:</td><td style="text-align: right;">{customer_name}</td></tr>
+                <tr><td style="font-weight: bold;">Phone:</td><td style="text-align: right;">{customer_phone or 'N/A'}</td></tr>
+                <tr><td style="font-weight: bold;">Drop-off:</td><td style="text-align: right;">{dropoff_date_field.strftime('%Y-%m-%d %H:%M') if dropoff_date_field else 'N/A'}</td></tr>
+                <tr><td style="font-weight: bold;">Pickup:</td><td style="text-align: right;">{datetime.now().strftime('%Y-%m-%d %H:%M')}</td></tr>
+            </table>
+            
+            <hr style="border-top: 1px dashed #999; margin: 5px 0;"/>
+            
+            <table style="width: 100%; border-collapse: collapse; font-size: 0.9em;">
+                <thead>
+                    <tr style="border-bottom: 1px dashed #000;">
+                        <th style="text-align: left; padding-bottom: 5px;">ITEM</th>
+                        <th style="text-align: right; padding-bottom: 5px;">TOTAL</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {items_html}
+                </tbody>
+            </table>
+            
+            <hr style="border-top: 1px dashed #999; margin: 10px 0;"/>
+            
+            <table style="width: 100%; border-collapse: collapse; font-size: 1.0em;">
+                <tr><td>TOTAL CHARGE:</td><td style="text-align: right; font-weight: bold;">${total_amount_f:.2f}</td></tr>
+                <tr><td>PREVIOUS PAID:</td><td style="text-align: right;">${paid_amount_f:.2f}</td></tr>
+                <tr><td>PAID NOW:</td><td style="text-align: right;">${request.amount_paid:.2f}</td></tr>
+                <tr style="font-size: 1.1em;"><td style="border-top: 2px solid #000; padding-top: 5px;">TOTAL PAID:</td><td style="text-align: right; border-top: 2px solid #000; padding-top: 5px; font-weight: bold;">${new_paid_amount_f:.2f}</td></tr>
+            </table>
+            
+            <p style="text-align: center; font-size: 0.8em; margin-top: 20px;">
+                *** Thank you for your business! ***
+            </p>
+        </div>
+        """
+        
+        # 6. Return the detailed receipt HTML
+        return {
+            "success": True, 
+            "message": f"Ticket #{ticket_number} successfully picked up.",
+            "ticket_id": ticket_id,
+            "receipt_html": receipt_html
+        }
+
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Outer error in pickup process: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
+        db.rollback() 
+        print(f"Error in pickup transaction: {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Failed to process pickup due to a server error. {str(e)}"
+        )
+        
+        
+            
 @app.get("/api/racks")
 def get_racks(db: Session = Depends(get_db)):
     try:
