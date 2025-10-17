@@ -1,12 +1,43 @@
 import React from 'react';
-import { Package, Clock, CheckCircle, MapPin, Users } from 'lucide-react';
+import { Package, Clock, CheckCircle, MapPin, Users, User } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
-import { DashboardStats } from '../types';
+
+// ⚠️ ASSUMED: Define or import the DashboardStats type from '../types'.
+// Ensure this type reflects the backend change to include admin_info.
+// Example content for '../types.ts':
+/*
+interface AdminInfo {
+  username: string;
+  email: string;
+}
+export interface DashboardStats {
+  total_tickets: number;
+  pending_pickup: number;
+  in_process: number;
+  occupied_racks: number;
+  available_racks: number;
+  admin_info: AdminInfo; // 🎯 New field
+}
+*/
+interface AdminInfo {
+  username: string;
+  email: string;
+}
+
+interface DashboardStats {
+  total_tickets: number;
+  pending_pickup: number;
+  in_process: number;
+  occupied_racks: number;
+  available_racks: number;
+  admin_info: AdminInfo;
+}
 
 export default function Dashboard() {
+  // 🎯 Single API call to fetch both stats and user info
   const { data: stats, loading } = useApi<DashboardStats>('/dashboard/stats');
-
-  if (loading || !stats) {
+  
+  if (loading || !stats) { 
     return (
       <div className="animate-pulse">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
@@ -17,6 +48,9 @@ export default function Dashboard() {
       </div>
     );
   }
+
+  // Destructure admin_info for cleaner access
+  const { admin_info } = stats; 
 
   const statCards = [
     {
@@ -58,11 +92,26 @@ export default function Dashboard() {
 
   return (
     <div>
-      <div className="mb-8">
-        <h2 className="text-2xl font-bold text-gray-900">Dashboard Overview</h2>
-        <p className="text-gray-600">Monitor your dry cleaning operations</p>
+      {/* Header section with user info */}
+      <div className="mb-8 flex justify-between items-end">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Dashboard Overview</h2>
+          <p className="text-gray-600">Monitor your dry cleaning operations</p>
+        </div>
+        
+        {/* 🎯 User Info Display */}
+        {/* {admin_info && (
+          <div className="p-3 bg-white rounded-lg shadow-sm border border-gray-200 flex items-center space-x-3">
+            <User className="h-5 w-5 text-blue-600" />
+            <div className="text-right">
+              <p className="text-sm font-medium text-gray-800">{admin_info.username}</p>
+              <p className="text-xs text-gray-500">{admin_info.email}</p>
+            </div>
+          </div>
+        )} */}
       </div>
       
+      {/* Stat Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
         {statCards.map((card) => {
           const Icon = card.icon;
@@ -82,6 +131,7 @@ export default function Dashboard() {
         })}
       </div>
       
+      {/* Quick Actions */}
       <div className="mt-8 bg-white p-6 rounded-lg shadow-sm border border-gray-200">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

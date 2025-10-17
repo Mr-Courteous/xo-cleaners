@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, User } from 'lucide-react';
+import { Plus, Minus, X, User } from 'lucide-react';
 import { apiCall, useApi } from '../hooks/useApi';
 import Modal from './Modal';
 
@@ -104,8 +104,22 @@ export default function UsersManagement() {
           <p className="text-sm text-gray-500">Create and manage users</p>
         </div>
         <div>
-          <button onClick={() => setShowForm(s => !s)} className="bg-green-600 text-white px-4 py-2 rounded">
-            <Plus className="inline-block mr-2" /> {showForm ? 'Close' : 'New User'}
+          <button
+            onClick={() => setShowForm(s => !s)}
+            className={`px-4 py-2 rounded flex items-center transition-colors ${showForm
+                ? 'bg-red-600 hover:bg-red-700 text-white'
+                : 'bg-green-600 hover:bg-green-700 text-white'
+              }`}          >
+            {showForm ? (
+              <>
+                {/* ➡️ Changed Minus to X */}
+                <X className="inline-block mr-2 bg-red" /> Cancel
+              </>
+            ) : (
+              <>
+                <Plus className="inline-block mr-2" /> New User
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -114,10 +128,10 @@ export default function UsersManagement() {
         <div className="bg-white p-6 rounded shadow mb-6">
           {localError && <div className="text-red-600 mb-2">{localError}</div>}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <input placeholder="username" value={form.username} onChange={e => setForm({...form, username: e.target.value})} className="p-2 border rounded" />
-            <input placeholder="password" value={form.password} type="password" onChange={e => setForm({...form, password: e.target.value})} className="p-2 border rounded" />
-            <input placeholder="email" value={form.email} onChange={e => setForm({...form, email: e.target.value})} className="p-2 border rounded" />
-            <select value={form.role} onChange={e => setForm({...form, role: e.target.value})} className="p-2 border rounded">
+            <input placeholder="username" value={form.username} onChange={e => setForm({ ...form, username: e.target.value })} className="p-2 border rounded" />
+            <input placeholder="password" value={form.password} type="password" onChange={e => setForm({ ...form, password: e.target.value })} className="p-2 border rounded" />
+            <input placeholder="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} className="p-2 border rounded" />
+            <select value={form.role} onChange={e => setForm({ ...form, role: e.target.value })} className="p-2 border rounded">
               <option value="user">User</option>
               <option value="admin">Admin</option>
             </select>
@@ -174,7 +188,7 @@ export default function UsersManagement() {
             <div className="space-y-3">
               <div>
                 <label className="block text-sm font-medium text-gray-700">Username</label>
-                <input value={editingUser.username} onChange={e => setEditingUser({...editingUser, username: e.target.value})} className="mt-1 p-2 border rounded w-full" />
+                <input value={editingUser.username} onChange={e => setEditingUser({ ...editingUser, username: e.target.value })} className="mt-1 p-2 border rounded w-full" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">Password (leave blank to keep)</label>
@@ -182,11 +196,11 @@ export default function UsersManagement() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">Email</label>
-                <input value={editingUser.email} onChange={e => setEditingUser({...editingUser, email: e.target.value})} className="mt-1 p-2 border rounded w-full" />
+                <input value={editingUser.email} onChange={e => setEditingUser({ ...editingUser, email: e.target.value })} className="mt-1 p-2 border rounded w-full" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">Role</label>
-                <select value={editingUser.role} onChange={e => setEditingUser({...editingUser, role: e.target.value})} className="mt-1 p-2 border rounded w-full">
+                <select value={editingUser.role} onChange={e => setEditingUser({ ...editingUser, role: e.target.value })} className="mt-1 p-2 border rounded w-full">
                   <option value="user">User</option>
                   <option value="admin">Admin</option>
                 </select>

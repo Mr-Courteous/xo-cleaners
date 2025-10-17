@@ -77,10 +77,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# ======================
+# DB Dependency
+# ======================
+# Dependency to get a new DB session for each request
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 # ======================
 # JWT HELPERS
 # ======================
-def get_current_user(token: str = Depends(oauth2_scheme)):
+def get_current_user(db: Session = Depends(get_db), token: str = Depends(oauth2_scheme)): 
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
@@ -91,13 +102,21 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
                 detail="Invalid authentication credentials",
                 headers={"WWW-Authenticate": "Bearer"},
             )
+        
+        # 🎯 Fetch full user details from DB, including email
+        user_details = db.execute(text("SELECT username, email, role FROM users WHERE username = :u"), {"u": username}).fetchone()
+        
+        if not user_details:
+             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found in database")
+             
         # Debug log: show decoded token (dev only)
         try:
-            print(f"[DEBUG] Decoded JWT payload for user={username}: {payload}")
+            print(f"[DEBUG] Fetched user details: {user_details}")
         except Exception:
             pass
-        # Return both username and role (if present in token)
-        return {"username": username, "role": role}
+            
+        # Return all details, assuming index 1 is 'email' (or an empty string if NULL)
+        return {"username": user_details[0], "email": user_details[1] or "", "role": user_details[2]}
     except jwt.ExpiredSignatureError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -223,7 +242,7 @@ def get_db():
         yield db
     finally:
         db.close()
-
+        
 
 # --- NEW SCHEMAS FOR COST/MARGIN EDITING ---
 class TicketItemEdit(BaseModel):
@@ -337,7 +356,12 @@ def startup_tasks():
         if not res:
             print('Seeding admin user')
             pw_hash = hash_password(ADMIN_PASSWORD)
-            db.execute(text("INSERT INTO users (username, password_hash, role) VALUES (:u, :p, 'admin')"), {"u": ADMIN_USERNAME, "p": pw_hash})
+            # 🎯 Added email to the insert query
+            default_email = f"{ADMIN_USERNAME}@cleanpress.com"
+            db.execute(
+                text("INSERT INTO users (username, password_hash, role, email) VALUES (:u, :p, 'admin', :e)"), 
+                {"u": ADMIN_USERNAME, "p": pw_hash, "e": default_email}
+            )
             db.commit()
     except Exception as e:
         print(f"Admin seed error: {e}")
@@ -692,10 +716,12 @@ async def list_tickets(db: Session = Depends(get_db)):
                 id=t_id, ticket_number=t_num, customer_id=c_id, 
                 customer_name=c_name, customer_phone=c_phone, 
                 total_amount=float(total_amt), paid_amount=float(paid_amt), # Include paid_amount
-                status=status_val, rack_number=rack_num, 
+                status=status_val, 
+                # rack_number=rack_num, 
                 special_instructions=instructions, pickup_date=pickup_date, 
                 created_at=created_at, 
-                items=ticket_items_map.get(t_id, [])
+                items=ticket_items_map.get(t_id, []),
+                rack_number=str(rack_num) if rack_num is not None else None, # ✅ Convert to string if not None
             )
         )
         
@@ -1052,13 +1078,30 @@ class UpdateUserRequest(BaseModel):
 def create_user(req: CreateUserRequest, admin: dict = Depends(require_admin)):
     try:
         db = SessionLocal()
-        # Check uniqueness
-        existing = db.execute(text('SELECT id FROM users WHERE username = :u'), {'u': req.username}).fetchone()
-        if existing:
-            raise HTTPException(status_code=400, detail='User already exists')
+        
+        # 1. Check for existing username
+        existing_username = db.execute(
+            text('SELECT id FROM users WHERE username = :u'), 
+            {'u': req.username}
+        ).fetchone()
+        if existing_username:
+            raise HTTPException(status_code=400, detail='User with this username already exists')
+        
+        # 2. Check for existing email (NEW Logic)
+        if req.email:
+            existing_email = db.execute(
+                text('SELECT id FROM users WHERE email = :e'), 
+                {'e': req.email}
+            ).fetchone()
+            if existing_email:
+                raise HTTPException(status_code=400, detail='User with this email address already exists')
+        
+        # Proceed with creation
         pw_hash = hash_password(req.password)
-        res = db.execute(text('INSERT INTO users (username, password_hash, email, role) VALUES (:u, :p, :e, :r) RETURNING id, username, email, role, created_at'),
-                         {'u': req.username, 'p': pw_hash, 'e': req.email or '', 'r': req.role or 'user'})
+        res = db.execute(
+            text('INSERT INTO users (username, password_hash, email, role) VALUES (:u, :p, :e, :r) RETURNING id, username, email, role, created_at'),
+            {'u': req.username, 'p': pw_hash, 'e': req.email or '', 'r': req.role or 'user'}
+        )
         db.commit()
         row = res.fetchone()
         return {'id': row[0], 'username': row[1], 'email': row[2], 'role': row[3], 'created_at': row[4]}
@@ -1067,8 +1110,8 @@ def create_user(req: CreateUserRequest, admin: dict = Depends(require_admin)):
             db.close()
         except:
             pass
-
-
+        
+        
 @app.delete('/api/users/{user_id}')
 def delete_user(user_id: int, admin: dict = Depends(require_admin)):
     """Delete a user by id. Admin-only. Prevent deleting the last remaining admin."""
@@ -1210,53 +1253,61 @@ def update_ticket(ticket_id: int, req: UpdateTicketRequest, admin: dict = Depend
 
 
 
-@app.get("/api/dashboard/stats")
-def get_dashboard_stats(user: dict = Depends(get_current_user)):
-    try:
-        db = SessionLocal()
-        try:
-            stats = {}
-
-            # same queries as you already have
-            result = db.execute(text("SELECT COUNT(*) FROM tickets")).scalar()
-            stats["total_tickets"] = result or 0
-
-            result = db.execute(text("SELECT COUNT(*) FROM tickets WHERE status = 'ready'")).scalar()
-            stats["pending_pickup"] = result or 0
-
-            result = db.execute(text("SELECT COUNT(*) FROM tickets WHERE status = 'in_process'")).scalar()
-            stats["in_process"] = result or 0
-
-            result = db.execute(text("""
-                SELECT COUNT(*) FROM racks r
-                WHERE r.is_occupied = TRUE
-                AND EXISTS (
-                    SELECT 1 FROM tickets t
-                    WHERE t.rack_number = r.number
-                    AND t.status != 'picked_up'
-                )
-            """)).scalar()
-            stats["occupied_racks"] = result or 0
-
-            result = db.execute(text("""
-                SELECT COUNT(*) FROM racks r
-                WHERE r.is_occupied = FALSE
-                OR NOT EXISTS (
-                    SELECT 1 FROM tickets t
-                    WHERE t.rack_number = r.number
-                    AND t.status != 'picked_up'
-                )
-            """)).scalar()
-            stats["available_racks"] = result or 0
-
-            return stats
-
-        finally:
-            db.close()
-    except Exception as e:
-        print(f"Dashboard stats error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+@app.get("/api/dashboard/stats", tags=["Dashboard"])
+async def get_dashboard_stats(
+    db: Session = Depends(get_db), 
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Returns core dashboard statistics and logged-in admin details.
+    """
     
+    # 1. Dashboard Stats Logic 
+    try:
+        # Total Tickets (all)
+        total_tickets = db.execute(text("SELECT COUNT(id) FROM tickets")).scalar()
+        
+        # Tickets Ready for Pickup (status = 'ready_for_pickup')
+        pending_pickup = db.execute(text("SELECT COUNT(id) FROM tickets WHERE status = 'ready_for_pickup'")).scalar()
+        
+        # Tickets In Process (status = 'in_process')
+        in_process = db.execute(text("SELECT COUNT(id) FROM tickets WHERE status = 'in_process'")).scalar()
+        
+        # Occupied Racks (racks with at least one ticket not 'picked_up')
+        # This query counts distinct rack numbers that are currently holding items
+        occupied_racks = db.execute(
+            text("SELECT COUNT(DISTINCT rack_number) FROM tickets WHERE rack_number IS NOT NULL AND status != 'picked_up'")
+        ).scalar()
+
+        # Total Racks (Assumes a table named 'racks' exists for configuration)
+        total_racks = db.execute(text("SELECT COUNT(id) FROM racks")).scalar()
+        
+        # Available Racks
+        # Calculate available racks based on the total number of racks minus the occupied ones
+        available_racks = total_racks - occupied_racks if total_racks is not None and occupied_racks is not None else 0
+
+    except Exception as e:
+        print(f"Error fetching dashboard stats: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch dashboard statistics from database",
+        )
+    
+    # 2. Construct the response, including admin_info
+    # The current_user dictionary is provided by the get_current_user dependency 
+    # and already contains 'username' and 'email'.
+    return {
+        "total_tickets": total_tickets or 0,
+        "pending_pickup": pending_pickup or 0,
+        "in_process": in_process or 0,
+        "occupied_racks": occupied_racks or 0,
+        "available_racks": available_racks or 0,
+        # Logged-in admin details
+        "admin_info": {
+            "username": current_user["username"],
+            "email": current_user["email"],
+        },
+    }
     
     
     
