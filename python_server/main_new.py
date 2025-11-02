@@ -689,73 +689,89 @@ def get_available_racks(db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/clothing-types")
-def create_clothing_type(clothing_type: ClothingTypeBase, db: Session = Depends(get_db)):
-    try:
-        result = db.execute(
-            text("""
-                INSERT INTO clothing_types (name, plant_price, margin)
-                VALUES (:name, :plant_price, :margin)
-                RETURNING *
-            """),
-            {
-                "name": clothing_type.name,
-                "plant_price": clothing_type.plant_price,
-                "margin": clothing_type.margin
-            }
-        )
-        db.commit()
-        
-        new_type = result.fetchone()
-        return {
-            "id": new_type[0],
-            "name": new_type[1],
-            "plant_price": float(new_type[2]),
-            "margin": float(new_type[3]),
-            "total_price": float(new_type[4]),
-            "created_at": new_type[5]
-        }
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+@app.post("/api/clothing-types", response_model=ClothingTypeResponse, status_code=status.HTTP_201_CREATED, tags=["Clothing Types"])
+async def create_clothing_type(
+    # The names MUST match the frontend keys, and the types must be Form/File
+    name: str = Form(..., description="Name of the clothing type"),
+    plant_price: float = Form(..., ge=0, description="Cost to the plant"),
+    margin: float = Form(..., ge=0, description="Margin for the shop"),
+    # FIXED: Parameter name changed to 'image_file' to match frontend FormData key
+    image_file: Optional[UploadFile] = File(None, description="Image file for the clothing type"), 
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Creates a new clothing type with optional image upload."""
+    
+    # --- DEBUG LOGGING: Show incoming data ---
+    print(f"\n[DEBUG] --- POST /api/clothing-types START ---")
+    print(f"[DEBUG] Form Data: name='{name}', plant_price='{plant_price}', margin='{margin}'")
+    print(f"[DEBUG] Image File: filename='{image_file.filename if image_file and image_file.filename else 'None'}'")
+    # ----------------------------------------
 
-@app.put("/api/clothing-types/{id}")
-def update_clothing_type(id: int, clothing_type: ClothingTypeBase, db: Session = Depends(get_db)):
+    # 1. Authorization check
+    if not (current_user and current_user.get('role') == 'admin'):
+        print("[DEBUG] Auth Failed: Not admin.")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can create clothing types.")
+        
     try:
-        result = db.execute(
-            text("""
-                UPDATE clothing_types 
-                SET name = :name, plant_price = :plant_price, margin = :margin
-                WHERE id = :id
-                RETURNING *
-            """),
-            {
-                "id": id,
-                "name": clothing_type.name,
-                "plant_price": clothing_type.plant_price,
-                "margin": clothing_type.margin
-            }
-        )
+        # Calculate total price (using decimal for precision)
+        total_price_decimal = decimal.Decimal(str(plant_price)) + decimal.Decimal(str(margin))
+        
+        # 2. Handle image upload if a file is provided
+        image_url = None
+        if image_file and image_file.filename:
+            # Assumes save_uploaded_file is a defined utility function
+            image_url = await save_uploaded_file(image_file) 
+            print(f"[DEBUG] Image saved to URL: {image_url}")
+            
+        # 3. Database insertion
+        insert_query = text("""
+            INSERT INTO clothing_types (name, plant_price, margin, total_price, image_url)
+            VALUES (:name, :plant_price, :margin, :total_price, :image_url)
+            RETURNING id, created_at
+        """)
+        
+        # Execute the query and retrieve the new ID and timestamp
+        result = db.execute(insert_query, {
+            "name": name,
+            "plant_price": decimal.Decimal(str(plant_price)),
+            "margin": decimal.Decimal(str(margin)),
+            "total_price": total_price_decimal,
+            "image_url": image_url
+        }).fetchone()
+        
         db.commit()
         
-        updated_type = result.fetchone()
-        if not updated_type:
-            raise HTTPException(status_code=404, detail="Clothing type not found")
+        if not result:
+            db.rollback()
+            raise HTTPException(status_code=500, detail="Database insertion failed to return new ID.")
             
-        return {
-            "id": updated_type[0],
-            "name": updated_type[1],
-            "plant_price": float(updated_type[2]),
-            "margin": float(updated_type[3]),
-            "total_price": float(updated_type[4]),
-            "created_at": updated_type[5]
-        }
+        (new_id, created_at) = result
+        print(f"[DEBUG] DB Insert Successful for: {name} (ID: {new_id})")
+
+        # 4. Return response
+        return ClothingTypeResponse(
+            id=new_id,
+            name=name,
+            plant_price=plant_price,
+            margin=margin,
+            total_price=float(total_price_decimal), 
+            created_at=created_at,
+            image_url=image_url
+        )
+        
     except HTTPException:
+        db.rollback()
+        # Re-raise HTTPException so FastAPI handles it normally
         raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-
+        # --- DEBUG LOGGING for generic errors ---
+        print(f"[DEBUG] CRITICAL Python Error during clothing type creation: {e}")
+        # ----------------------------------------
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Internal Server Error: {str(e)}")
+    
+    
 @app.delete("/api/clothing-types/{id}")
 def delete_clothing_type(id: int, db: Session = Depends(get_db)):
     try:

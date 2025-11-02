@@ -1,8 +1,10 @@
 # FastAPI & dependencies
-from fastapi import FastAPI, HTTPException, Depends, APIRouter, Request, status
+# from fastapi import FastAPI, HTTPException, Depends, APIRouter, Request, 
+from fastapi import FastAPI, HTTPException, Depends, APIRouter, Request, status, UploadFile, File, Form # <-- ADD UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.security import OAuth2PasswordBearer
+from fastapi.staticfiles import StaticFiles # <-- ADD StaticFiles
 
 
 # SQLAlchemy
@@ -16,6 +18,7 @@ from pydantic import BaseModel, Field
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 import os
+import uuid 
 import json
 
 import decimal # ADDED: Import for handling DECIMAL types
@@ -28,8 +31,11 @@ import binascii
 # Uvicorn (only for running locally)
 import uvicorn
 
+import aiofiles # <-- You will need to install this library: pip install aiofiles
+import decimal
+
 # ======================
-# CONFIG
+# CONFIG 
 # ======================
 
 # JWT Config
@@ -40,6 +46,15 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "password123")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+
+
+# =====================
+# FILE UPLOAD CONFIG
+# =====================
+IMAGE_DIR = "static/clothing_images" # Directory to save images
+# Create the directory if it doesn't exist
+os.makedirs(IMAGE_DIR, exist_ok=True)
+
 
 
 
@@ -77,6 +92,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # ======================
 # DB Dependency
@@ -91,45 +107,68 @@ def get_db():
 # ======================
 # JWT HELPERS
 # ======================
-def get_current_user(db: Session = Depends(get_db), token: str = Depends(oauth2_scheme)): 
+
+# 2. Token Decoding Utility
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+    # ... (no change needed here)
+    pass
+
+
+def decode_access_token(token: str) -> Optional[dict]:
+    """Decodes the JWT token and returns the payload."""
     try:
+        # Note: jwt.decode automatically checks expiration (exp) and signature
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        role: str = payload.get("role")
-        if username is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid authentication credentials",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        
-        # 🎯 Fetch full user details from DB, including email
-        user_details = db.execute(text("SELECT username, email, role FROM users WHERE username = :u"), {"u": username}).fetchone()
-        
-        if not user_details:
-             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found in database")
-             
-        # Debug log: show decoded token (dev only)
-        try:
-            print(f"[DEBUG] Fetched user details: {user_details}")
-        except Exception:
-            pass
-            
-        # Return all details, assuming index 1 is 'email' (or an empty string if NULL)
-        return {"username": user_details[0], "email": user_details[1] or "", "role": user_details[2]}
+        return payload
     except jwt.ExpiredSignatureError:
+        print("!!! JWT ERROR: Token signature has expired.") # <--- ADDED DEBUG
+        return None
+    except PyJWTError as e:
+        print(f"!!! JWT DECODE ERROR: {e}") # <--- ADDED DEBUG
+        return None
+
+def get_current_user(token: str = Depends(oauth2_scheme)) -> Dict[str, Any]:
+    """
+    Dependency to authenticate user via JWT token and retrieve details.
+    """
+    # 🎯 ADDED DEBUG: Check the token received by the backend
+    if token:
+        print(f"!!! JWT Received: {token[:10]}...{token[-5:]}")
+    else:
+        # This branch indicates the OAuth2PasswordBearer failed to find the header
+        print("!!! JWT Received: EMPTY/MISSING TOKEN") 
+    
+    payload = decode_access_token(token)
+    
+    if payload is None:
+        # This is where the 401 is raised when token is invalid or expired
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token has expired",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    except PyJWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or malformed token",
+            detail="Invalid authentication credentials (Token invalid or expired)",
             headers={"WWW-Authenticate": "Bearer"},
         )
     
+    # 🎯 SECURITY CHECK: Ensure the 'sub' and 'role' are present in the payload
+    username: str = payload.get("sub")
+    role: str = payload.get("role")
+
+    if username is None or role is None:
+        raise HTTPException(status_code=401, detail="Token missing username or role payload")
+
+    # In a real app, you would fetch full user data here. 
+    # For now, just return the payload details.
+    return {"username": username, "role": role}
+
+# 4. Dependency: Require Admin (THE MISSING FUNCTION)
+def require_admin(current_user: dict = Depends(get_current_user)):
+    """Checks if the current user has the 'admin' role."""
+    if current_user['role'] != 'admin':
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Operation requires administrator privileges.",
+        )
+    return current_user
+
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
     expire = datetime.utcnow() + (expires_delta or timedelta(minutes=15))
@@ -154,6 +193,35 @@ def verify_token(token: str):
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
         )
 
+
+# =====================
+# UTILITIES
+# =====================
+
+UPLOAD_FOLDER = "static/clothing_images"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True) # Ensure this directory exists
+
+async def save_uploaded_file(uploaded_file: UploadFile, folder: str = "clothing_images") -> str:
+    """
+    Save an uploaded file (image) to the /static/{folder} directory.
+    Returns the relative URL path (e.g., /static/clothing_images/abc.jpg).
+    """
+    try:
+        os.makedirs(f"static/{folder}", exist_ok=True)
+        filename = f"{uuid.uuid4()}{os.path.splitext(uploaded_file.filename)[1]}"
+        filepath = os.path.join("static", folder, filename)
+
+        with open(filepath, "wb") as buffer:
+            content = await uploaded_file.read()
+            buffer.write(content)
+
+        # Return the relative URL path for frontend access
+        return f"/static/{folder}/{filename}"
+    except Exception as e:
+        print(f"[ERROR] Failed to save uploaded file: {e}")
+        raise
+        
+    
     
 # Model for the incoming payment data
 class PickupRequest(BaseModel):
@@ -201,6 +269,15 @@ class ClothingTypeBase(BaseModel):
     plant_price: float
     margin: float
 
+# 🎯 Updated Pydantic model for the GET/POST response
+class ClothingTypeResponse(ClothingTypeBase):
+    id: int
+    total_price: float
+    created_at: datetime
+    # CRITICAL: Re-add image_url for responses, as it's stored in the DB
+    image_url: Optional[str] = None
+    
+    
 class TicketItem(BaseModel):
     clothing_type_id: int
     quantity: int
@@ -233,6 +310,13 @@ class TicketCreate(BaseModel):
 class TicketStatusUpdate(BaseModel):
     status: str
 
+# 🎯 FIX: Define the missing Pydantic model
+class TicketVoid(BaseModel):
+    is_void: bool = Field(..., description="Flag to set the ticket as voided.")
+    
+class TicketRefund(BaseModel):
+    is_refunded: bool = Field(..., description="Flag to set the ticket as refunded.")
+    
 class RackAssignment(BaseModel):
     rack_number: int
 
@@ -268,6 +352,7 @@ class TicketItemResponse(BaseModel):
     plant_price: float # Looked up by server
     margin: float      # Looked up by server
     additional_charge: float
+    
 
 # Pydantic Model for the main response body
 class TicketResponse(BaseModel):
@@ -285,6 +370,7 @@ class TicketResponse(BaseModel):
     created_at: datetime
     # The list of items must use the rich response model
     items: List[TicketItemResponse]     
+    is_void: bool
     
     
 class PickupRequest(BaseModel):
@@ -307,7 +393,7 @@ def verify_password(password: str, hashed: str) -> bool:
     return hash_password(password) == hashed
 
 
-# Run simple migration if users table is missing
+# Run simple migration if users table is missing or not
 def run_migrations():
     try:
         with engine.begin() as conn:
@@ -356,20 +442,17 @@ def startup_tasks():
         if not res:
             print('Seeding admin user')
             pw_hash = hash_password(ADMIN_PASSWORD)
-            # 🎯 Added email to the insert query
-            default_email = f"{ADMIN_USERNAME}@cleanpress.com"
+            # 🎯 Updated email to the user's requested hardcoded value
+            default_email = "admin@email.com"
             db.execute(
                 text("INSERT INTO users (username, password_hash, role, email) VALUES (:u, :p, 'admin', :e)"), 
                 {"u": ADMIN_USERNAME, "p": pw_hash, "e": default_email}
             )
             db.commit()
+            print(f"Admin user '{ADMIN_USERNAME}' seeded with email '{default_email}'.")
     except Exception as e:
         print(f"Admin seed error: {e}")
-    finally:
-        try:
-            db.close()
-        except:
-            pass
+        
 
 def generate_ticket_number(db: Session) -> str:
     """
@@ -594,6 +677,7 @@ async def get_ticket_details(
         SELECT 
             t.id, t.ticket_number, t.customer_id, t.total_amount, t.paid_amount, 
             t.status, t.rack_number, t.special_instructions, t.pickup_date, t.created_at,
+            t.is_void, -- 🎯 ADDED: Fetch the is_void status
             c.name, c.phone
         FROM tickets t
         JOIN customers c ON t.customer_id = c.id
@@ -604,9 +688,13 @@ async def get_ticket_details(
     if not ticket_result:
         raise HTTPException(status_code=404, detail="Ticket not found")
 
-    (t_id, t_num, c_id, total_amt, paid_amt, status_val, rack_num, instructions, pickup_date, created_at, c_name, c_phone) = ticket_result
+    # 🎯 MODIFIED: Unpack the new is_void_val from the result tuple
+    (
+        t_id, t_num, c_id, total_amt, paid_amt, status_val, rack_num, 
+        instructions, pickup_date, created_at, is_void_val, c_name, c_phone
+    ) = ticket_result
     
-    # 2. Fetch all ticket items for this ticket
+    # 2. Fetch all ticket items for this ticket (items_query remains the same)
     items_query = text("""
         SELECT
             ti.id, ti.clothing_type_id, ti.quantity, ti.starch_level, ti.crease, 
@@ -634,7 +722,7 @@ async def get_ticket_details(
                 item_total=float(total),
                 plant_price=float(plant_price),
                 margin=float(margin),
-                additional_charge=0.0 # Assuming you load this if it exists
+                additional_charge=0.0
             )
         )
 
@@ -652,19 +740,22 @@ async def get_ticket_details(
         special_instructions=instructions,
         pickup_date=pickup_date,
         created_at=created_at,
+        is_void=is_void_val, # 🎯 ADDED: Include the new field
         items=response_items
     )
-        
+    
+            
 @app.get("/api/tickets", response_model=List[TicketResponse], tags=["Tickets"])
 async def list_tickets(db: Session = Depends(get_db)):
     """Retrieves a list of tickets, including customer details."""
     
     # 1. Query the main ticket details
-    # NOTE: You must include t.paid_amount in the SELECT statement
     ticket_query = text("""
         SELECT 
             t.id, t.ticket_number, t.customer_id, t.total_amount, 
-            COALESCE(t.paid_amount, 0.0), t.status, t.rack_number, t.special_instructions, 
+            COALESCE(t.paid_amount, 0.0) AS paid_amount, 
+            t.is_void, -- 🎯 ADDED: Include the is_void field
+            t.status, t.rack_number, t.special_instructions, 
             t.pickup_date, t.created_at, c.name, c.phone
         FROM tickets t
         JOIN customers c ON t.customer_id = c.id
@@ -678,9 +769,10 @@ async def list_tickets(db: Session = Depends(get_db)):
         return [] 
 
     # Extract all fetched ticket IDs
-    ticket_ids = [row[0] for row in ticket_results]
+    # Assuming t.id is the first column [0]
+    ticket_ids = [row[0] for row in ticket_results] 
 
-    # 2. Query all ticket items for the fetched tickets
+    # 2. Query all ticket items for the fetched tickets (unchanged)
     items_query = text("""
         SELECT
             ti.id, ti.ticket_id, ti.clothing_type_id, ti.quantity, ti.starch_level,
@@ -692,7 +784,7 @@ async def list_tickets(db: Session = Depends(get_db)):
     """)
     item_results = db.execute(items_query, {"ticket_ids": tuple(ticket_ids)}).fetchall()
 
-    # 3. Map items back to their respective tickets
+    # 3. Map items back to their respective tickets (unchanged)
     ticket_items_map = {}
     for item in item_results:
         (i_id, t_id, ct_id, qty, starch, crease, total, name, plant_price, margin) = item
@@ -709,19 +801,20 @@ async def list_tickets(db: Session = Depends(get_db)):
     # 4. Construct the final list of TicketResponse objects
     response_tickets: List[TicketResponse] = []
     for row in ticket_results:
-        (t_id, t_num, c_id, total_amt, paid_amt, status_val, rack_num, instructions, pickup_date, created_at, c_name, c_phone) = row
+        # 🎯 UPDATED DESTRUCTURING: Added is_void_val (6th element)
+        (t_id, t_num, c_id, total_amt, paid_amt, is_void_val, status_val, rack_num, instructions, pickup_date, created_at, c_name, c_phone) = row
         
         response_tickets.append(
             TicketResponse(
                 id=t_id, ticket_number=t_num, customer_id=c_id, 
                 customer_name=c_name, customer_phone=c_phone, 
-                total_amount=float(total_amt), paid_amount=float(paid_amt), # Include paid_amount
+                total_amount=float(total_amt), paid_amount=float(paid_amt),
                 status=status_val, 
-                # rack_number=rack_num, 
+                is_void=is_void_val, # 🎯 ADDED: Pass the new boolean value
                 special_instructions=instructions, pickup_date=pickup_date, 
                 created_at=created_at, 
                 items=ticket_items_map.get(t_id, []),
-                rack_number=str(rack_num) if rack_num is not None else None, # ✅ Convert to string if not None
+                rack_number=str(rack_num) if rack_num is not None else None, 
             )
         )
         
@@ -796,24 +889,40 @@ def create_customer(customer: CustomerBase, db: Session = Depends(get_db)):
             )
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/clothing-types")
-def get_clothing_types(db: Session = Depends(get_db)):
+@app.get("/api/clothing-types", response_model=List[ClothingTypeResponse], tags=["Clothing Types"])
+def get_clothing_types(request: Request, db: Session = Depends(get_db)):
+    """Retrieves all defined clothing types, including full image URLs."""
     try:
-        result = db.execute(text("SELECT * FROM clothing_types ORDER BY name"))
+        result = db.execute(
+            text("SELECT id, name, plant_price, margin, total_price, created_at, image_url FROM clothing_types ORDER BY name")
+        )
+
+        base_url = str(request.base_url).rstrip("/")
         clothing_types = []
+
         for row in result:
-            clothing_types.append({
-                "id": row[0],
-                "name": row[1],
-                "plant_price": float(row[2]),
-                "margin": float(row[3]),
-                "total_price": float(row[4]),
-                "created_at": row[5]
-            })
+            image_url = row[6]
+            if image_url and not image_url.startswith("http"):
+                # Convert relative paths to full URLs
+                image_url = f"{base_url}{image_url}"
+
+            clothing_types.append(
+                ClothingTypeResponse(
+                    id=row[0],
+                    name=row[1],
+                    plant_price=float(row[2]),
+                    margin=float(row[3]),
+                    total_price=float(row[4]),
+                    created_at=row[5],
+                    image_url=image_url,
+                )
+            )
         return clothing_types
     except Exception as e:
+        print(f"Error fetching clothing types: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
+    
+    
 @app.get("/api/tickets/find/{ticket_id}")
 def find_ticket(ticket_id: str, db: Session = Depends(get_db)):
     try:
@@ -925,7 +1034,7 @@ async def get_ticket(id: int, db: Session = Depends(get_db), current_user: str =
         print(f"Error in get_ticket: {e}")
         raise HTTPException(status_code=500, detail=str(e))
     
-@app.get("/api/tickets/_search")  # Changed to _search to avoid conflict with {id} route
+@app.get("/api/tickets/_search") # Changed to _search to avoid conflict with {id} route
 async def search_tickets(query: str, db: Session = Depends(get_db)):
     try:
         # Remove any spaces from the query
@@ -941,13 +1050,13 @@ async def search_tickets(query: str, db: Session = Depends(get_db)):
         result = db.execute(
             text(f"""
                 SELECT t.*, c.name as customer_name, c.phone as customer_phone, 
-                       c.address as customer_address, r.number as rack_number
+                        c.address as customer_address, r.number as rack_number
                 FROM tickets t
                 JOIN customers c ON t.customer_id = c.id
                 LEFT JOIN racks r ON t.rack_number = r.number
                 WHERE {" OR ".join(ticket_conditions)}
-                   OR c.name ILIKE :like_query 
-                   OR c.phone LIKE :like_query
+                    OR c.name ILIKE :like_query 
+                    OR c.phone LIKE :like_query
                 ORDER BY t.created_at DESC
             """),
             {
@@ -959,12 +1068,17 @@ async def search_tickets(query: str, db: Session = Depends(get_db)):
         
         tickets = []
         for row in result:
+            # Determine if the ticket is void by checking its status (e.g., 'VOIDED' or 'CANCELED')
+            ticket_status = row[4].upper()
+            is_void = ticket_status in ("VOIDED", "CANCELED")
+            
             tickets.append({
                 "id": row[0],
                 "ticket_number": row[1],
                 "customer_id": row[2],
                 "total_amount": float(row[3]),
                 "status": row[4],
+                "is_void": is_void,  # <-- ADDED: Boolean flag for void status
                 "rack_number": row[5],
                 "special_instructions": row[6],
                 "pickup_date": row[7],
@@ -975,84 +1089,53 @@ async def search_tickets(query: str, db: Session = Depends(get_db)):
             })
         return tickets
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    
-    
+        raise HTTPException(status_code=500, detail=str(e))    
     # ======================
 # LOGIN ROUTE
 # ======================
-@search_router.post("/auth/login")
+
+@app.post("/api/auth/login")
 def login(request: LoginRequest):
     # Try to find user in DB
     try:
         db = SessionLocal()
-        row = db.execute(text("SELECT id, username, password_hash, role FROM users WHERE username = :u"), {"u": request.username}).fetchone()
+        # Ensure we select all fields needed for the response
+        row = db.execute(
+            text("SELECT id, username, password_hash, role, email FROM users WHERE username = :u"), 
+            {"u": request.username}
+        ).fetchone()
+        
         if row:
-            user_id, username, password_hash, role = row[0], row[1], row[2], row[3]
+            # User found in DB, proceed with password verification
+            user_id, username, password_hash, role, email = row[0], row[1], row[2], row[3], row[4]
+            
             if verify_password(request.password, password_hash):
+                
+                # 1. Create JWT Token
                 access_token = create_access_token(
-                    data={"sub": username, "role": role},
+                    data={"sub": username, "role": role}, # Use 'sub' for subject/username
                     expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
                 )
-                return {"access_token": access_token, "token_type": "bearer"}
+                
+                # 2. Return JWT Token and User Details
+                print(f"!!! Successful login for {username}. Token created.") # <--- ADDED DEBUG
+                return {
+                    "access_token": access_token, 
+                    "token_type": "bearer",
+                    "user": {
+                        "id": user_id,
+                        "username": username,
+                        "email": email,
+                        "role": role
+                    }
+                }
+            
+            # If the user exists but the password is wrong
             raise HTTPException(status_code=401, detail="Invalid credentials")
-        # Fallback to legacy hardcoded admin (only if DB user doesn't exist)
-        if request.username == ADMIN_USERNAME and request.password == ADMIN_PASSWORD:
-            access_token = create_access_token(
-                data={"sub": request.username, "role": "admin"},
-                expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-            )
-            return {"access_token": access_token, "token_type": "bearer"}
+            
+        # If execution reaches this point, the username was not found in the database.
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    finally:
-        try:
-            db.close()
-        except:
-            pass
-
-
-# Helper to assert admin
-def require_admin(user: dict = Depends(get_current_user)):
-    # user should have username and optionally role
-    token_role = user.get('role') if isinstance(user, dict) else None
-    # If role isn't present in token, fetch from DB
-    if not token_role:
-        try:
-            db = SessionLocal()
-            row = db.execute(text("SELECT role FROM users WHERE username = :u"), {"u": user.get('username')}).fetchone()
-            if row:
-                token_role = row[0]
-            # Debug log: show DB role lookup
-            try:
-                print(f"[DEBUG] require_admin: token_role from token=None, db role for {user.get('username')} = {row[0] if row else None}")
-            except Exception:
-                pass
-        finally:
-            try:
-                db.close()
-            except:
-                pass
-    else:
-        try:
-            print(f"[DEBUG] require_admin: token_role from token for {user.get('username')} = {token_role}")
-        except Exception:
-            pass
-    if token_role != 'admin':
-        raise HTTPException(status_code=403, detail='Admin privileges required')
-    return user
-
-
-@app.get('/api/users')
-def list_users(admin: dict = Depends(require_admin)):
-    try:
-        db = SessionLocal()
-        result = db.execute(text('SELECT id, username, email, role, created_at FROM users ORDER BY created_at DESC'))
-        users = []
-        for r in result:
-            users.append({
-                'id': r[0], 'username': r[1], 'email': r[2], 'role': r[3], 'created_at': r[4]
-            })
-        return users
+        
     finally:
         try:
             db.close()
@@ -1111,6 +1194,23 @@ def create_user(req: CreateUserRequest, admin: dict = Depends(require_admin)):
         except:
             pass
         
+@app.get('/api/users')
+def list_users(admin: dict = Depends(require_admin)):
+    try:
+        db = SessionLocal()
+        # This SQL query returns all users with required detailss
+        result = db.execute(text('SELECT id, username, email, role, created_at FROM users ORDER BY created_at DESC'))
+        users = []
+        for r in result:
+            users.append({
+                'id': r[0], 'username': r[1], 'email': r[2], 'role': r[3], 'created_at': r[4]
+            })
+        return users
+    finally:
+        try:
+            db.close()
+        except:
+            pass
         
 @app.delete('/api/users/{user_id}')
 def delete_user(user_id: int, admin: dict = Depends(require_admin)):
@@ -1260,8 +1360,21 @@ async def get_dashboard_stats(
 ):
     """
     Returns core dashboard statistics and logged-in admin details.
+    
+    Requires 'admin' role access.
     """
     
+    # === MODIFICATION 1: Role-Based Authorization Check ===
+    # Assuming 'role' is present in the current_user dictionary (from token payload)
+    user_role = current_user.get("role")
+    
+    if user_role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Must have 'admin' role to view dashboard statistics."
+        )
+    # ======================================================
+
     # 1. Dashboard Stats Logic 
     try:
         # Total Tickets (all)
@@ -1274,7 +1387,6 @@ async def get_dashboard_stats(
         in_process = db.execute(text("SELECT COUNT(id) FROM tickets WHERE status = 'in_process'")).scalar()
         
         # Occupied Racks (racks with at least one ticket not 'picked_up')
-        # This query counts distinct rack numbers that are currently holding items
         occupied_racks = db.execute(
             text("SELECT COUNT(DISTINCT rack_number) FROM tickets WHERE rack_number IS NOT NULL AND status != 'picked_up'")
         ).scalar()
@@ -1283,7 +1395,6 @@ async def get_dashboard_stats(
         total_racks = db.execute(text("SELECT COUNT(id) FROM racks")).scalar()
         
         # Available Racks
-        # Calculate available racks based on the total number of racks minus the occupied ones
         available_racks = total_racks - occupied_racks if total_racks is not None and occupied_racks is not None else 0
 
     except Exception as e:
@@ -1294,24 +1405,21 @@ async def get_dashboard_stats(
         )
     
     # 2. Construct the response, including admin_info
-    # The current_user dictionary is provided by the get_current_user dependency 
-    # and already contains 'username' and 'email'.
     return {
         "total_tickets": total_tickets or 0,
         "pending_pickup": pending_pickup or 0,
         "in_process": in_process or 0,
         "occupied_racks": occupied_racks or 0,
         "available_racks": available_racks or 0,
-        # Logged-in admin details
+        # Logged-in admin details (INCLUDING username, email, and role)
         "admin_info": {
             "username": current_user["username"],
-            "email": current_user["email"],
+            # Ensure 'email' is handled gracefully if not always present in the token payload
+            "email": current_user.get("email", "N/A"), 
+            # === MODIFICATION 2: Include the role ===
+            "role": user_role,
         },
     }
-    
-    
-    
-
 # Assuming all necessary imports (FastAPI, HTTPException, Depends, text, datetime, BaseModel, etc.) 
 # are available in the scope where this function is defined.
 # Assuming all necessary imports (FastAPI, HTTPException, Depends, text, datetime, BaseModel, etc.) 
@@ -1544,102 +1652,188 @@ def get_available_racks(db: Session = Depends(get_db)):
         return [{"number": row[0]} for row in result]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/api/clothing-types")
-def create_clothing_type(clothing_type: ClothingTypeBase, db: Session = Depends(get_db)):
+@app.post("/api/clothing-types", tags=["Clothing Types"])
+async def create_clothing_type(
+    name: str = Form(...),
+    plant_price: float = Form(...),
+    margin: float = Form(...),
+    image_file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_admin)
+):
+    """
+    Create a new clothing type with an image upload for identification.
+    Handles PostgreSQL generated column 'total_price' automatically.
+    """
     try:
+        # --- Save uploaded image to static folder ---
+        image_url = await save_uploaded_file(image_file)
+
+        # --- Insert record (omit total_price since it's a generated column) ---
         result = db.execute(
             text("""
-                INSERT INTO clothing_types (name, plant_price, margin)
-                VALUES (:name, :plant_price, :margin)
-                RETURNING *
+                INSERT INTO clothing_types (name, plant_price, margin, image_url)
+                VALUES (:name, :plant_price, :margin, :image_url)
+                RETURNING id, created_at, total_price
             """),
             {
-                "name": clothing_type.name,
-                "plant_price": clothing_type.plant_price,
-                "margin": clothing_type.margin
-            }
+                "name": name,
+                "plant_price": plant_price,
+                "margin": margin,
+                "image_url": image_url,
+            },
         )
         db.commit()
-        
-        new_type = result.fetchone()
+
+        row = result.fetchone()
+
         return {
-            "id": new_type[0],
-            "name": new_type[1],
-            "plant_price": float(new_type[2]),
-            "margin": float(new_type[3]),
-            "total_price": float(new_type[4]),
-            "created_at": new_type[5]
+            "id": row[0],
+            "name": name,
+            "plant_price": plant_price,
+            "margin": margin,
+            "total_price": row[2],  # Fetched from generated column
+            "created_at": row[1],
+            "image_url": image_url,
         }
+
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"[ERROR] Failed to add clothing type: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error saving clothing type: {e}",
+        )
 
-@app.put("/api/clothing-types/{id}")
-def update_clothing_type(id: int, clothing_type: ClothingTypeBase, db: Session = Depends(get_db)):
+@app.put("/api/clothing-types/{id}", tags=["Clothing Types"])
+async def update_clothing_type(
+    id: int,
+    name: str = Form(...),
+    plant_price: float = Form(...),
+    margin: float = Form(...),
+    image_file: UploadFile = File(None),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_admin)
+):
+    """
+    Update an existing clothing type (optionally replacing the image).
+    Automatically deletes old image file if a new one is uploaded.
+    """
     try:
-        result = db.execute(
+        # 🔍 Get existing clothing type
+        row = db.execute(
+            text("SELECT image_url FROM clothing_types WHERE id = :id"),
+            {"id": id}
+        ).fetchone()
+
+        if not row:
+            raise HTTPException(status_code=404, detail="Clothing type not found")
+
+        old_image_url = row[0]
+        new_image_url = old_image_url  # Default to old one
+
+        # 🖼 Handle new image upload (optional)
+        if image_file:
+            new_image_url = await save_uploaded_file(image_file, "clothing_images")
+
+            # 🧹 Remove old image if it exists
+            if old_image_url:
+                try:
+                    old_path = old_image_url.lstrip("/")
+                    if os.path.exists(old_path):
+                        os.remove(old_path)
+                        print(f"[INFO] Old image deleted: {old_path}")
+                except Exception as e:
+                    print(f"[WARN] Failed to delete old image: {e}")
+
+        # 💾 Update record (total_price is generated automatically)
+        db.execute(
             text("""
-                UPDATE clothing_types 
-                SET name = :name, plant_price = :plant_price, margin = :margin
+                UPDATE clothing_types
+                SET name = :name, plant_price = :plant_price, margin = :margin, image_url = :image_url
                 WHERE id = :id
-                RETURNING *
             """),
             {
                 "id": id,
-                "name": clothing_type.name,
-                "plant_price": clothing_type.plant_price,
-                "margin": clothing_type.margin
-            }
+                "name": name,
+                "plant_price": plant_price,
+                "margin": margin,
+                "image_url": new_image_url,
+            },
         )
         db.commit()
-        
-        updated_type = result.fetchone()
-        if not updated_type:
-            raise HTTPException(status_code=404, detail="Clothing type not found")
-            
+
         return {
-            "id": updated_type[0],
-            "name": updated_type[1],
-            "plant_price": float(updated_type[2]),
-            "margin": float(updated_type[3]),
-            "total_price": float(updated_type[4]),
-            "created_at": updated_type[5]
+            "id": id,
+            "name": name,
+            "plant_price": plant_price,
+            "margin": margin,
+            "image_url": new_image_url,
+            "message": "Clothing type updated successfully"
         }
+
     except HTTPException:
         raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"[ERROR] Failed to update clothing type: {e}")
+        raise HTTPException(status_code=500, detail=f"Error updating clothing type: {e}")
 
-@app.delete("/api/clothing-types/{id}")
+    
+@app.delete("/api/clothing-types/{id}", tags=["Clothing Types"])
 def delete_clothing_type(id: int, db: Session = Depends(get_db)):
+    """
+    Deletes a clothing type from the database and removes its associated image file (if any).
+    Prevents deletion if the clothing type is used in existing ticket items.
+    """
     try:
-        # Check if clothing type is used in any tickets
-        result = db.execute(
-            text("""
-                SELECT COUNT(*) FROM ticket_items WHERE clothing_type_id = :id
-            """),
+        # 🔍 Check if clothing type exists and retrieve its image URL
+        row = db.execute(
+            text("SELECT image_url FROM clothing_types WHERE id = :id"),
+            {"id": id}
+        ).fetchone()
+
+        if not row:
+            raise HTTPException(status_code=404, detail="Clothing type not found")
+
+        image_url = row[0]
+
+        # 🚫 Check for references in ticket_items
+        in_use = db.execute(
+            text("SELECT COUNT(*) FROM ticket_items WHERE clothing_type_id = :id"),
             {"id": id}
         ).scalar()
-        
-        if result > 0:
+
+        if in_use > 0:
             raise HTTPException(
                 status_code=400,
                 detail="Cannot delete clothing type that is used in existing tickets"
             )
-            
-        db.execute(
-            text("DELETE FROM clothing_types WHERE id = :id"),
-            {"id": id}
-        )
+
+        # 🗑 Delete clothing type record
+        db.execute(text("DELETE FROM clothing_types WHERE id = :id"), {"id": id})
         db.commit()
-        return {"success": True}
+
+        # 🧹 Delete image file from static folder (if exists)
+        if image_url:
+            try:
+                # image_url might be like '/static/clothing_images/xxxx.jpg'
+                image_path = image_url.lstrip("/")  # remove leading slash
+                if os.path.exists(image_path):
+                    os.remove(image_path)
+                    print(f"[INFO] Deleted image file: {image_path}")
+            except Exception as img_err:
+                print(f"[WARN] Failed to delete image file for clothing type {id}: {img_err}")
+
+        return {"success": True, "message": "Clothing type and image deleted successfully"}
+
     except HTTPException:
         raise
     except Exception as e:
         db.rollback()
+        print(f"[ERROR] Failed to delete clothing type: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.put("/api/tickets/{ticket_id}/rack")
 async def assign_rack(ticket_id: str, rack: RackAssignment):
@@ -1895,7 +2089,124 @@ def update_ticket_status(ticket_id: int, status_update: TicketStatusUpdate, db: 
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+@app.put("/api/tickets/{ticket_number}/void", status_code=200)
+async def void_ticket(
+    ticket_number: str,
+    void_data: TicketVoid,
+    db: Session = Depends(get_db),
+    # You should include a dependency here to ensure only authorized roles (like admin/manager) can void tickets
+    # current_user: dict = Depends(get_current_user_with_role(["admin", "store_manager"])) 
+):
+    """
+    Updates a ticket's void status using the ticket number.
+    
+    This route handles setting the 'is_void' flag to TRUE.
+    """
+    if not void_data.is_void:
+        # We only expect this endpoint to be used to void (is_void=True)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint requires 'is_void' to be set to true to perform the void operation."
+        )
 
+    try:
+        # 1. Check if the ticket exists and is not already voided (optional check, but good practice)
+        ticket_check_query = text("SELECT is_void FROM tickets WHERE ticket_number = :ticket_number")
+        ticket_result = db.execute(ticket_check_query, {"ticket_number": ticket_number}).scalar()
+
+        if ticket_result is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Ticket {ticket_number} not found."
+            )
+        
+        if ticket_result:
+             raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Ticket {ticket_number} is already voided."
+            )
+
+        # 2. Update the ticket's is_void status
+        update_query = text(
+            "UPDATE tickets SET is_void = :is_void, updated_at = :updated_at WHERE ticket_number = :ticket_number"
+        )
+        db.execute(update_query, {
+            "is_void": True,
+            "updated_at": datetime.now(),
+            "ticket_number": ticket_number
+        })
+        db.commit()
+
+        return {"success": True, "message": f"Ticket {ticket_number} has been successfully voided."}
+
+    except HTTPException:
+        # Reraise 404/409 exceptions
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail=f"Failed to void ticket: {str(e)}"
+        )
+
+
+# main.py (Place this near your void_ticket endpoint)
+
+@app.put("/api/tickets/{ticket_id}/refund", response_model=TicketResponse, tags=["Tickets"])
+async def refund_ticket(
+    ticket_id: int, 
+    ticket_refund: TicketRefund, # Expects { "is_refunded": true }
+    db: Session = Depends(get_db), 
+    current_user: str = Depends(get_current_user)
+):
+    """
+    Processes a refund for an active ticket by setting is_refunded to True
+    and updating the ticket status.
+    """
+    if not ticket_refund.is_refunded:
+        raise HTTPException(status_code=400, detail="Refund status must be set to true to process refund.")
+
+    try:
+        # 1. Check if the ticket exists
+        check_query = text("SELECT is_void, is_refunded FROM tickets WHERE id = :id")
+        result = db.execute(check_query, {"id": ticket_id}).fetchone()
+
+        if not result:
+            raise HTTPException(status_code=404, detail="Ticket not found.")
+        
+        is_void, is_already_refunded = result
+        
+        # 2. Check business rules
+        if is_void:
+            raise HTTPException(status_code=400, detail="Cannot refund a ticket that has been voided.")
+            
+        if is_already_refunded:
+            raise HTTPException(status_code=400, detail="Ticket is already marked as refunded.")
+
+        # 3. Update the database
+        update_query = text("""
+            UPDATE tickets
+            SET is_refunded = TRUE, 
+                status = 'REFUNDED'
+            WHERE id = :id
+        """)
+        db.execute(update_query, {"id": ticket_id})
+        db.commit()
+
+        # 4. Retrieve and return the updated ticket details
+        # Assuming get_ticket_details is defined elsewhere and works correctly
+        updated_ticket = await get_ticket_details(ticket_id=ticket_id, db=db, current_user=current_user)
+        
+        return updated_ticket
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        # Rollback in case of any other unexpected error
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to process refund: {str(e)}")
+    
 # Admin endpoints for system management
 @app.post("/api/admin/reset-tickets")
 async def reset_tickets(db: Session = Depends(get_db)):

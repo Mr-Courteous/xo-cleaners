@@ -1,121 +1,275 @@
-import React, { useState } from 'react';
-import { setToken } from '../utils/authUtils';
-import { apiCall } from '../hooks/useApi';
+import React, { useState, useEffect } from "react";
+import { LogIn, CheckCircle, XCircle } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import Header from "./Header"; // ✅ Imported same Header as HomePage
 
-const Login = ({ onLoginSuccess }) => {
-    const [username, setUsername] = useState('');
-    const [password, setPassword] = useState('');
-    const [error, setError] = useState('');
+const API_BASE_URL = "http://localhost:8001";
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        setError('');
+// ============================================================================
+// ✅ Utility: Alert Message Component
+// ============================================================================
+const Alert = ({
+  message,
+  type,
+  onClose,
+}: {
+  message: string | object;
+  type: "success" | "error" | null;
+  onClose: () => void;
+}) => {
+  if (!message) return null;
 
-        try {
-            const response = await apiCall('/auth/login', {
-                method: 'POST',
-                body: JSON.stringify({ username, password }),
-            });
-            const token = response.access_token;
+  const safeMessage =
+    typeof message === "string" ? message : JSON.stringify(message);
+  const colorClasses = {
+    success: "bg-green-100 text-green-800 border-green-400",
+    error: "bg-red-100 text-red-800 border-red-400",
+  };
+  const Icon = type === "success" ? CheckCircle : XCircle;
 
-            if (token) {
-                setToken(token);
-                // Update SPA URL to /dashboard (no full reload) and to notify parent
-                try {
-                    window.history.replaceState({}, '', '/dashboard');
-                } catch (e) {
-                    // ignore if history manipulation fails in some environments
-                }
-                onLoginSuccess();
-            } else {
-                setError('Login failed: No token received.');
-            }
-        } catch (err: any) {
-            setError('Login failed. Check credentials and server status.');
-            console.error('Login error:', err.message || err);
-        }
-    };
+  useEffect(() => {
+    const timer = setTimeout(onClose, 4000);
+    return () => clearTimeout(timer);
+  }, [message]);
 
-    return (
-        <div style={{
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            minHeight: '100vh',
-            background: 'linear-gradient(135deg, #a8dadc, #f0f8ff)',
-            padding: '20px'
-        }}>
-            <div style={{
-                backgroundColor: 'white',
-                padding: '40px 30px',
-                borderRadius: '12px',
-                boxShadow: '0 8px 20px rgba(0,0,0,0.15)',
-                maxWidth: '400px',
-                width: '100%',
-                textAlign: 'center'
-            }}>
-                <h2 style={{ marginBottom: '25px', color: '#1d3557', fontFamily: 'Arial, sans-serif' }}>Admin Login</h2>
-
-                <form onSubmit={handleSubmit} style={{ textAlign: 'left' }}>
-                    <div style={{ marginBottom: '20px' }}>
-                        <label style={{ display: 'block', marginBottom: '5px', fontWeight: 500 }}>Username</label>
-                        <input
-                            type="text"
-                            value={username}
-                            onChange={(e) => setUsername(e.target.value)}
-                            required
-                            style={{
-                                width: '100%',
-                                padding: '12px',
-                                borderRadius: '6px',
-                                border: '1px solid #ccc',
-                                outline: 'none',
-                                fontSize: '14px'
-                            }}
-                        />
-                    </div>
-
-                    <div style={{ marginBottom: '20px' }}>
-                        <label style={{ display: 'block', marginBottom: '5px', fontWeight: 500 }}>Password</label>
-                        <input
-                            type="password"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            required
-                            style={{
-                                width: '100%',
-                                padding: '12px',
-                                borderRadius: '6px',
-                                border: '1px solid #ccc',
-                                outline: 'none',
-                                fontSize: '14px'
-                            }}
-                        />
-                    </div>
-
-                    {error && <p style={{ color: '#e63946', marginBottom: '15px', textAlign: 'center' }}>{error}</p>}
-
-                    <button type="submit" style={{
-                        width: '100%',
-                        padding: '12px',
-                        backgroundColor: '#457b9d',
-                        color: 'white',
-                        fontWeight: 'bold',
-                        border: 'none',
-                        borderRadius: '6px',
-                        cursor: 'pointer',
-                        fontSize: '16px',
-                        transition: 'background 0.3s'
-                    }}
-                    onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#1d3557'}
-                    onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#457b9d'}
-                    >
-                        Log In
-                    </button>
-                </form>
-            </div>
-        </div>
-    );
+  return (
+    <div
+      role="alert"
+      className={`fixed top-4 right-4 z-50 p-4 border rounded-xl shadow-xl flex items-center space-x-3 transition-opacity duration-300 ${colorClasses[type!]}`}
+      style={{ minWidth: "300px" }}
+    >
+      <Icon size={20} />
+      <p className="font-medium break-words">{safeMessage}</p>
+      <button
+        onClick={onClose}
+        className={`ml-auto font-bold ${
+          type === "success" ? "text-green-800" : "text-red-800"
+        } hover:opacity-75 transition`}
+      >
+        &times;
+      </button>
+    </div>
+  );
 };
 
-export default Login;
+// ============================================================================
+// ✅ Helper: Role-to-Route Mapping
+// ============================================================================
+const getRouteByRole = (role: string): string => {
+  if (!role) return "/dashboard";
+
+  const normalizedRole = role.toLowerCase();
+
+  switch (normalizedRole) {
+    case "admin":
+    case "platform_admin":
+      return "/platform/admin/dashboard";
+    case "store_owner":
+      return "/org";
+    case "store_manager":
+      return "/store/manager/dashboard";
+    case "driver":
+      return "/driver/dashboard";
+    case "assistant":
+      return "/assistant/dashboard";
+    default:
+      return "/dashboard";
+  }
+};
+
+// ============================================================================
+// ✅ Main Login Component
+// ============================================================================
+const LoginPage: React.FC = () => {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [message, setMessage] = useState("");
+  const [messageType, setMessageType] = useState<"success" | "error" | null>(
+    null
+  );
+  const [isLoading, setIsLoading] = useState(false);
+  const navigate = useNavigate();
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setMessage("");
+    setMessageType(null);
+    setIsLoading(true);
+
+    try {
+      const details = new URLSearchParams();
+      details.append("username", email);
+      details.append("password", password);
+
+      const response = await fetch(`${API_BASE_URL}/token/store-login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: details.toString(),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        const {
+          access_token,
+          user_role,
+          organization_id,
+          organization_name,
+        } = data;
+
+        localStorage.setItem("accessToken", access_token);
+        localStorage.setItem("userRole", user_role);
+        localStorage.setItem("organizationId", String(organization_id || ""));
+        localStorage.setItem("organizationName", organization_name || "");
+
+        setMessage("Login successful! Redirecting...");
+        setMessageType("success");
+        console.log(data)
+
+        setTimeout(() => {
+          const destination = getRouteByRole(user_role);
+          navigate(destination);
+        }, 1000);
+      } else {
+        let errorMsg = "Invalid email or password.";
+        if (data?.detail) {
+          if (typeof data.detail === "string") errorMsg = data.detail;
+          else if (Array.isArray(data.detail))
+            errorMsg = data.detail.map((err: any) => err.msg).join(", ");
+          else if (typeof data.detail === "object")
+            errorMsg = data.detail.msg || JSON.stringify(data.detail);
+        }
+        setMessage(errorMsg);
+        setMessageType("error");
+      }
+    } catch (error) {
+      console.error("Login error:", error);
+      setMessage("Could not connect to the server. Please try again later.");
+      setMessageType("error");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleAlertClose = () => {
+    setMessage("");
+    setMessageType(null);
+  }; 
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      {/* ✅ Header */}
+      <Header onLoginClick={() => navigate("/login")} />
+
+      {/* ✅ Hero Section */}
+      <div className="bg-blue-600 text-white py-16 text-center">
+        <h2 className="text-5xl font-extrabold tracking-tight mb-3">
+          Welcome Back!
+        </h2>
+        <p className="text-lg opacity-90 max-w-2xl mx-auto">
+          Sign in to manage your dry cleaning operations seamlessly.
+        </p>
+      </div>
+
+      {/* ✅ Alert Message */}
+      <Alert message={message} type={messageType} onClose={handleAlertClose} />
+
+      {/* ✅ Login Form Section */}
+      <div className="flex-grow flex justify-center items-center px-4 py-10">
+        <div className="w-full max-w-md bg-white rounded-xl shadow-2xl p-8 md:p-10">
+          <div className="text-center mb-6">
+            <LogIn className="mx-auto h-12 w-auto text-blue-600" />
+            <h2 className="mt-4 text-3xl font-bold text-gray-900">
+              Sign in to your account
+            </h2>
+            <p className="text-gray-500 mt-1">
+              Enter your credentials below to access your dashboard
+            </p>
+          </div>
+
+          <form className="space-y-6" onSubmit={handleLogin}>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                Email Address
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                disabled={isLoading}
+                className="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
+                placeholder="you@company.com"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                Password
+              </label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                disabled={isLoading}
+                minLength={8}
+                className="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
+                placeholder="••••••••"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg text-lg font-semibold text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition disabled:opacity-50"
+            >
+              {isLoading ? (
+                <svg
+                  className="animate-spin h-5 w-5 text-white"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  ></circle>
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 
+                    0 5.373 0 12h4zm2 
+                    5.291A7.962 7.962 0 
+                    014 12H0c0 3.042 
+                    1.135 5.824 3 
+                    7.938l3-2.647z"
+                  ></path>
+                </svg>
+              ) : (
+                "Login"
+              )}
+            </button>
+
+            {/* ✅ Registration Link */}
+            <p className="text-center text-sm text-gray-600 mt-4">
+              Not registered yet?{" "}
+              <a
+                href="/#registration"
+                className="font-medium text-blue-600 hover:text-blue-500 transition"
+              >
+                Register your company
+              </a>
+            </p>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default LoginPage;

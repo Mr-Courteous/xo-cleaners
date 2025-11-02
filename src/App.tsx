@@ -1,5 +1,13 @@
 import React, { useState, useEffect } from "react";
-import Layout from "./components/Layout";
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Navigate,
+  useNavigate,
+} from "react-router-dom";
+
+// Removed: import Layout from "./components/Layout"; 
 import Dashboard from "./components/Dashboard";
 import DropOff from "./components/DropOff";
 import PickUp from "./components/PickUp";
@@ -10,24 +18,40 @@ import RackManagement from "./components/RackManagement";
 import ClothingManagement from "./components/ClothingManagement";
 import Tag from "./components/Tag";
 import Login from "./components/Login";
-import { getToken, removeToken } from "./utils/authUtils";
+import HomePage from "./components/HomePage";
 import UsersManagement from "./components/UsersManagement";
 import ReceiptConfig from "./components/ReceiptConfig";
+import PlatformAdmin from "./components/PlatformAdmin";
+import StoreAdmin from "./components/StoreAdmin";
 
-function App() {
-  const [currentView, setCurrentView] = useState("dashboard");
+import { getToken, removeToken } from "./utils/authUtils";
+import StoreOwner from "./components/StoreOwner";
+import AddWorker from "./components/AddWorker";
+import WorkersLogin from "./components/WorkersLogin";
+import CashierAssociate from "./components/CashierAssociate";
+import Cashier from "./components/Cashier";
+
+// ----------------------
+// Protected Route Wrapper (REMOVED)
+// ----------------------
+// const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
+//   const token = getToken();
+//   return token ? children : <Navigate to="/" replace />;
+// };
+
+function AppContent() {
+  const navigate = useNavigate();
   const [isLoggedIn, setIsLoggedIn] = useState(!!getToken());
 
   useEffect(() => {
     let timeoutId: NodeJS.Timeout;
 
     const handleUnauthorized = () => {
-      // Prevent multiple rapid triggers
       clearTimeout(timeoutId);
       timeoutId = setTimeout(() => {
         removeToken();
         setIsLoggedIn(false);
-        setCurrentView("dashboard");
+        navigate("/"); // Redirect to home
       }, 50);
     };
 
@@ -36,61 +60,69 @@ function App() {
       clearTimeout(timeoutId);
       window.removeEventListener("unauthorized", handleUnauthorized);
     };
-  }, []);
+  }, [navigate]);
 
   const handleLoginSuccess = () => {
     setIsLoggedIn(true);
+    navigate("/dashboard");
   };
 
   const handleLogout = () => {
     removeToken();
     setIsLoggedIn(false);
-    setCurrentView("dashboard");
+    navigate("/");
   };
-
-  const renderView = () => {
-    switch (currentView) {
-      case "dashboard":
-        return <Dashboard />;
-      case "dropoff":
-        return <DropOff />;
-      case "pickup":
-        return <PickUp />;
-      case "tickets":
-        return <TicketManagement />;
-      case "status":
-        return <StatusManagement />;
-      case "customers":
-        return <CustomerManagement />;
-      case "racks":
-        return <RackManagement />;
-      case "clothing":
-        return <ClothingManagement />;
-      case "tags":
-        return <Tag />;
-      case "users":
-        return <UsersManagement />;
-      case "receipt-config":
-        return <ReceiptConfig />;
-      default:
-        return <Dashboard />;
-    }
-  };
-
-  // 🚨 Instantly render login if not logged in
-  if (!isLoggedIn) {
-    return <Login onLoginSuccess={handleLoginSuccess} />;
-  }
 
   return (
-    <Layout
-      currentView={currentView}
-      onViewChange={setCurrentView}
-      onLogout={handleLogout}
-    >
-      {renderView()}
-    </Layout>
+    <Routes>
+      {/* ---------- Public Routes (Home & Login) ---------- */}
+      <Route path="/" element={<HomePage onLoginClick={() => navigate("/login")} />} />
+      <Route
+        path="/login"
+        element={
+          <Login
+            onLoginSuccess={handleLoginSuccess}
+            onBackToHome={() => navigate("/")}
+          />
+        }
+      />
+
+      {/* 🟢 All routes are now UNPROTECTED (removed <ProtectedRoute> wrapper) */}
+
+      <Route path="/dashboard" element={<Dashboard />} />
+      <Route path="/dropoff" element={<DropOff />} />
+      <Route path="/pickup" element={<PickUp />} />
+      <Route path="/tickets" element={<TicketManagement />} />
+      <Route path="/status" element={<StatusManagement />} />
+      <Route path="/customers" element={<CustomerManagement />} />
+      <Route path="/racks" element={<RackManagement />} />
+      <Route path="/clothing" element={<ClothingManagement />} />
+      <Route path="/tags" element={<Tag />} />
+      <Route path="/users" element={<UsersManagement />} />
+      <Route path="/receipt-config" element={<ReceiptConfig />} />
+      <Route path="/store-owner-login" element={<Login />} />
+
+      {/* ✅ PLATFORM ADMIN ROUTE (Now Unprotected) */}
+      <Route path="/platform-admin" element={<PlatformAdmin />} />
+      <Route path="/store-admin" element={<StoreAdmin />} />
+      <Route path="/org" element={<StoreOwner />} />
+      <Route path="/add-worker" element={<AddWorker />} />
+      <Route path="/workers-login" element={<WorkersLogin />} />
+      <Route path="/cashier" element={<Cashier />} />
+
+
+
+
+      {/* Catch-all fallback */}
+      <Route path="*" element={<Navigate to="/store-admin" />} />
+    </Routes>
   );
 }
 
-export default App;
+export default function App() {
+  return (
+    <Router>
+      <AppContent />
+    </Router>
+  );
+}
