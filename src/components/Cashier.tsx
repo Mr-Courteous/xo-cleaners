@@ -2,20 +2,76 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { 
   Package, Clock, CheckCircle, MapPin, Users, CreditCard, FileText, RefreshCw, Tag, 
-  Mail, User, DollarSign, AlertCircle 
+  Mail, User, DollarSign, AlertCircle, X, 
+  Search // --- CHANGED --- Added Search icon
 } from 'lucide-react';
 import Header from './Header';
 import baseURL from '../lib/config';
 import DropOff from './DropOff';
 import PickUp from './PickUp';
+import RackManagement from './RackManagement'; // --- NEW --- Import the new component
+
+// --- (Existing) Type for the summary list ---
+interface TicketSummary {
+// ... (interface unchanged)
+  id: number;
+  ticket_number: string;
+  customer_name: string;
+  customer_phone?: string;
+  total_amount: number;
+  paid_amount: number;
+  status: string; 
+  rack_number?: string;
+  pickup_date?: string;
+  created_at: string;
+  organization_id: number;
+}
+
+// --- NEW ---
+// 1. Type for an item *within* the full ticket response
+interface TicketItemDetail {
+// ... (interface unchanged)
+  id: number;
+  ticket_id: number;
+  clothing_type_id: number;
+  clothing_name: string;
+  quantity: number;
+  starch_level: string | null;
+  crease: boolean | null;
+  item_total: number;
+  plant_price: number;
+  margin: number;
+  additional_charge: number;
+}
+
+// --- NEW ---
+// 2. Type for the full ticket response (from the /tickets/{id} endpoint)
+interface TicketResponse {
+// ... (interface unchanged)
+  id: number;
+  ticket_number: string;
+  customer_id: number;
+  customer_name: string;
+  customer_phone: string | null;
+  total_amount: number;
+  paid_amount: number;
+  status: string;
+  rack_number: string | null;
+  special_instructions: string | null;
+  pickup_date: string | null;
+  created_at: string;
+  items: TicketItemDetail[]; // The full item list
+  organization_id: number;
+}
+
 
 export default function CashierDashboard() {
   const [currentView, setCurrentView] = useState<string>('overview');
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // --- Dynamic stats from backend ---
   const [stats, setStats] = useState({
+// ... (state unchanged)
     total_tickets: 0,
     pending_pickup: 0,
     in_process: 0,
@@ -23,49 +79,118 @@ export default function CashierDashboard() {
     available_racks: 0,
   });
 
-  // --- Fetch racks for the logged-in organization ---
+  const [tickets, setTickets] = useState<TicketSummary[]>([]);
+
+  // --- NEW STATE FOR TICKET DETAIL MODAL ---
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [selectedTicketDetails, setSelectedTicketDetails] = useState<TicketResponse | null>(null);
+  const [isDetailLoading, setIsDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+
+  // --- CHANGED ---
+  // --- NEW STATE FOR FILTERING TICKETS ---
+  const [ticketFilter, setTicketFilter] = useState("");
+  const [filteredTickets, setFilteredTickets] = useState<TicketSummary[]>([]);
+
+
+  // --- (Existing) Data Fetching Effect ---
   useEffect(() => {
-    const fetchRacks = async () => {
+    const fetchDashboardData = async () => {
       try {
+// ... (fetch logic unchanged)
         setLoading(true);
         setError(null);
 
         const token = localStorage.getItem("accessToken");
-        const organizationId = localStorage.getItem("organizationId");
-
         if (!token) throw new Error("Access token missing");
-        if (!organizationId) throw new Error("Organization ID missing");
 
-        const response = await axios.get(
-          `${baseURL}/api/organizations/${organizationId}/racks`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
+        const headers = { Authorization: `Bearer ${token}` };
 
-        const racks = response.data?.racks || [];
+        const [racksResponse, ticketsResponse] = await Promise.all([
+          axios.get(`${baseURL}/api/organizations/racks`, { headers }),
+          axios.get(`${baseURL}/api/organizations/tickets`, { headers })
+        ]);
+
+        // --- Process Racks ---
+        const racks = racksResponse.data?.racks || [];
+        console.log(racks)
         const occupied = racks.filter((r: any) => r.is_occupied).length;
         const available = racks.length - occupied;
 
-        setStats(prev => ({
-          ...prev,
+        // --- Process Tickets ---
+        const ticketsData: TicketSummary[] = ticketsResponse.data || [];
+        setTickets(ticketsData); 
+
+        const total_tickets = ticketsData.length;
+        const pending_pickup = ticketsData.filter(
+          (t) => t.status === 'ready_for_pickup' // <-- Adjust this status string if needed
+        ).length;
+        const in_process = ticketsData.filter(
+          (t) => t.status === 'processing' // <-- Adjust this status string if needed
+        ).length;
+        
+        setStats({
+          total_tickets,
+          pending_pickup,
+          in_process,
           occupied_racks: occupied,
           available_racks: available,
-        }));
+        });
+
       } catch (err: any) {
-        console.error("Error fetching racks:", err);
+        console.error("Error fetching dashboard data:", err);
         setError(err.response?.data?.detail || err.message);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchRacks();
+    fetchDashboardData();
   }, []);
 
+  // --- CHANGED ---
+  // --- NEW EFFECT FOR FILTERING TICKETS ---
+  useEffect(() => {
+    const lowerCaseFilter = ticketFilter.toLowerCase();
+    const filtered = tickets.filter(
+      (ticket) =>
+        ticket.ticket_number.toLowerCase().includes(lowerCaseFilter) ||
+        ticket.customer_name.toLowerCase().includes(lowerCaseFilter)
+    );
+    setFilteredTickets(filtered);
+  }, [ticketFilter, tickets]); // Re-run when filter or tickets change
+
+  // --- NEW ---
+  // 3. Function to fetch and display single ticket details
+  const handleTicketClick = async (ticketId: number) => {
+// ... (function unchanged, syntax error fixed)
+    setIsDetailModalOpen(true);
+    setIsDetailLoading(true);
+    setDetailError(null);
+    setSelectedTicketDetails(null);
+
+    try {
+      const token = localStorage.getItem("accessToken");
+      if (!token) throw new Error("Access token missing");
+
+      const response = await axios.get(
+        `${baseURL}/api/organizations/tickets/${ticketId}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      setSelectedTicketDetails(response.data);
+
+    } catch (err: any) { // <-- Fixed syntax error here (was ->)
+      console.error("Error fetching ticket details:", err);
+      setDetailError(err.response?.data?.detail || "Failed to load ticket details.");
+    } finally {
+      setIsDetailLoading(false);
+    }
+  };
+
+
   const statCards = [
+// ... (array unchanged)
     { title: 'Total Tickets', value: stats.total_tickets, icon: Package, color: 'text-blue-600', bgColor: 'bg-blue-50' },
     { title: 'Ready for Pickup', value: stats.pending_pickup, icon: CheckCircle, color: 'text-green-600', bgColor: 'bg-green-50' },
     { title: 'In Process', value: stats.in_process, icon: Clock, color: 'text-amber-600', bgColor: 'bg-amber-50' },
@@ -74,6 +199,7 @@ export default function CashierDashboard() {
   ];
 
   const features = [
+// ... (array unchanged)
     { id: 'new-customer', title: 'Create Customer Profile', icon: User },
     { id: 'collect-payment', title: 'Collect/Process Payment', icon: CreditCard },
     { id: 'void-ticket', title: 'Void Ticket', icon: RefreshCw },
@@ -95,29 +221,32 @@ export default function CashierDashboard() {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
         {/* --- View Buttons --- */}
+        {/* --- CHANGED --- Added 'assign rack' */}
         <div className="flex space-x-4 mb-4">
-          {['overview', 'dropoff', 'pickup'].map((view) => (
+          {['overview', 'dropoff', 'pickup', 'assign rack'].map((view) => (
             <button
               key={view}
               onClick={() => setCurrentView(view)}
-              className={`px-4 py-2 rounded-md font-medium ${
+              className={`px-4 py-2 rounded-md font-medium capitalize ${ // --- CHANGED --- Added capitalize
                 currentView === view
                   ? 'bg-blue-600 text-white'
                   : 'bg-gray-100 text-gray-700'
               }`}
             >
-              {view.charAt(0).toUpperCase() + view.slice(1)}
+              {view}
             </button>
           ))}
         </div>
 
         {/* --- Loading & Error States --- */}
-        {loading && <p className="text-gray-500">Loading rack data...</p>}
+        {loading && <p className="text-gray-500">Loading dashboard data...</p>}
         {error && <p className="text-red-600">{error}</p>}
 
         {/* --- Overview --- */}
         {!loading && currentView === 'overview' && (
           <>
+            {/* --- Stat Cards --- */}
+            {/* ... (unchanged) ... */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-6">
               {statCards.map((card) => {
                 const Icon = card.icon;
@@ -137,6 +266,8 @@ export default function CashierDashboard() {
               })}
             </div>
 
+            {/* --- Features --- */}
+            {/* ... (unchanged) ... */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {features.map((feature) => {
                 const Icon = feature.icon;
@@ -152,10 +283,81 @@ export default function CashierDashboard() {
                 );
               })}
             </div>
+
+            {/* --- Recent Tickets --- */}
+            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 mt-8">
+              {/* --- CHANGED --- Added flex container for title and search */}
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-semibold text-gray-900">Recent Tickets</h2>
+                {/* --- CHANGED --- Added search bar */}
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Filter by ticket # or name..."
+                    value={ticketFilter}
+                    onChange={(e) => setTicketFilter(e.target.value)}
+                    className="pl-10 pr-4 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                </div>
+              </div>
+
+              {/* --- CHANGED --- Added max-h-96 and overflow-y-auto for scrolling */}
+              <div className="overflow-x-auto overflow-y-auto max-h-96 relative">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ticket #</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pickup By</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {/* --- CHANGED --- Use filteredTickets.length */}
+                    {filteredTickets.length > 0 ? (
+                      // --- CHANGED --- Map over filteredTickets (still slicing for performance)
+                      filteredTickets.slice(0, 10).map((ticket) => ( 
+                        <tr 
+                          key={ticket.id} 
+                          onClick={() => handleTicketClick(ticket.id)}
+                          className="cursor-pointer hover:bg-gray-50"
+                        >
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600">{ticket.ticket_number}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{ticket.customer_name}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                              ticket.status === 'ready_for_pickup' ? 'bg-green-100 text-green-800' :
+                              ticket.status === 'processing' ? 'bg-amber-100 text-amber-800' :
+                              'bg-gray-100 text-gray-800'
+                            }`}>
+                              {ticket.status}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${ticket.total_amount.toFixed(2)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {ticket.pickup_date ? new Date(ticket.pickup_date).toLocaleDateString() : 'N_A'}
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={5} className="px-6 py-4 text-center text-sm text-gray-500">
+                          {/* --- CHANGED --- Show dynamic message */}
+                          {ticketFilter ? "No tickets match your filter." : "No tickets found."}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </>
         )}
 
         {/* --- Drop-off --- */}
+        {/* ... (unchanged) ... */}
         {currentView === 'dropoff' && (
           <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
             <DropOff />
@@ -163,12 +365,164 @@ export default function CashierDashboard() {
         )}
 
         {/* --- Pick-up --- */}
+        {/* ... (unchanged) ... */}
         {currentView === 'pickup' && (
           <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
             <PickUp />
           </div>
         )}
+
+        {/* --- NEW --- Render RackManagement component */}
+        {currentView === 'assign rack' && (
+          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+            <RackManagement />
+          </div>
+        )}
       </div>
+
+      {/* --- Ticket Detail Modal --- */}
+      {/* ... (modal JSX is unchanged) ... */}
+      {isDetailModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60 transition-opacity">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4">
+            <div className="p-6">
+              
+              {/* Modal Header */}
+              <div className="flex justify-between items-center pb-4 border-b">
+                <h2 className="text-2xl font-semibold text-gray-900">
+                  Ticket Details
+                </h2>
+                <button 
+                  onClick={() => setIsDetailModalOpen(false)} 
+                  className="text-gray-400 hover:text-gray-600"
+                  aria-label="Close"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+
+              {/* Modal Content */}
+              <div className="pt-6">
+                {isDetailLoading && <p className="text-gray-600 text-center">Loading details...</p>}
+                
+                {detailError && <p className="text-red-600 text-center">{detailError}</p>}
+
+                {selectedTicketDetails && (
+                  <div className="space-y-6">
+                    
+                    {/* Customer & Ticket Info */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div>
+                        <p className="text-sm font-medium text-gray-500">Ticket #</p>
+                        <p className="text-lg font-semibold text-blue-600">{selectedTicketDetails.ticket_number}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-500">Customer</p>
+                        <p className="text-lg font-semibold text-gray-900">{selectedTicketDetails.customer_name}</p>
+                        <p className="text-sm text-gray-600">{selectedTicketDetails.customer_phone}</p>
+                      </div>
+                    </div>
+
+                    {/* Status & Dates */}
+                    <div className="grid grid-cols-3 gap-4">
+                      <div>
+                        <p className="text-sm font-medium text-gray-500">Status</p>
+                        <span className={`px-2 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                          selectedTicketDetails.status === 'ready_for_pickup' ? 'bg-green-100 text-green-800' :
+                          selectedTicketDetails.status === 'processing' ? 'bg-amber-100 text-amber-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                          {selectedTicketDetails.status}
+                        </span>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-500">Rack</p>
+                        <p className="text-gray-900">{selectedTicketDetails.rack_number || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-500">Pickup By</p>
+                        <p className="text-gray-900">{selectedTicketDetails.pickup_date ? new Date(selectedTicketDetails.pickup_date).toLocaleString() : 'N/A'}</p>
+                      </div>
+                    </div>
+                    
+                    {/* Items Table */}
+                    <div className="border-t pt-4">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-2">Items</h3>
+                      <div className="overflow-x-auto border rounded-lg">
+                        <table className="min-w-full divide-y divide-gray-200">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Item</th>
+                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Qty</th>
+                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Details</th>
+                              <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Total</th>
+                            </tr>
+                          </thead>
+                          <tbody className="bg-white divide-y divide-gray-200">
+                            {selectedTicketDetails.items.map(item => (
+                              <tr key={item.id}>
+                                <td className="px-4 py-3 text-sm text-gray-900">{item.clothing_name}</td>
+                                <td className="px-4 py-3 text-sm text-gray-500">{item.quantity}</td>
+                                <td className="px-4 py-3 text-sm text-gray-500">
+                                  {item.starch_level && item.starch_level !== 'none' ? `Starch: ${item.starch_level}` : ''}
+                                  {item.crease ? ' (Crease)' : ''}
+                                </td>
+                                <td className="px-4 py-3 text-sm text-gray-900 text-right">${item.item_total.toFixed(2)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* Financials & Instructions */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 border-t pt-4">
+                      <div>
+                        {selectedTicketDetails.special_instructions && (
+                          <>
+                            <p className="text-sm font-medium text-gray-500">Special Instructions</p>
+                            <p className="text-sm text-gray-800 p-3 bg-gray-50 rounded-md mt-1">{selectedTicketDetails.special_instructions}</p>
+                          </>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex justify-between">
+                          <p className="text-sm font-medium text-gray-500">Subtotal</p>
+                          <p className="text-sm font-medium text-gray-900">${selectedTicketDetails.total_amount.toFixed(2)}</p>
+                        </div>
+                        <div className="flex justify-between">
+                          <p className="text-sm font-medium text-gray-500">Paid Amount</p>
+                          <p className="text-sm font-medium text-gray-900">${selectedTicketDetails.paid_amount.toFixed(2)}</p>
+                        </div>
+                        <div className="flex justify-between border-t pt-2 mt-2">
+                          <p className="text-lg font-semibold text-gray-900">Balance Due</p>
+                          <p className="text-lg font-semibold text-red-600">
+                            ${(selectedTicketDetails.total_amount - selectedTicketDetails.paid_amount).toFixed(2)}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            {/* Modal Footer */}
+            <div className="bg-gray-50 px-6 py-4 border-t flex justify-end">
+              <button
+                type="button"
+                className="px-4 py-2 bg-white border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50"
+                onClick={() => setIsDetailModalOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
+

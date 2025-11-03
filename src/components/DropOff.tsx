@@ -168,7 +168,7 @@ export default function DropOff() {
       }
 
       // 2. Build the correct URL for the CLOTHING-TYPES endpoint
-      const url = `${baseURL}/api/organizations/${organizationId}/clothing-types`;
+      const url = `${baseURL}/api/organizations/clothing-types`;
 
       // 3. Make the API call
       const response = await axios.get(url, {

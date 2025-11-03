@@ -1,69 +1,169 @@
-import React, { useState, useEffect } from 'react';
-import { MapPin, Search, Package } from 'lucide-react';
-import { useApi, apiCall } from '../hooks/useApi';
-import { Rack } from '../types';
+import React, { useState, useEffect, useCallback } from 'react';
+import { MapPin, Search, Package, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { Rack } from '../types'; // Assuming this type is { number: number, is_occupied: boolean, ticket_id: number, ticket_number: string }
 import Modal from './Modal';
+import { apiCall } from '../hooks/useApi'; // We still need apiCall for the PUT request
+import baseURL from "../lib/config"; // Added import
+import axios from 'axios'; // Added import
+
+// --- NEW ---
+// A hook for debouncing input
+function useDebounce(value: string, delay: number) {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+  return debouncedValue;
+}
+
+// --- NEW ---
+// Type for the validation response
+interface ValidatedTicket {
+  ticket_id: number;
+  ticket_number: string;
+  customer_name: string;
+}
 
 export default function RackManagement() {
   const [searchRack, setSearchRack] = useState('');
-  const [selectedTicketId, setSelectedTicketId] = useState('');
-  const [assignRackNumber, setAssignRackNumber] = useState('');
-  const { data: racks, loading, refetch } = useApi<Rack[]>('/racks');
-  const [availableRacks, setAvailableRacks] = useState<{number: number}[]>([]);
+  
+  // --- States for manual data fetching ---
+  const [racks, setRacks] = useState<Rack[]>([]);
+  const [availableRacks, setAvailableRacks] = useState<Rack[]>([]);
+  const [loading, setLoading] = useState(true);
+  
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMessage, setModalMessage] = useState('');
 
-  // Load initial data
-  useEffect(() => {
-    const loadInitialData = async () => {
-      await Promise.all([
-        fetchAvailableRacks(),
-        refetch()
-      ]);
-    };
-    loadInitialData();
-  }, []);
+  // --- NEW STATES FOR TICKET VALIDATION ---
+  const [ticketNumber, setTicketNumber] = useState(''); // The string the user types
+  const [validatedTicket, setValidatedTicket] = useState<ValidatedTicket | null>(null);
+  const [ticketError, setTicketError] = useState<string | null>(null);
+  const [isValidating, setIsValidating] = useState(false);
+  const debouncedTicketNumber = useDebounce(ticketNumber, 500); // Wait 500ms after user stops typing
+  const [assignRackNumber, setAssignRackNumber] = useState('');
 
-  const fetchAvailableRacks = async () => {
+
+  // --- Main Data Fetching Function ---
+  const fetchRacks = async () => {
+    setLoading(true);
     try {
-      const available = await apiCall('/racks/available');
-      if (Array.isArray(available)) {
-        setAvailableRacks(available);
-      } else {
-        console.error('Expected array from /racks/available, got:', typeof available);
-        setAvailableRacks([]);
-      }
-    } catch (error) {
-      console.error('Failed to fetch available racks:', error);
+      const token = localStorage.getItem("accessToken");
+      if (!token) throw new Error("Access token missing");
+
+      // 1. Call the correct backend route
+      const response = await axios.get(
+        `${baseURL}/api/organizations/racks`, 
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      // 2. Get the array from the 'racks' key
+      const allRacks = response.data?.racks || [];
+      setRacks(allRacks);
+
+      // 3. Filter for available racks and update state
+      const available = allRacks.filter((rack: Rack) => !rack.is_occupied);
+      setAvailableRacks(available);
+
+    } catch (error: any) {
+      console.error('Failed to fetch racks:', error);
+      setRacks([]);
       setAvailableRacks([]);
+    } finally {
+      setLoading(false);
     }
   };
+  
+  // --- Load initial data on mount ---
+  useEffect(() => {
+    fetchRacks();
+  }, []); // Runs once
 
+  // --- NEW: Effect for Ticket Validation ---
+  useEffect(() => {
+    const validateTicket = async () => {
+      if (debouncedTicketNumber.trim() === '') {
+        setIsValidating(false);
+        setValidatedTicket(null);
+        setTicketError(null);
+        return;
+      }
+
+      setIsValidating(true);
+      setValidatedTicket(null);
+      setTicketError(null);
+      
+      try {
+        const token = localStorage.getItem("accessToken");
+        if (!token) throw new Error("Access token missing");
+
+        // Use axios for this GET request
+        const response = await axios.get(
+          `${baseURL}/api/organizations/tickets/validate/${debouncedTicketNumber}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        
+        setValidatedTicket(response.data);
+      } catch (error: any) {
+        console.error('Ticket validation error:', error);
+        setTicketError(error.response?.data?.detail || 'Ticket not found');
+      } finally {
+        setIsValidating(false);
+      }
+    };
+
+    validateTicket();
+  }, [debouncedTicketNumber]); // Runs when the debounced ticket number changes
+
+
+  // --- Refetch function to be called after updates ---
+  const refetch = () => fetchRacks();
+
+  // --- Assign Rack Function ---
   const assignRack = async () => {
-    if (!selectedTicketId || !assignRackNumber) {
-      setModalMessage('Please enter both ticket ID and rack number');
+    // --- CHANGED ---
+    // Check against the validated ticket, not the input string
+    if (!validatedTicket || !assignRackNumber) {
+      setModalMessage('Please select a valid ticket and rack number');
       setIsModalOpen(true);
       return;
     }
 
-    // Remove any 'DC' prefix if present for consistency
-    const ticketId = selectedTicketId.replace(/^DC/i, '');
+    // --- CHANGED ---
+    // We now use the numeric ID from the validated ticket
+    const ticketId = validatedTicket.ticket_id; 
 
     try {
-      await apiCall(`/tickets/${ticketId}/rack`, {
+      // --- THE FIX for 401 Unauthorized ---
+      const token = localStorage.getItem("accessToken");
+      if (!token) throw new Error("Access token missing");
+
+      await apiCall(`/api/organizations/tickets/${ticketId}/rack`, {
         method: 'PUT',
         body: JSON.stringify({ rack_number: parseInt(assignRackNumber) }),
+        // 1. Add the Authorization header to apiCall
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
       });
 
       // Clear the form first
-      setSelectedTicketId('');
+      setTicketNumber(''); // Clear ticket number input
+      setValidatedTicket(null); // Clear validated ticket
       setAssignRackNumber('');
       
-      // Then refresh both rack lists
-      await Promise.all([
-        fetchAvailableRacks(),
-        refetch()
-      ]);
+      // 5. Just call refetch. It will update both lists.
+      await refetch();
       
       // Show success message after data is refreshed
       setModalMessage(`Rack #${assignRackNumber} assigned successfully!`);
@@ -77,9 +177,9 @@ export default function RackManagement() {
     }
   };
 
-  const filteredRacks = Array.isArray(racks) ? racks.filter(rack => 
+  const filteredRacks = racks.filter(rack => 
     searchRack === '' || rack.number.toString().includes(searchRack)
-  ) : [];
+  );
 
   const occupiedRacks = filteredRacks.filter(rack => rack.is_occupied);
   const emptyRacks = filteredRacks.filter(rack => !rack.is_occupied);
@@ -113,28 +213,68 @@ export default function RackManagement() {
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
           <h3 className="text-lg font-semibold mb-4">Assign Rack to Ticket</h3>
           <div className="space-y-4">
-            <input
-              type="text"
-              placeholder="Enter Ticket Number (e.g., 221340718)"
-              value={selectedTicketId}
-              onChange={(e) => setSelectedTicketId(e.target.value.trim())}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            />
-            <select
-              value={assignRackNumber}
-              onChange={(e) => setAssignRackNumber(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">Select Available Rack</option>
-              {availableRacks.map((rack) => (
-                <option key={rack.number} value={rack.number}>
-                  Rack #{rack.number}
-                </option>
-              ))}
-            </select>
+            
+            {/* --- CHANGED --- Ticket Number Input */}
+            <div>
+              <label htmlFor="ticketNumber" className="block text-sm font-medium text-gray-700 mb-1">
+                Ticket Number
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  id="ticketNumber"
+                  placeholder="Enter Ticket Number (e.g., 251103-001)"
+                  value={ticketNumber}
+                  onChange={(e) => setTicketNumber(e.target.value.trim())}
+                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 ${
+                    ticketError ? 'border-red-500 ring-red-300' : 
+                    validatedTicket ? 'border-green-500 ring-green-300' : 'border-gray-300 ring-blue-500'
+                  }`}
+                />
+                <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
+                  {isValidating ? (
+                    <Loader2 className="h-5 w-5 text-gray-400 animate-spin" />
+                  ) : ticketError ? (
+                    <AlertCircle className="h-5 w-5 text-red-500" />
+                  ) : validatedTicket ? (
+                    <CheckCircle className="h-5 w-5 text-green-500" />
+                  ) : null}
+                </div>
+              </div>
+              {ticketError && (
+                <p className="mt-1 text-sm text-red-600">{ticketError}</p>
+              )}
+              {validatedTicket && (
+                <p className="mt-1 text-sm text-green-600">
+                  Ticket found for: <strong>{validatedTicket.customer_name}</strong>
+                </p>
+              )}
+            </div>
+
+            {/* --- Rack Selection --- */}
+            <div>
+              <label htmlFor="rackNumber" className="block text-sm font-medium text-gray-700 mb-1">
+                Available Rack
+              </label>
+              <select
+                id="rackNumber"
+                value={assignRackNumber}
+                onChange={(e) => setAssignRackNumber(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Select Available Rack</option>
+                {availableRacks.map((rack) => (
+                  <option key={rack.number} value={rack.number}>
+                    Rack #{rack.number}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <button
               onClick={assignRack}
-              disabled={!selectedTicketId || !assignRackNumber}
+              // --- CHANGED --- Button is disabled if ticket isn't valid
+              disabled={!validatedTicket || !assignRackNumber || isValidating}
               className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               Assign Rack
@@ -155,7 +295,7 @@ export default function RackManagement() {
             />
           </div>
           <div className="mt-4 text-sm text-gray-600">
-            Showing {filteredRacks.length} of {racks?.length || 0} racks
+            Showing {filteredRacks.length} of {racks.length} racks
           </div>
         </div>
       </div>
@@ -181,8 +321,7 @@ export default function RackManagement() {
                         <span className="font-medium">Rack #{rack.number}</span>
                       </div>
                       <div className="text-right text-sm">
-                        <div className="font-medium">#{rack.ticket_number}</div>
-                        <div className="text-gray-600">{rack.customer_name}</div>
+                        <div className="font-medium">Ticket ID: {rack.ticket_id}</div>
                       </div>
                     </div>
                   </div>
@@ -225,3 +364,4 @@ export default function RackManagement() {
     </div>
   );
 }
+

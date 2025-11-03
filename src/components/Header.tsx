@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Shirt, Shield, User, Briefcase, Users, Home, Info, Phone, Compass } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 /**
  * Header component serving as the application header with full navigation and a hover-delayed dropdown.
@@ -52,18 +53,15 @@ const Header = () => {
         <header className="bg-white shadow-lg sticky top-0 z-10 font-sans">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex justify-between items-center">
                 
-                {/* Logo and App Name - Using standard <a> tag for navigation */}
-                <a 
-                    href="/" 
-                    className="flex items-center space-x-3 hover:opacity-90 transition duration-300"
-                >
+                {/* Logo and App Name - Use Link for SPA navigation */}
+                <Link to="/" className="flex items-center space-x-3 hover:opacity-90 transition duration-300">
                     <div className="bg-blue-600 p-2 rounded-xl shadow-md">
                         <Shirt className="h-6 w-6 text-white" />
                     </div>
                     <h1 className="text-2xl font-extrabold text-gray-900 tracking-tight">
                         XoCleaners
                     </h1>
-                </a>
+                </Link>
                 
                 {/* Navigation and Login Container */}
                 <nav className="flex items-center space-x-8">
@@ -71,14 +69,14 @@ const Header = () => {
                     {/* Main Navigation Links */}
                     <div className="hidden md:flex space-x-4">
                         {navLinks.map((link) => (
-                            <a // Standard <a> tag for navigation
+                            <Link
                                 key={link.name}
-                                href={link.to}
+                                to={link.to}
                                 className="text-gray-600 hover:text-blue-700 font-medium py-2 px-3 rounded-lg transition duration-200 flex items-center"
                             >
                                 <link.icon className="h-4 w-4 mr-1.5" />
                                 {link.name}
-                            </a>
+                            </Link>
                         ))}
                     </div>
 
@@ -108,16 +106,16 @@ const Header = () => {
                         >
                             <div className="py-2" role="none">
                                 {loginOptions.map((option) => (
-                                    <a // Standard <a> tag for navigation
+                                    <Link
                                         key={option.name}
-                                        href={option.to}
+                                        to={option.to}
                                         onClick={() => setIsDropdownOpen(false)}
                                         className="flex items-center px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 hover:text-blue-600 transition duration-150"
                                         role="menuitem"
                                     >
                                         <option.icon className="h-5 w-5 mr-3 text-gray-400 hover:text-blue-600" />
                                         {option.name}
-                                    </a>
+                                    </Link>
                                 ))}
                             </div>
                         </div>

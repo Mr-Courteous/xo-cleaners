@@ -235,3 +235,74 @@ class TicketItemCreate(BaseModel):
     starch_level: StarchLevel = StarchLevel.none
     crease: bool = False
     additional_charge: Optional[float] = 0.0
+    
+    
+    
+class TicketSummaryResponse(BaseModel):
+    """High-level ticket data, returned in a list."""
+    id: int
+    ticket_number: str
+    customer_id: int
+    customer_name: str
+    customer_phone: Optional[str]
+    total_amount: float
+    paid_amount: float
+    status: str
+    rack_number: Optional[str]
+    special_instructions: Optional[str]
+    pickup_date: Optional[datetime]
+    created_at: datetime
+    organization_id: int
+
+    class Config:
+        orm_mode = True
+        
+        
+        
+        
+class RackAssignmentRequest(BaseModel):
+    """
+    Specific model for the rack assignment UI.
+    Matches the body: JSON.stringify({ rack_number: parseInt(assignRackNumber) })
+    """
+    rack_number: int
+
+class GeneralTicketUpdateRequest(BaseModel):
+    """
+    Model for general-purpose ticket updates (e.g., status, pickup date).
+    All fields are optional.
+    """
+    ticket_number: Optional[str] = None
+    pickup_date: Optional[datetime] = None
+    status: Optional[str] = None
+    special_instructions: Optional[str] = None
+    paid_amount: Optional[float] = None
+    # Note: rack_number is handled by the dedicated route below
+    
+    
+    
+class TicketValidationResponse(BaseModel):
+    """
+    Returns the ID and customer name for a valid ticket number.
+    Matches the 'ValidatedTicket' interface in your frontend.
+    """
+    ticket_id: int
+    ticket_number: str
+    customer_name: str
+
+
+
+class TicketPickupRequest(BaseModel):
+    """The payload sent from the frontend when completing a pickup."""
+    amount_paid: float
+
+class TicketPickupResponse(BaseModel):
+    """The response sent back after a successful pickup."""
+    success: bool
+    message: str
+    ticket_id: int
+    new_status: str
+    new_total_paid: float 
+    receipt_html: Optional[str] = None
+    
+    

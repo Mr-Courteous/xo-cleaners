@@ -23,6 +23,9 @@ import UsersManagement from "./components/UsersManagement";
 import ReceiptConfig from "./components/ReceiptConfig";
 import PlatformAdmin from "./components/PlatformAdmin";
 import StoreAdmin from "./components/StoreAdmin";
+import About from "./pages/About";
+import Services from "./pages/Services";
+import Contact from "./pages/Contact";
 
 import { getToken, removeToken } from "./utils/authUtils";
 import StoreOwner from "./components/StoreOwner";
@@ -106,6 +109,9 @@ function AppContent() {
       <Route path="/platform-admin" element={<PlatformAdmin />} />
       <Route path="/store-admin" element={<StoreAdmin />} />
       <Route path="/org" element={<StoreOwner />} />
+      <Route path="/about" element={<About />} />
+      <Route path="/services" element={<Services />} />
+      <Route path="/contact" element={<Contact />} />
       <Route path="/add-worker" element={<AddWorker />} />
       <Route path="/workers-login" element={<WorkersLogin />} />
       <Route path="/cashier" element={<Cashier />} />
