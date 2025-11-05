@@ -10,7 +10,8 @@ aiosqlite==0.19.0
 psycopg2-binary==2.9.10
 python-escpos==3.0a8
 gunicorn
-email-validator  # <<< ADD THIS LINE
+email-validator  
+pydantic==2.12.4
 
 
 # === BARCODE & PRINTING ===
