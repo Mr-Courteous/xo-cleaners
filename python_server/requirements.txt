@@ -1,16 +1,15 @@
-# === CORE APPLICATION & SERVER (UPGRADED FOR PYDANTIC 2.x COMPATIBILITY) ===
-# REMOVED VERSION PINS to allow deployment to use the latest, compatible versions
+# === CORE APPLICATION & SERVER (CRITICAL: Removed pins to ensure compatibility with Pydantic 2.x) ===
 fastapi
 uvicorn
 gunicorn
 
 # === DATA VALIDATION & CRITICAL FIXES ===
 pydantic==2.12.4
-email-validator # Fixes the previous ImportError
+email-validator
 
 # === DATABASE & ORM ===
 sqlalchemy==2.0.44
-psycopg2-binary==2.9.10
+psycopg2-binary==2.9.10 # The driver that needs 'postgresql+psycopg2://' prefix
 sqlite-utils==3.35
 aiosqlite==0.19.0
 
