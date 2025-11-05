@@ -18,16 +18,28 @@ import uvicorn
 # ======================
 # CONFIGURATION
 # ======================
-# The original line:
 # DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5433/cleanpress")
 
-# Modified to remove the default fallback, forcing reliance on the environment variable.
-# This prevents accidentally using local development credentials in a deployed environment.
+
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-if not DATABASE_URL:
-    raise EnvironmentError("The DATABASE_URL environment variable is not set. Cannot connect to database.")
+# --- ADD THIS LOGIC FOR SECURE CLOUD CONNECTIONS ---
+connect_args = {}
+# Most cloud providers (like Neon, Supabase, etc.) require SSL for connections
+if "sslmode" not in DATABASE_URL:
+    connect_args["sslmode"] = "require"
 
+# Check if a specific dialect that uses 'sslmode' (like psycopg2) is being used
+if DATABASE_URL.startswith("postgresql+psycopg2") or DATABASE_URL.startswith("postgresql://"):
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args={"sslmode": "require"}
+    )
+else:
+    engine = create_engine(DATABASE_URL)
+# ---------------------------------------------------
+
+# engine = create_engine(DATABASE_URL) # Your original line (if you are NOT using the fix above)
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
