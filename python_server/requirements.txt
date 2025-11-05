@@ -9,3 +9,13 @@ sqlite-utils==3.35
 aiosqlite==0.19.0
 psycopg2-binary==2.9.10
 python-escpos==3.0a8
+gunicorn
+email-validator  # <<< ADD THIS LINE
+
+
+# === BARCODE & PRINTING ===
+Pillow==12.0.0
+viivakoodi==0.8.0
+python-barcode==0.16.1
+python-escpos==3.0a8
+pyserial==3.5
