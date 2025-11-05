@@ -300,8 +300,7 @@ async def platform_admin_login(
     token_data = {
         "sub": admin["email"],
         "role": admin["role"],
-        "admin_id": admin["id"],
-        "full_name": admin["full_name"],
+        "admin_id": str(admin["id"]), # <-- FIX: Convert UUID to string here
         "organization_id": None, # Explicitly set for admins
         "organization_name": "Platform Admin",
     }
