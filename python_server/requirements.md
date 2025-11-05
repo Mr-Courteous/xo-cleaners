@@ -1,0 +1,22 @@
+fastapi==0.104.1
+uvicorn==0.24.0
+sqlalchemy>=2.0.23
+python-multipart==0.0.6
+python-jose==3.3.0
+pyjwt
+cryptography
+sqlite-utils==3.35
+aiosqlite==0.19.0
+psycopg2-binary==2.9.10
+python-escpos==3.0a8
+gunicorn
+email-validator  # <<< ADD THIS LINE
+pydantic==2.12.4
+
+
+# === BARCODE & PRINTING ===
+Pillow==12.0.0
+viivakoodi==0.8.0
+python-barcode==0.16.1
+python-escpos==3.0a8
+pyserial==3.5
