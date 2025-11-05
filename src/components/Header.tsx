@@ -28,7 +28,7 @@ const Header = () => {
         setIsDropdownOpen(true);
     };
 
-    // Function to handle mouse leaving the Login button or dropdown areas
+    // Function to handle mouse leaving the Login button or dropdown areas  
     const handleMouseLeave = () => {
         // Set a timeout to delay the closing action
         dropdownTimeoutRef.current = setTimeout(() => {
