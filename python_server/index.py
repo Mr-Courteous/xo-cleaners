@@ -20,23 +20,20 @@ import uvicorn
 # ======================
 # DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5433/cleanpress")
 
-
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# --- ADD THIS LOGIC FOR SECURE CLOUD CONNECTIONS ---
-connect_args = {}
-# Most cloud providers (like Neon, Supabase, etc.) require SSL for connections
-if "sslmode" not in DATABASE_URL:
-    connect_args["sslmode"] = "require"
+if not DATABASE_URL:
+    # This is a good check to ensure Vercel has the variable set
+    raise EnvironmentError("The DATABASE_URL environment variable is missing!")
 
-# Check if a specific dialect that uses 'sslmode' (like psycopg2) is being used
-if DATABASE_URL.startswith("postgresql+psycopg2") or DATABASE_URL.startswith("postgresql://"):
-    engine = create_engine(
-        DATABASE_URL,
-        connect_args={"sslmode": "require"}
-    )
-else:
-    engine = create_engine(DATABASE_URL)
+# Vercel Serverless Functions require an SSL connection to most cloud databases (PostgreSQL/psycopg2).
+# This single, clean call ensures the connection is secure.
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"sslmode": "require"}
+)
+
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 # ---------------------------------------------------
 
 # engine = create_engine(DATABASE_URL) # Your original line (if you are NOT using the fix above)
