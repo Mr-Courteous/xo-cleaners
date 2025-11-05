@@ -18,7 +18,15 @@ import uvicorn
 # ======================
 # CONFIGURATION
 # ======================
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5433/cleanpress")
+# The original line:
+# DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5433/cleanpress")
+
+# Modified to remove the default fallback, forcing reliance on the environment variable.
+# This prevents accidentally using local development credentials in a deployed environment.
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+if not DATABASE_URL:
+    raise EnvironmentError("The DATABASE_URL environment variable is not set. Cannot connect to database.")
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
