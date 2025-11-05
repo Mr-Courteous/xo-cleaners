@@ -18,7 +18,7 @@ import RackManagement from "./components/RackManagement";
 import ClothingManagement from "./components/ClothingManagement";
 import Tag from "./components/Tag";
 import Login from "./components/Login";
-import HomePage from "./components/HomePage";
+import HomePage from "./components/Homepage";
 import UsersManagement from "./components/UsersManagement";
 import ReceiptConfig from "./components/ReceiptConfig";
 import PlatformAdmin from "./components/PlatformAdmin";
