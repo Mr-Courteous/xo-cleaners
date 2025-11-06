@@ -20,24 +20,24 @@ import uvicorn
 # ======================
 
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5433/cleanpress")
+# DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5433/cleanpress")
 
 
 
-# DATABASE_URL = os.getenv("DATABASE_URL")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-# if not DATABASE_URL:
-#     # This prevents the app from proceeding without a DATABASE_URL
-#     raise EnvironmentError("The DATABASE_URL environment variable is missing!")
+if not DATABASE_URL:
+    # This prevents the app from proceeding without a DATABASE_URL
+    raise EnvironmentError("The DATABASE_URL environment variable is missing!")
 
-# # CRITICAL FIX: Add connect_args to require SSL/TLS for cloud PostgreSQL.
-# # This runs immediately when the module loads, ensuring initial connection checks pass.
-# engine = create_engine(
-#     DATABASE_URL,
-#     connect_args={"sslmode": "require"}
-# )
+# CRITICAL FIX: Add connect_args to require SSL/TLS for cloud PostgreSQL.
+# This runs immediately when the module loads, ensuring initial connection checks pass.
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"sslmode": "require"}
+)
 
-# SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Default Platform Admin credentials
 DEFAULT_ADMIN_NAME = "Taiwo Courteous"
