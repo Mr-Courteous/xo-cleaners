@@ -4,6 +4,8 @@ import { useNavigate } from "react-router-dom";
 import Header from "./Header"; // ✅ Imported same Header as HomePage
 
 const API_BASE_URL = "http://localhost:8001";
+import baseUrl from '../lib/config';
+
 
 // ============================================================================
 // ✅ Utility: Alert Message Component
@@ -101,7 +103,7 @@ const LoginPage: React.FC = () => {
       details.append("username", email);
       details.append("password", password);
 
-      const response = await fetch(`${API_BASE_URL}/token/store-login`, {
+      const response = await fetch(`${baseUrl}/token/store-login`, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: details.toString(),
