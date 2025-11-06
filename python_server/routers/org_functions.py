@@ -585,7 +585,7 @@ async def get_tickets_for_organization(
                 t.total_amount, 
                 t.paid_amount, 
                 t.status, 
-                t.rack_number, 
+                # t.rack_number, 
                 t.special_instructions, 
                 t.pickup_date, 
                 t.created_at, 
