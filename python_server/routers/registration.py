@@ -57,7 +57,7 @@ class OrganizationWithAdminCreate(BaseModel):
 class RegistrationSuccess(BaseModel):
     message: str
     organization_id: int
-    user_id: int | None = None
+    user_id: str | None = None # <-- FIX: Changed int to str
     role: str
 
 # =======================
@@ -270,9 +270,9 @@ async def register_staff_user(
 
         return RegistrationSuccess(
             message="Staff user registered successfully.",
-            user_id=result[0],
+            user_id=str(result[0]), # <-- FIX: Cast the UUID object to a string
             organization_id=org_id_for_db,
-            role=data.role or "staff"   # ✅ Added this line
+            role=data.role or "staff"
         )
 
     except Exception as e:
