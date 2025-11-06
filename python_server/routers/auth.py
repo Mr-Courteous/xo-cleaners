@@ -51,7 +51,7 @@ class TokenResponse(BaseModel):
 
 class LoginUser(BaseModel):
     """Detailed user object returned in the /workers-login response."""
-    id: int
+    id: str # <-- FIX: Change from int to str
     email: str
     first_name: Optional[str]
     last_name: Optional[str]
@@ -244,7 +244,7 @@ async def login_user(
 
     # 6️⃣ Prepare user data for the "non-coded" response
     user_data = LoginUser(
-        id=user_id,
+        id=str(user_id), # <-- FIX: Cast the UUID object to a string
         email=email,
         first_name=first_name,
         last_name=last_name,
