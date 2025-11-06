@@ -181,6 +181,7 @@ async def register_organization_and_admin(
                 "plant_price": 1200.0,
                 "margin": 300.0,
                 "image_url": "default_trouser.jpg",
+                "total_price": 1500.0, # <-- FIX: Trousers: 1200 + 300
                 "organization_id": organization_id
             }
         ]
