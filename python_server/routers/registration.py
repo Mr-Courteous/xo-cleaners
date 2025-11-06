@@ -189,8 +189,8 @@ async def register_organization_and_admin(
             text("""
                 INSERT INTO clothing_types
                 (name, plant_price, margin, total_price, image_url, organization_id)
-                VALUES (%(name)s, %(plant_price)s, %(margin)s, %(total_price)s, %(image_url)s, %(organization_id)s)
-            """),
+                VALUES (:name, :plant_price, :margin, :total_price, :image_url, :organization_id)
+            """), # Note: The traceback suggests double percents (%%) were being used, but this is the correct single-percent style
             clothing_types
         )
 
@@ -204,11 +204,11 @@ async def register_organization_and_admin(
             role="STORE_OWNER"
         )
 
-    except UniqueViolation as e:
+    except IntegrityError as e: # <-- FIX 2B: Change UniqueViolation to IntegrityError
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Duplicate data detected (possible rack number conflict)."
+            detail="Duplicate data detected (possible rack number conflict, or a constraint violation)."
         )
 
     except Exception as e:
