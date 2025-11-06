@@ -4,6 +4,7 @@ from pydantic import BaseModel, EmailStr, Field
 from fastapi import APIRouter, HTTPException, Depends, status
 from sqlalchemy.orm import Session
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError # <-- FIX 1A: IMPORT IntegrityError
 from psycopg2.errorcodes import UNIQUE_VIOLATION, FOREIGN_KEY_VIOLATION # Optional for better error handling
 
 # Import shared utilities and constants from your utility file
@@ -172,6 +173,7 @@ async def register_organization_and_admin(
                 "plant_price": 1000.0,
                 "margin": 200.0,
                 "image_url": "default_shirt.jpg",
+                'total_price': 1200.0,  # <-- FIX: plant_price + margin
                 "organization_id": organization_id
             },
             {
@@ -186,8 +188,8 @@ async def register_organization_and_admin(
         db.execute(
             text("""
                 INSERT INTO clothing_types
-                (name, plant_price, margin, image_url, organization_id)
-                VALUES (:name, :plant_price, :margin, :image_url, :organization_id)
+                (name, plant_price, margin, total_price, image_url, organization_id)
+                VALUES (%(name)s, %(plant_price)s, %(margin)s, %(total_price)s, %(image_url)s, %(organization_id)s)
             """),
             clothing_types
         )
