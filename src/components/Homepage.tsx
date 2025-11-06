@@ -3,7 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { CheckCircle, Truck, RefreshCw } from 'lucide-react';
 import Header from './Header';
 
-const API_BASE_URL = 'http://localhost:8001';
+let API_BASE_URL = 'http://localhost:8001';
+
+import baseURL from "../lib/config";
 
 interface HomePageProps {
     onLoginClick: () => void;
@@ -38,7 +40,7 @@ const HomePage: React.FC<HomePageProps> = ({ onLoginClick }) => {
         };
 
         try {
-            const response = await fetch(`${API_BASE_URL}/register/new-organization`, {
+            const response = await fetch(`${baseURL}/register/new-organization`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
