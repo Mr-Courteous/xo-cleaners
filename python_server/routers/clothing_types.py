@@ -168,15 +168,10 @@ async def create_clothing_type(
         # 2. Save uploaded image
         image_url = await save_uploaded_file(image_file)
 
-        # 🎯 START FIX: Calculate total_price using your new formula
-        total_price = plant_price + margin
-        # 🎯 END FIX
-
-        # 3. Insert record
-        # 🎯 START FIX: Add total_price to the INSERT statement
+        # 3. Insert record (NO total_price here - database does it)
         stmt = text("""
-            INSERT INTO clothing_types (name, plant_price, margin, total_price, image_url, organization_id)
-            VALUES (:name, :plant_price, :margin, :total_price, :image_url, :org_id)
+            INSERT INTO clothing_types (name, plant_price, margin, image_url, organization_id)
+            VALUES (:name, :plant_price, :margin, :image_url, :org_id)
             RETURNING id, created_at, total_price
         """)
         
@@ -186,20 +181,16 @@ async def create_clothing_type(
                 "name": name,
                 "plant_price": plant_price,
                 "margin": margin,
-                "total_price": total_price, # 👈 ADDED THIS
                 "image_url": image_url,
                 "org_id": org_id,
             }
         )
-        # 🎯 END FIX
-        
         db.commit()
         row = result.fetchone()
         
         if not row:
             raise HTTPException(status_code=500, detail="Failed to create clothing type after insertion.")
 
-        # This now returns the total_price that was just saved
         return ClothingTypeResponse(
             id=row.id,
             name=name,
@@ -284,18 +275,12 @@ async def update_clothing_type(
                     print(f"[WARN] Failed to delete old image file {old_image_url}: {img_err}")
 
 
-        # 🎯 START FIX: Calculate total_price using your new formula
-        total_price = plant_price + margin
-        # 🎯 END FIX
-
-        # 5. Update record
-        # 🎯 START FIX: Add total_price to the UPDATE statement
+        # 5. Update record (NO total_price here - database does it)
         stmt = text("""
             UPDATE clothing_types
             SET name = :name,
                 plant_price = :plant_price,
                 margin = :margin,
-                total_price = :total_price,
                 image_url = :image_url
             WHERE id = :id AND organization_id = :org_id
             RETURNING created_at, total_price
@@ -307,20 +292,16 @@ async def update_clothing_type(
                 "name": name,
                 "plant_price": plant_price,
                 "margin": margin,
-                "total_price": total_price, # 👈 ADDED THIS
                 "image_url": new_image_url,
                 "org_id": org_id
             }
         )
-        # 🎯 END FIX
-        
         db.commit()
         updated_row = result.fetchone()
 
         if not updated_row:
              raise HTTPException(status_code=404, detail="Failed to update clothing type after commit.")
 
-        # This now returns the total_price that was just saved
         return ClothingTypeResponse(
             id=id,
             name=name,
@@ -339,7 +320,8 @@ async def update_clothing_type(
         db.rollback()
         print(f"[ERROR] Failed to update clothing type: {e}")
         raise HTTPException(status_code=500, detail=f"Error updating clothing type: {e}")
-
+    
+    
 @router.delete("/{id}", summary="Delete a clothing type from *your* organization")
 async def delete_clothing_type(
     id: int, 
