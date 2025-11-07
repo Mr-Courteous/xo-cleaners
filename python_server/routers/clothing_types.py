@@ -76,6 +76,60 @@ async def save_uploaded_file(image_file: UploadFile) -> str:
         )
 
 
+@router.get("", response_model=List[ClothingTypeResponse], summary="Get all clothing types for *your* organization")
+async def get_clothing_types_for_organization(
+    db: Session = Depends(get_db),
+    payload: Dict[str, Any] = Depends(get_current_user_payload)
+):
+    """
+    Retrieve all clothing types associated with the logged-in user's organization.
+    """
+    # This will now use your REAL payload
+    if not payload:
+         raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+        )
+        
+    org_id = payload.get("organization_id")
+    if not org_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Organization ID missing from token."
+        )
+
+    try:
+        print(f"[INFO] Fetching clothing types for org_id: {org_id}")
+        stmt = text("""
+            SELECT id, name, plant_price, margin, total_price, image_url, organization_id, created_at
+            FROM clothing_types
+            WHERE organization_id = :org_id
+            ORDER BY name
+        """)
+        results = db.execute(stmt, {"org_id": org_id}).fetchall()
+        
+        # Map results to Pydantic model
+        return [
+            ClothingTypeResponse(
+                id=row.id,
+                name=row.name,
+                plant_price=row.plant_price,
+                margin=row.margin,
+                total_price=row.total_price,
+                image_url=row.image_url,
+                organization_id=row.organization_id,
+                created_at=row.created_at
+            ) for row in results
+        ]
+    
+    except Exception as e:
+        print(f"[ERROR] Failed to get clothing types: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving data: {e}"
+        )
+
+
 @router.post("", response_model=ClothingTypeResponse, summary="Create a new clothing type for *your* organization")
 async def create_clothing_type(
     name: str = Form(...),
@@ -164,7 +218,6 @@ async def create_clothing_type(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error saving clothing type: {e}",
         )
-
 
 @router.put("/{id}", response_model=ClothingTypeResponse, summary="Update a clothing type in *your* organization")
 async def update_clothing_type(
@@ -286,8 +339,6 @@ async def update_clothing_type(
         db.rollback()
         print(f"[ERROR] Failed to update clothing type: {e}")
         raise HTTPException(status_code=500, detail=f"Error updating clothing type: {e}")
-    
-    
 
 @router.delete("/{id}", summary="Delete a clothing type from *your* organization")
 async def delete_clothing_type(
