@@ -12,6 +12,7 @@ from routers.auth import router as auth_router
 from routers.organizations import router as organizations_router
 from routers.org_functions import router as org_functions_router
 from routers.org_functions2 import router as org_functions2_router
+# from routers.clothing_types import router as clothing_types_router
 from routers.clothing_types import router as clothing_types_router
 
 import uvicorn
@@ -67,6 +68,7 @@ app.include_router(auth_router)
 app.include_router(organizations_router)
 app.include_router(org_functions_router)
 app.include_router(org_functions2_router)
+# app.include_router(clothing_types_router)
 app.include_router(clothing_types_router)
 
 @app.get("/")
