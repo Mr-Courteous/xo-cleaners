@@ -10,6 +10,7 @@ import baseURL from '../lib/config';
 import DropOff from './DropOff';
 import PickUp from './PickUp';
 import RackManagement from './RackManagement'; // --- NEW --- Import the new component
+import ClothingManagement from './ClothingManagement'; // Allow cashiers to add clothing
 
 // --- (Existing) Type for the summary list ---
 interface TicketSummary {
@@ -223,7 +224,7 @@ export default function CashierDashboard() {
         {/* --- View Buttons --- */}
         {/* --- CHANGED --- Added 'assign rack' */}
         <div className="flex space-x-4 mb-4">
-          {['overview', 'dropoff', 'pickup', 'assign rack'].map((view) => (
+          {['overview', 'dropoff', 'pickup', 'clothing', 'assign rack'].map((view) => (
             <button
               key={view}
               onClick={() => setCurrentView(view)}
@@ -376,6 +377,13 @@ export default function CashierDashboard() {
         {currentView === 'assign rack' && (
           <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
             <RackManagement />
+          </div>
+        )}
+
+        {/* --- Clothing Management (Cashier add/edit) --- */}
+        {currentView === 'clothing' && (
+          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+            <ClothingManagement />
           </div>
         )}
       </div>

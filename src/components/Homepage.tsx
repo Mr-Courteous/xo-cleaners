@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { CheckCircle, Truck, RefreshCw } from 'lucide-react';
 import Header from './Header';
 
-let API_BASE_URL = 'http://localhost:8001';
 
 import baseURL from "../lib/config";
 
