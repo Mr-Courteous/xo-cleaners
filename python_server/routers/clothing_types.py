@@ -76,60 +76,6 @@ async def save_uploaded_file(image_file: UploadFile) -> str:
         )
 
 
-@router.get("", response_model=List[ClothingTypeResponse], summary="Get all clothing types for *your* organization")
-async def get_clothing_types_for_organization(
-    db: Session = Depends(get_db),
-    payload: Dict[str, Any] = Depends(get_current_user_payload)
-):
-    """
-    Retrieve all clothing types associated with the logged-in user's organization.
-    """
-    # This will now use your REAL payload
-    if not payload:
-         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
-        )
-        
-    org_id = payload.get("organization_id")
-    if not org_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Organization ID missing from token."
-        )
-
-    try:
-        print(f"[INFO] Fetching clothing types for org_id: {org_id}")
-        stmt = text("""
-            SELECT id, name, plant_price, margin, total_price, image_url, organization_id, created_at
-            FROM clothing_types
-            WHERE organization_id = :org_id
-            ORDER BY name
-        """)
-        results = db.execute(stmt, {"org_id": org_id}).fetchall()
-        
-        # Map results to Pydantic model
-        return [
-            ClothingTypeResponse(
-                id=row.id,
-                name=row.name,
-                plant_price=row.plant_price,
-                margin=row.margin,
-                total_price=row.total_price,
-                image_url=row.image_url,
-                organization_id=row.organization_id,
-                created_at=row.created_at
-            ) for row in results
-        ]
-    
-    except Exception as e:
-        print(f"[ERROR] Failed to get clothing types: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error retrieving data: {e}"
-        )
-
-
 @router.post("", response_model=ClothingTypeResponse, summary="Create a new clothing type for *your* organization")
 async def create_clothing_type(
     name: str = Form(...),
@@ -168,10 +114,15 @@ async def create_clothing_type(
         # 2. Save uploaded image
         image_url = await save_uploaded_file(image_file)
 
+        # 🎯 START FIX: Calculate total_price using your new formula
+        total_price = plant_price + margin
+        # 🎯 END FIX
+
         # 3. Insert record
+        # 🎯 START FIX: Add total_price to the INSERT statement
         stmt = text("""
-            INSERT INTO clothing_types (name, plant_price, margin, image_url, organization_id)
-            VALUES (:name, :plant_price, :margin, :image_url, :org_id)
+            INSERT INTO clothing_types (name, plant_price, margin, total_price, image_url, organization_id)
+            VALUES (:name, :plant_price, :margin, :total_price, :image_url, :org_id)
             RETURNING id, created_at, total_price
         """)
         
@@ -181,16 +132,20 @@ async def create_clothing_type(
                 "name": name,
                 "plant_price": plant_price,
                 "margin": margin,
+                "total_price": total_price, # 👈 ADDED THIS
                 "image_url": image_url,
                 "org_id": org_id,
             }
         )
+        # 🎯 END FIX
+        
         db.commit()
         row = result.fetchone()
         
         if not row:
             raise HTTPException(status_code=500, detail="Failed to create clothing type after insertion.")
 
+        # This now returns the total_price that was just saved
         return ClothingTypeResponse(
             id=row.id,
             name=name,
@@ -276,12 +231,18 @@ async def update_clothing_type(
                     print(f"[WARN] Failed to delete old image file {old_image_url}: {img_err}")
 
 
+        # 🎯 START FIX: Calculate total_price using your new formula
+        total_price = plant_price + margin
+        # 🎯 END FIX
+
         # 5. Update record
+        # 🎯 START FIX: Add total_price to the UPDATE statement
         stmt = text("""
             UPDATE clothing_types
             SET name = :name,
                 plant_price = :plant_price,
                 margin = :margin,
+                total_price = :total_price,
                 image_url = :image_url
             WHERE id = :id AND organization_id = :org_id
             RETURNING created_at, total_price
@@ -293,16 +254,20 @@ async def update_clothing_type(
                 "name": name,
                 "plant_price": plant_price,
                 "margin": margin,
+                "total_price": total_price, # 👈 ADDED THIS
                 "image_url": new_image_url,
                 "org_id": org_id
             }
         )
+        # 🎯 END FIX
+        
         db.commit()
         updated_row = result.fetchone()
 
         if not updated_row:
              raise HTTPException(status_code=404, detail="Failed to update clothing type after commit.")
 
+        # This now returns the total_price that was just saved
         return ClothingTypeResponse(
             id=id,
             name=name,
@@ -321,7 +286,8 @@ async def update_clothing_type(
         db.rollback()
         print(f"[ERROR] Failed to update clothing type: {e}")
         raise HTTPException(status_code=500, detail=f"Error updating clothing type: {e}")
-
+    
+    
 
 @router.delete("/{id}", summary="Delete a clothing type from *your* organization")
 async def delete_clothing_type(
