@@ -29,4 +29,4 @@ viivakoodi==0.8.0
 python-barcode==0.16.1
 python-escpos==3.0a8
 pyserial==3.5
-aiofiles  <-- ADD THIS LINE
+aiofiles  
