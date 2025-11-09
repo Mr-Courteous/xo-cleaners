@@ -26,7 +26,7 @@ from utils.common import (
     TicketValidationResponse
 )
 
-
+ 
 class NewCustomerRequest(BaseModel):
     email: EmailStr
     first_name: str
@@ -104,7 +104,7 @@ async def get_racks_for_organization(
 
 @router.get("/clothing-types", summary="Get all clothing types for *your* organization")
 async def get_clothing_types_for_organization(
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db), 
     # 1. Get the secure payload from the user's token
     payload: Dict[str, Any] = Depends(get_current_user_payload)
 ):

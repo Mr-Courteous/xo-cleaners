@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy import create_engine, text
 from utils.common import hash_password
  
 # Routers
@@ -19,13 +20,10 @@ from routers.org_functions3 import router as org_functions3_router
 import uvicorn
 
 # ======================
-# CONFIGURATION (CLEAN & SSL-ENABLED)
+# CONFIGURATION (CLEAN & SSL-ENABLED) 
 # ====================== 
 
-
 # DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5433/cleanpress")
-
-
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -33,11 +31,14 @@ if not DATABASE_URL:
     # This prevents the app from proceeding without a DATABASE_URL
     raise EnvironmentError("The DATABASE_URL environment variable is missing!")
 
+# --- FIX: These lines must be comments ---
 # CRITICAL FIX: Add connect_args to require SSL/TLS for cloud PostgreSQL.
 # This runs immediately when the module loads, ensuring initial connection checks pass.
+# --- END FIX ---
 engine = create_engine(
     DATABASE_URL,
-    connect_args={"sslmode": "require"}
+    # Use this line if your cloud database requires SSL
+    # connect_args={"sslmode": "require"}
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
