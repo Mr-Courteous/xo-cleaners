@@ -3,14 +3,21 @@ import axios from 'axios';
 import { 
   Package, Clock, CheckCircle, MapPin, Users, CreditCard, FileText, RefreshCw, Tag, 
   Mail, User, DollarSign, AlertCircle, X, 
-  Search // --- CHANGED --- Added Search icon
+  Search 
 } from 'lucide-react';
 import Header from './Header';
 import baseURL from '../lib/config';
 import DropOff from './DropOff';
 import PickUp from './PickUp';
-import RackManagement from './RackManagement'; // --- NEW --- Import the new component
-import ClothingManagement from './ClothingManagement'; // Allow cashiers to add clothing
+import RackManagement from './RackManagement'; 
+import ClothingManagement from './ClothingManagement';
+
+// --- Import the new components ---
+import StatusManagement from './StatusManagement';
+import CustomerManagement from './CustomerManagement';
+// import UsersManagement from './UsersManagement'; // --- REMOVED ---
+import TicketManagement from './TicketManagement'; // --- NEW ---
+
 
 // --- (Existing) Type for the summary list ---
 interface TicketSummary {
@@ -28,8 +35,7 @@ interface TicketSummary {
   organization_id: number;
 }
 
-// --- NEW ---
-// 1. Type for an item *within* the full ticket response
+// --- (Existing) Type for an item *within* the full ticket response
 interface TicketItemDetail {
 // ... (interface unchanged)
   id: number;
@@ -45,8 +51,7 @@ interface TicketItemDetail {
   additional_charge: number;
 }
 
-// --- NEW ---
-// 2. Type for the full ticket response (from the /tickets/{id} endpoint)
+// --- (Existing) Type for the full ticket response
 interface TicketResponse {
 // ... (interface unchanged)
   id: number;
@@ -82,14 +87,13 @@ export default function CashierDashboard() {
 
   const [tickets, setTickets] = useState<TicketSummary[]>([]);
 
-  // --- NEW STATE FOR TICKET DETAIL MODAL ---
+  // --- (Existing) STATE FOR TICKET DETAIL MODAL ---
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [selectedTicketDetails, setSelectedTicketDetails] = useState<TicketResponse | null>(null);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
 
-  // --- CHANGED ---
-  // --- NEW STATE FOR FILTERING TICKETS ---
+  // --- (Existing) STATE FOR FILTERING TICKETS ---
   const [ticketFilter, setTicketFilter] = useState("");
   const [filteredTickets, setFilteredTickets] = useState<TicketSummary[]>([]);
 
@@ -149,8 +153,7 @@ export default function CashierDashboard() {
     fetchDashboardData();
   }, []);
 
-  // --- CHANGED ---
-  // --- NEW EFFECT FOR FILTERING TICKETS ---
+  // --- (Existing) EFFECT FOR FILTERING TICKETS ---
   useEffect(() => {
     const lowerCaseFilter = ticketFilter.toLowerCase();
     const filtered = tickets.filter(
@@ -161,10 +164,9 @@ export default function CashierDashboard() {
     setFilteredTickets(filtered);
   }, [ticketFilter, tickets]); // Re-run when filter or tickets change
 
-  // --- NEW ---
-  // 3. Function to fetch and display single ticket details
+  // --- (Existing) Function to fetch and display single ticket details
   const handleTicketClick = async (ticketId: number) => {
-// ... (function unchanged, syntax error fixed)
+// ... (function unchanged)
     setIsDetailModalOpen(true);
     setIsDetailLoading(true);
     setDetailError(null);
@@ -181,7 +183,7 @@ export default function CashierDashboard() {
       
       setSelectedTicketDetails(response.data);
 
-    } catch (err: any) { // <-- Fixed syntax error here (was ->)
+    } catch (err: any) { 
       console.error("Error fetching ticket details:", err);
       setDetailError(err.response?.data?.detail || "Failed to load ticket details.");
     } finally {
@@ -222,13 +224,16 @@ export default function CashierDashboard() {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
         {/* --- View Buttons --- */}
-        {/* --- CHANGED --- Added 'assign rack' */}
-        <div className="flex space-x-4 mb-4">
-          {['overview', 'dropoff', 'pickup', 'clothing', 'assign rack'].map((view) => (
+        {/* --- CHANGED --- Swapped 'users' for 'tickets' */}
+        <div className="flex flex-wrap gap-4 mb-4">
+          {[
+            'overview', 'dropoff', 'pickup', 'clothing', 'assign rack', 
+            'status', 'customers', 'tickets' // --- CHANGED ---
+          ].map((view) => (
             <button
               key={view}
               onClick={() => setCurrentView(view)}
-              className={`px-4 py-2 rounded-md font-medium capitalize ${ // --- CHANGED --- Added capitalize
+              className={`px-4 py-2 rounded-md font-medium capitalize ${ 
                 currentView === view
                   ? 'bg-blue-600 text-white'
                   : 'bg-gray-100 text-gray-700'
@@ -287,10 +292,10 @@ export default function CashierDashboard() {
 
             {/* --- Recent Tickets --- */}
             <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 mt-8">
-              {/* --- CHANGED --- Added flex container for title and search */}
+              {/* --- (Existing) flex container for title and search */}
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-semibold text-gray-900">Recent Tickets</h2>
-                {/* --- CHANGED --- Added search bar */}
+                {/* --- (Existing) search bar */}
                 <div className="relative">
                   <input
                     type="text"
@@ -303,7 +308,7 @@ export default function CashierDashboard() {
                 </div>
               </div>
 
-              {/* --- CHANGED --- Added max-h-96 and overflow-y-auto for scrolling */}
+              {/* --- (Existing) max-h-96 and overflow-y-auto for scrolling */}
               <div className="overflow-x-auto overflow-y-auto max-h-96 relative">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50 sticky top-0">
@@ -316,9 +321,9 @@ export default function CashierDashboard() {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {/* --- CHANGED --- Use filteredTickets.length */}
+                    {/* --- (Existing) Use filteredTickets.length */}
                     {filteredTickets.length > 0 ? (
-                      // --- CHANGED --- Map over filteredTickets (still slicing for performance)
+                      // --- (Existing) Map over filteredTickets
                       filteredTickets.slice(0, 10).map((ticket) => ( 
                         <tr 
                           key={ticket.id} 
@@ -345,7 +350,7 @@ export default function CashierDashboard() {
                     ) : (
                       <tr>
                         <td colSpan={5} className="px-6 py-4 text-center text-sm text-gray-500">
-                          {/* --- CHANGED --- Show dynamic message */}
+                          {/* --- (Existing) Show dynamic message */}
                           {ticketFilter ? "No tickets match your filter." : "No tickets found."}
                         </td>
                       </tr>
@@ -373,19 +378,49 @@ export default function CashierDashboard() {
           </div>
         )}
 
-        {/* --- NEW --- Render RackManagement component */}
+        {/* --- (Existing) Render RackManagement component --- */}
         {currentView === 'assign rack' && (
           <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
             <RackManagement />
           </div>
         )}
 
-        {/* --- Clothing Management (Cashier add/edit) --- */}
+        {/* --- (Existing) Clothing Management (Cashier add/edit) --- */}
         {currentView === 'clothing' && (
           <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
             <ClothingManagement />
           </div>
         )}
+
+        {/* --- Render StatusManagement component */}
+        {currentView === 'status' && (
+          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+            <StatusManagement />
+          </div>
+        )}
+
+        {/* --- Render CustomerManagement component */}
+        {currentView === 'customers' && (
+          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+            <CustomerManagement />
+          </div>
+        )}
+
+        {/* --- REMOVED --- UsersManagement component
+        {currentView === 'users' && (
+          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+            <UsersManagement />
+          </div>
+        )}
+        */}
+
+        {/* --- NEW --- Render TicketManagement component */}
+        {currentView === 'tickets' && (
+          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+            <TicketManagement />
+          </div>
+        )}
+
       </div>
 
       {/* --- Ticket Detail Modal --- */}
@@ -474,6 +509,7 @@ export default function CashierDashboard() {
                                 <td className="px-4 py-3 text-sm text-gray-500">
                                   {item.starch_level && item.starch_level !== 'none' ? `Starch: ${item.starch_level}` : ''}
                                   {item.crease ? ' (Crease)' : ''}
+                                TAMBAHAN KETERANGAN
                                 </td>
                                 <td className="px-4 py-3 text-sm text-gray-900 text-right">${item.item_total.toFixed(2)}</td>
                               </tr>
@@ -533,4 +569,3 @@ export default function CashierDashboard() {
     </div>
   );
 }
-
