@@ -57,7 +57,7 @@ export default function CustomerManagement() {
       // The backend needs to handle the "name" field and split it
       // into first_name/last_name if necessary.
       const response = await axios.post(
-        `${baseURL}/api/organizations/customers`,
+        `${baseURL}/api/organizations/register-customer`,
         newCustomer, // Send the newCustomer object as data
         { headers }
       );

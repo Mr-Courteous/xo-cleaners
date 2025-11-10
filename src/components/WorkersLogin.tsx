@@ -3,6 +3,7 @@ import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import { AlertCircle } from "lucide-react";
 import baseURL from "../lib/config";
+import Header from "./Header"; // --- Imported Header ---
 
 const WorkersLogin: React.FC = () => {
     const navigate = useNavigate();
@@ -44,19 +45,20 @@ const WorkersLogin: React.FC = () => {
             const data = response.data;
 
             // ✅ Save token & user info consistently
-            localStorage.setItem("accessToken", data.access_token);
-            localStorage.setItem("userRole", data.user.role);
-            localStorage.setItem("organizationId", String(data.user.organization_id || ""));
-            localStorage.setItem("userEmail", data.user.email);
-            localStorage.setItem("organizationName", data.organization_name || ""); // ✅ Save organization name
+            const { access_token, user_role, organization_id, organization_name } = data;
+            localStorage.setItem("accessToken", access_token);
+            localStorage.setItem("userRole", user_role);
+            localStorage.setItem("organizationId", String(organization_id || ""));
+            localStorage.setItem("organizationName", organization_name || "");
+            localStorage.setItem("userEmail", email);
 
+            // 4. Navigate based on role
+            const route = getRouteByRole(user_role);
+            navigate(route);
 
-            // ✅ Navigate based on role
-            const destination = getRouteByRole(data.user.role);
-            navigate(destination);
-        } catch (error: any) {
-            if (error.response?.data?.detail) {
-                setErrorMsg(error.response.data.detail);
+        } catch (err: any) {
+            if (axios.isAxiosError(err) && err.response) {
+                setErrorMsg(err.response.data.detail || "An unknown error occurred.");
             } else {
                 setErrorMsg("Login failed. Please try again.");
             }
@@ -66,53 +68,55 @@ const WorkersLogin: React.FC = () => {
     };
 
     return (
-        <div className="flex items-center justify-center min-h-screen bg-gray-100">
-            <form
-                onSubmit={handleSubmit}
-                className="bg-white p-8 rounded-2xl shadow-md w-full max-w-md"
-            >
-                <h2 className="text-2xl font-bold mb-6 text-center text-gray-800">
-                    Admin / Worker Login
-                </h2>
+        // --- Wrapped in a div and added Header ---
+        <div className="min-h-screen bg-gray-100">
+            <Header />
+            {/* --- Added padding to center form below header --- */}
+            <div className="flex items-center justify-center pt-20 pb-10 px-4">
+                <div className="bg-white p-8 rounded-lg shadow-lg w-full max-w-md">
+                    <h2 className="text-2xl font-bold text-center mb-6">Staff Login</h2>
 
-                {errorMsg && (
-                    <div className="flex items-center bg-red-100 text-red-700 p-3 mb-4 rounded-md">
-                        <AlertCircle className="w-5 h-5 mr-2" />
-                        <p>{errorMsg}</p>
-                    </div>
-                )}
+                    {errorMsg && (
+                        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
+                            <strong className="font-bold mr-2">Error:</strong>
+                            <span className="block sm:inline">{errorMsg}</span>
+                        </div>
+                    )}
 
-                <div className="mb-4">
-                    <label className="block text-gray-700 font-semibold mb-1">Email</label>
-                    <input
-                        type="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        required
-                        className="w-full border border-gray-300 rounded-md p-2 focus:outline-none focus:ring focus:ring-blue-200"
-                    />
+                    <form onSubmit={handleSubmit}>
+                        <div className="mb-4">
+                            <label className="block text-gray-700 font-semibold mb-1">Email</label>
+                            <input
+                                type="email"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                required
+                                className="w-full border border-gray-300 rounded-md p-2 focus:outline-none focus:ring focus:ring-blue-200"
+                            />
+                        </div>
+
+                        <div className="mb-6">
+                            <label className="block text-gray-700 font-semibold mb-1">Password</label>
+                            <input
+                                type="password"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                required
+                                className="w-full border border-gray-300 rounded-md p-2 focus:outline-none focus:ring focus:ring-blue-200"
+                            />
+                        </div>
+
+                        <button
+                            type="submit"
+                            disabled={loading}
+                            className={`w-full text-white font-semibold py-2 rounded-md transition ${loading ? "bg-gray-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"
+                                }`}
+                        >
+                            {loading ? "Logging in..." : "Login"}
+                        </button>
+                    </form>
                 </div>
-
-                <div className="mb-6">
-                    <label className="block text-gray-700 font-semibold mb-1">Password</label>
-                    <input
-                        type="password"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        required
-                        className="w-full border border-gray-300 rounded-md p-2 focus:outline-none focus:ring focus:ring-blue-200"
-                    />
-                </div>
-
-                <button
-                    type="submit"
-                    disabled={loading}
-                    className={`w-full text-white font-semibold py-2 rounded-md transition ${loading ? "bg-gray-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"
-                        }`}
-                >
-                    {loading ? "Logging in..." : "Login"}
-                </button>
-            </form>
+            </div>
         </div>
     );
 };

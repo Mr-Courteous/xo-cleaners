@@ -183,13 +183,16 @@ async def login_user(
     a JSON object with user/org info for immediate visualization.
     """
 
-    # 1️⃣ Look up user by email
+    # Normalize incoming email to lowercase for consistent lookup
+    email = data.email.strip().lower()
+
+    # 1️⃣ Look up user by email (case-insensitive by using LOWER on stored email)
     user_stmt = text("""
         SELECT id, organization_id, email, password_hash, first_name, last_name, role, address
         FROM allUsers
-        WHERE email = :email
+        WHERE LOWER(email) = :email
     """)
-    user_row = db.execute(user_stmt, {"email": data.email}).fetchone()
+    user_row = db.execute(user_stmt, {"email": email}).fetchone()
 
     if not user_row:
         raise HTTPException(
@@ -272,13 +275,16 @@ async def platform_admin_login(
     Returns a JWT token (with all data encoded) AND
     a JSON object with admin info for immediate visualization.
     """
-    # 1️⃣ Fetch platform admin
+    # Normalize incoming email for login
+    admin_email = data.email.strip().lower()
+
+    # 1️⃣ Fetch platform admin (case-insensitive match)
     stmt = text("""
         SELECT id, full_name, email, password_hash, role
         FROM platform_admins
-        WHERE email = :email
+        WHERE LOWER(email) = :email
     """)
-    admin_row = db.execute(stmt, {"email": data.email}).fetchone()
+    admin_row = db.execute(stmt, {"email": admin_email}).fetchone()
 
     if not admin_row:
         raise HTTPException(

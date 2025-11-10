@@ -123,6 +123,7 @@ const LoginPage: React.FC = () => {
         localStorage.setItem("userRole", user_role);
         localStorage.setItem("organizationId", String(organization_id || ""));
         localStorage.setItem("organizationName", organization_name || "");
+        localStorage.setItem("userEmail", email);
 
         setMessage("Login successful! Redirecting...");
         setMessageType("success");

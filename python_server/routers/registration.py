@@ -259,7 +259,7 @@ async def register_staff_user(
 
         result = db.execute(insert_stmt, {
             "org_id": org_id_for_db,
-            "email": data.email,
+            "email": data.email.strip().lower(),
             "password_hash": hashed_pw,
             "first_name": data.first_name,
             "last_name": data.last_name,

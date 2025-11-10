@@ -1,15 +1,44 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Shirt, Shield, User, Briefcase, Users, Home, Info, Phone, Compass } from 'lucide-react';
-import { Link } from 'react-router-dom';
+// --- NEW: Added LogOut and useNavigate ---
+import { Shirt, Shield, User, Briefcase, Users, Home, Info, Phone, Compass, LogOut } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
 
 /**
- * Header component serving as the application header with full navigation and a hover-delayed dropdown.
- * Uses standard <a> tags for navigation functionality.
+ * Header component serving as the application header with full navigation.
+ * Conditionally renders Login or Logout based on auth state.
  */
 const Header = () => {
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-    const dropdownTimeoutRef = useRef(null);
+    const dropdownTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const HOVER_DELAY_MS = 200; // Delay in milliseconds before closing the dropdown
+
+    // --- NEW: Authentication State and Navigation ---
+    const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const navigate = useNavigate();
+
+    // Check for access token on component mount
+    useEffect(() => {
+        const token = localStorage.getItem("accessToken");
+        setIsAuthenticated(!!token); // !! converts string/null to boolean
+    }, []);
+
+    // --- NEW: Logout Handler ---
+    const handleLogout = () => {
+        // 1. Destroy all specified items from localStorage
+        localStorage.removeItem("accessToken");
+        localStorage.removeItem("userRole");
+        localStorage.removeItem("organizationId");
+        localStorage.removeItem("organizationName");
+        localStorage.removeItem("userEmail");
+
+        // 2. Update the header's state to show "Login"
+        setIsAuthenticated(false);
+
+        // 3. Redirect the user to the main staff login page
+        navigate('/workers-login');
+    };
+    // --- End of new logic ---
+
 
     // Cleanup timeout on unmount
     useEffect(() => {
@@ -43,6 +72,7 @@ const Header = () => {
         { name: 'Contact', to: '/contact', icon: Phone },
     ];
 
+    // --- This is your desired list of 3 login options ---
     const loginOptions = [
         { name: 'Platform Admin', to: '/platform-admin', icon: Shield },
         { name: 'Store Owner', to: '/store-owner-login', icon: Compass },
@@ -80,45 +110,60 @@ const Header = () => {
                         ))}
                     </div>
 
-                    {/* Login Dropdown */}
-                    <div 
-                        className="relative"
-                        onMouseEnter={handleMouseEnter}
-                        onMouseLeave={handleMouseLeave}
-                    >
-                        <button 
-                            className="flex items-center bg-blue-600 hover:bg-blue-700 text-white font-semibold px-5 py-2.5 rounded-full shadow-lg transition duration-300 transform hover:scale-[1.02] active:scale-100 focus:outline-none focus:ring-4 focus:ring-blue-300"
-                            aria-expanded={isDropdownOpen}
-                            aria-haspopup="true"
-                        >
-                            <User className="h-5 w-5 mr-2" />
-                            Login
-                            <svg className={`ml-2 h-4 w-4 transition-transform duration-200 ${isDropdownOpen ? 'rotate-180' : 'rotate-0'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                            </svg>
-                        </button>
-                        
-                        {/* Dropdown Menu */}
-                        <div 
-                            className={`absolute right-0 mt-3 w-60 origin-top-right rounded-xl bg-white shadow-2xl ring-1 ring-black ring-opacity-5 transition-opacity duration-150 ${isDropdownOpen ? 'opacity-100 visible' : 'opacity-0 invisible'}`}
-                            role="menu" 
-                            aria-orientation="vertical" 
-                        >
-                            <div className="py-2" role="none">
-                                {loginOptions.map((option) => (
-                                    <Link
-                                        key={option.name}
-                                        to={option.to}
-                                        onClick={() => setIsDropdownOpen(false)}
-                                        className="flex items-center px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 hover:text-blue-600 transition duration-150"
-                                        role="menuitem"
-                                    >
-                                        <option.icon className="h-5 w-5 mr-3 text-gray-400 hover:text-blue-600" />
-                                        {option.name}
-                                    </Link>
-                                ))}
+                    {/* --- NEW: Conditional Login/Logout --- */}
+                    <div className="relative">
+                        {isAuthenticated ? (
+                            // 1. If user IS logged in, show Logout button
+                            <button
+                                onClick={handleLogout}
+                                className="flex items-center bg-red-600 hover:bg-red-700 text-white font-semibold px-5 py-2.5 rounded-full shadow-lg transition duration-300 transform hover:scale-[1.02] active:scale-100 focus:outline-none focus:ring-4 focus:ring-red-300"
+                            >
+                                <LogOut className="h-5 w-5 mr-2" />
+                                Logout
+                            </button>
+                        ) : (
+                            // 2. If user is NOT logged in, show Login dropdown
+                            <div 
+                                className="relative"
+                                onMouseEnter={handleMouseEnter}
+                                onMouseLeave={handleMouseLeave}
+                            >
+                                <button 
+                                    className="flex items-center bg-blue-600 hover:bg-blue-700 text-white font-semibold px-5 py-2.5 rounded-full shadow-lg transition duration-300 transform hover:scale-[1.02] active:scale-100 focus:outline-none focus:ring-4 focus:ring-blue-300"
+                                    aria-expanded={isDropdownOpen}
+                                    aria-haspopup="true"
+                                >
+                                    <User className="h-5 w-5 mr-2" />
+                                    Login
+                                    <svg className={`ml-2 h-4 w-4 transition-transform duration-200 ${isDropdownOpen ? 'rotate-180' : 'rotate-0'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                                    </svg>
+                                </button>
+                                
+                                {/* Dropdown Menu */}
+                                <div 
+                                    className={`absolute right-0 mt-3 w-60 origin-top-right rounded-xl bg-white shadow-2xl ring-1 ring-black ring-opacity-5 transition-opacity duration-150 ${isDropdownOpen ? 'opacity-100 visible' : 'opacity-0 invisible'}`}
+                                    role="menu" 
+                                    aria-orientation="vertical" 
+                                >
+                                    <div className="py-2" role="none">
+                                        {/* This now uses your 3 options */}
+                                        {loginOptions.map((option) => (
+                                            <Link
+                                                key={option.name}
+                                                to={option.to}
+                                                onClick={() => setIsDropdownOpen(false)}
+                                                className="flex items-center px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 hover:text-blue-600 transition duration-150"
+                                                role="menuitem"
+                                            >
+                                                <option.icon className="h-5 w-5 mr-3 text-gray-400 hover:text-blue-600" />
+                                                {option.name}
+                                            </Link>
+                                        ))}
+                                    </div>
+                                </div>
                             </div>
-                        </div>
+                        )}
                     </div>
                 </nav>
             </div>
