@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import {
-    Settings, LineChart, X, Edit3, Trash2, LogOut, RefreshCw
+    Settings, LineChart, X, Edit3, Trash2, RefreshCw, Loader2
 } from 'lucide-react';
 import Header from './Header';
 import baseUrl from '../lib/config';
@@ -16,10 +16,11 @@ interface AdminLoginForm {
 }
 
 export default function PlatformAdmin({ onBackToHome }: PlatformAdminProps) {
+    const [isVerifying, setIsVerifying] = useState(true); // New state for token verification
     const [loggedIn, setLoggedIn] = useState(false);
     const [admin, setAdmin] = useState<{ email: string; role: string } | null>(null);
     const [loginForm, setLoginForm] = useState<AdminLoginForm>({ email: '', password: '' });
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(false); // This is for the login form button
     const [error, setError] = useState('');
 
     const [stats, setStats] = useState({
@@ -37,7 +38,7 @@ export default function PlatformAdmin({ onBackToHome }: PlatformAdminProps) {
     const [editForm, setEditForm] = useState<any>({});
     const [refreshing, setRefreshing] = useState(false);
 
-    // Logout handler (kept for error handling)
+    // Logout handler
     const handleLogout = useCallback(() => {
         localStorage.removeItem('platformAdminToken');
         localStorage.removeItem('platformAdminRole');
@@ -45,23 +46,16 @@ export default function PlatformAdmin({ onBackToHome }: PlatformAdminProps) {
         setAdmin(null);
         setLoggedIn(false);
         setError('Session expired or unauthorized. Please log in again.');
-    }, []);
-
-    // Restore login state if token exists
-    useEffect(() => {
-        const token = localStorage.getItem('platformAdminToken');
-        const role = localStorage.getItem('platformAdminRole');
-        const email = localStorage.getItem('platformAdminEmail');
-        if (token && role && email) {
-            setAdmin({ email, role });
-            setLoggedIn(true);
-        }
+        setIsVerifying(false); // Stop verification process
     }, []);
 
     // Fetch platform data (orgs + users)
     const fetchPlatformData = useCallback(async () => {
         const token = localStorage.getItem('platformAdminToken');
-        if (!token) return;
+        if (!token) {
+            setIsVerifying(false); // No token, stop verifying
+            return;
+        }
 
         try {
             setRefreshing(true);
@@ -74,6 +68,7 @@ export default function PlatformAdmin({ onBackToHome }: PlatformAdminProps) {
                 }),
             ]);
 
+            // --- TOKEN IS VALID ---
             setStats({
                 totalStores: orgRes.data.total_organizations || 0,
                 activeUsers: userRes.data.total_users || 0,
@@ -83,17 +78,37 @@ export default function PlatformAdmin({ onBackToHome }: PlatformAdminProps) {
 
             setOrgList(orgRes.data.organizations || []);
             setUserList(userRes.data.users || []);
+            setLoggedIn(true); // Grant access
         } catch (err: any) {
             console.error('Error fetching platform stats:', err);
-            if (err.response && err.response.status === 401) handleLogout();
+            if (err.response && err.response.status === 401) {
+                // --- TOKEN IS INVALID ---
+                handleLogout(); // This will clear token & set loggedIn(false)
+            }
         } finally {
             setRefreshing(false);
+            setIsVerifying(false); // Stop verification spinner
         }
-    }, [handleLogout]);
+    }, [handleLogout]); // Dependency on handleLogout
 
+    // Restore login state if token exists
     useEffect(() => {
-        if (loggedIn) fetchPlatformData();
-    }, [loggedIn, fetchPlatformData]);
+        const token = localStorage.getItem('platformAdminToken');
+        const role = localStorage.getItem('platformAdminRole');
+        const email = localStorage.getItem('platformAdminEmail');
+        
+        if (token && role && email) {
+            setAdmin({ email, role });
+            // Token exists, now we must verify it.
+            // fetchPlatformData will setLoggedIn(true) on success
+            // or call handleLogout() on 401 failure.
+            fetchPlatformData(); 
+        } else {
+            // No token, don't verify, just show login page.
+            setIsVerifying(false); 
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); // Intentionally run only ONCE on mount.
 
     // Login handler
     const handleLogin = async (e: React.FormEvent) => {
@@ -105,19 +120,22 @@ export default function PlatformAdmin({ onBackToHome }: PlatformAdminProps) {
             const res = await axios.post(`${baseUrl}/token/admin-login`, loginForm);
             const { access_token, admin_role, email } = res.data;
 
+            // Save keys that match the useEffect hook
             localStorage.setItem('platformAdminToken', access_token);
-            localStorage.setItem('userRole', admin_role);
-            localStorage.setItem('userEmail', email);
             localStorage.setItem('platformAdminRole', admin_role);
+            localStorage.setItem('platformAdminEmail', email);
 
             setAdmin({ email, role: admin_role });
-            setLoggedIn(true);
+            setLoggedIn(true); // Set logged in
             setLoginForm({ email: '', password: '' });
             setError('');
+            
+            // Manually fetch data after successful login
+            fetchPlatformData(); 
         } catch (err: any) {
             console.error(err);
             setError(err.response?.data?.detail || 'Login failed. Check credentials.');
-            handleLogout();
+            handleLogout(); // Clear any bad tokens
         } finally {
             setLoading(false);
         }
@@ -137,7 +155,7 @@ export default function PlatformAdmin({ onBackToHome }: PlatformAdminProps) {
     const cancelEdit = () => setEditingItemId(null);
 
     const saveEdit = async (id: number) => {
-        const token = localStorage.getItem('platformAdminToken');
+        const token = localStorage.getItem('platformAdminToken'); 
         const url =
             modalType === 'users'
                 ? `${baseUrl}/users/${id}`
@@ -164,7 +182,7 @@ export default function PlatformAdmin({ onBackToHome }: PlatformAdminProps) {
     const deleteItem = async (id: number) => {
         if (!window.confirm('Are you sure you want to delete this record?')) return;
 
-        const token = localStorage.getItem('platformAdminToken');
+        const token = localStorage.getItem('platformAdminToken'); 
         const url =
             modalType === 'users'
                 ? `${baseUrl}/users/${id}`
@@ -187,6 +205,20 @@ export default function PlatformAdmin({ onBackToHome }: PlatformAdminProps) {
     };
 
     // ===== MAIN RENDER =====
+
+    // Show loading spinner while verifying token
+    if (isVerifying) {
+        return (
+            <div className="flex flex-col min-h-screen">
+                <Header onBackToHome={onBackToHome} />
+                <div className="flex-grow flex items-center justify-center">
+                    <Loader2 className="w-12 h-12 text-blue-600 animate-spin" />
+                </div>
+            </div>
+        );
+    }
+
+    // After verification, show Login or Dashboard
     return (
         <div className="min-h-screen bg-gray-50 flex flex-col">
             <Header onBackToHome={onBackToHome} />
@@ -230,7 +262,6 @@ export default function PlatformAdmin({ onBackToHome }: PlatformAdminProps) {
                     <div className="max-w-screen-xl mx-auto space-y-8 p-4 sm:p-6 lg:p-8">
                         <div className="flex justify-between items-center mb-4">
                             <h2 className="text-4xl font-extrabold text-gray-900">Platform Admin Portal</h2>
-                            {/* Logout button removed from here */}
                         </div>
 
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -311,6 +342,7 @@ export default function PlatformAdmin({ onBackToHome }: PlatformAdminProps) {
                                                         <th className="px-3 py-3 text-left font-semibold">Last Name</th>
                                                         <th className="px-3 py-3 text-left font-semibold">Email</th>
                                                         <th className="px-3 py-3 text-left font-semibold">Role</th>
+                                                        {/* --- THIS IS THE FIX --- */}
                                                         <th className="px-3 py-3 text-left font-semibold">Actions</th>
                                                     </>
                                                 )}
@@ -369,7 +401,7 @@ export default function PlatformAdmin({ onBackToHome }: PlatformAdminProps) {
                                                                             className="border px-2 py-1 rounded w-full"
                                                                         />
                                                                     </td>
-                                                                    <td className="px-3 py-2">
+S                                                                   <td className="px-3 py-2">
                                                                         <input
                                                                             type="text"
                                                                             value={editForm.role || ''}

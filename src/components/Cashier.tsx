@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react'; // Added useCallback
 import axios from 'axios';
 import { 
   Package, Clock, CheckCircle, MapPin, Users, CreditCard, FileText, RefreshCw, Tag, 
@@ -73,7 +73,7 @@ interface TicketResponse {
 
 export default function CashierDashboard() {
   const [currentView, setCurrentView] = useState<string>('overview');
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(true); // For initial page load
   const [error, setError] = useState<string | null>(null);
 
   const [stats, setStats] = useState({
@@ -97,61 +97,75 @@ export default function CashierDashboard() {
   const [ticketFilter, setTicketFilter] = useState("");
   const [filteredTickets, setFilteredTickets] = useState<TicketSummary[]>([]);
 
+  // --- NEW: State for refreshing ---
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // --- (Existing) Data Fetching Effect ---
+
+  // --- REFACTORED: Data Fetching moved to useCallback ---
+  const fetchDashboardData = useCallback(async () => {
+    try {
+      setIsRefreshing(true); // Show refresh state
+      setError(null);
+
+      const token = localStorage.getItem("accessToken");
+      if (!token) throw new Error("Access token missing");
+
+      const headers = { Authorization: `Bearer ${token}` };
+
+      const [racksResponse, ticketsResponse] = await Promise.all([
+        axios.get(`${baseURL}/api/organizations/racks`, { headers }),
+        axios.get(`${baseURL}/api/organizations/tickets`, { headers })
+      ]);
+
+      // --- Process Racks ---
+      const racks = racksResponse.data?.racks || [];
+      console.log(racks)
+      const occupied = racks.filter((r: any) => r.is_occupied).length;
+      const available = racks.length - occupied;
+
+      // --- Process Tickets ---
+      const ticketsData: TicketSummary[] = ticketsResponse.data || [];
+      setTickets(ticketsData); 
+
+      const total_tickets = ticketsData.length;
+      const pending_pickup = ticketsData.filter(
+        (t) => t.status === 'ready_for_pickup' // <-- Adjust this status string if needed
+      ).length;
+      const in_process = ticketsData.filter(
+        (t) => t.status === 'processing' // <-- Adjust this status string if needed
+      ).length;
+      
+      setStats({
+        total_tickets,
+        pending_pickup,
+        in_process,
+        occupied_racks: occupied,
+        available_racks: available,
+      });
+
+    } catch (err: any) {
+      console.error("Error fetching dashboard data:", err);
+      setError(err.response?.data?.detail || err.message);
+    } finally {
+      setLoading(false); // Hide initial load spinner
+      setIsRefreshing(false); // Hide refresh button spinner
+    }
+  }, []); // Empty dependency array means this function is stable
+
+  // --- (Modified) Data Fetching Effect ---
   useEffect(() => {
-    const fetchDashboardData = async () => {
-      try {
-// ... (fetch logic unchanged)
-        setLoading(true);
-        setError(null);
-
-        const token = localStorage.getItem("accessToken");
-        if (!token) throw new Error("Access token missing");
-
-        const headers = { Authorization: `Bearer ${token}` };
-
-        const [racksResponse, ticketsResponse] = await Promise.all([
-          axios.get(`${baseURL}/api/organizations/racks`, { headers }),
-          axios.get(`${baseURL}/api/organizations/tickets`, { headers })
-        ]);
-
-        // --- Process Racks ---
-        const racks = racksResponse.data?.racks || [];
-        console.log(racks)
-        const occupied = racks.filter((r: any) => r.is_occupied).length;
-        const available = racks.length - occupied;
-
-        // --- Process Tickets ---
-        const ticketsData: TicketSummary[] = ticketsResponse.data || [];
-        setTickets(ticketsData); 
-
-        const total_tickets = ticketsData.length;
-        const pending_pickup = ticketsData.filter(
-          (t) => t.status === 'ready_for_pickup' // <-- Adjust this status string if needed
-        ).length;
-        const in_process = ticketsData.filter(
-          (t) => t.status === 'processing' // <-- Adjust this status string if needed
-        ).length;
-        
-        setStats({
-          total_tickets,
-          pending_pickup,
-          in_process,
-          occupied_racks: occupied,
-          available_racks: available,
-        });
-
-      } catch (err: any) {
-        console.error("Error fetching dashboard data:", err);
-        setError(err.response?.data?.detail || err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-
+    setLoading(true); // Set initial loading
     fetchDashboardData();
-  }, []);
+  }, [fetchDashboardData]); // Runs on mount (and if fetchDashboardData ever changed, which it won't)
+
+  // --- NEW: Refresh Handler ---
+  const handleRefresh = () => {
+    // 1. Call the main fetch function to refresh stats and tickets
+    fetchDashboardData();
+    // 2. Increment key to force-remount child components (DropOff, PickUp, etc.)
+    setRefreshKey(prevKey => prevKey + 1);
+  };
 
   // --- (Existing) EFFECT FOR FILTERING TICKETS ---
   useEffect(() => {
@@ -223,6 +237,20 @@ export default function CashierDashboard() {
       <Header />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+        
+        {/* --- NEW: Title and Refresh Button --- */}
+        <div className="flex justify-between items-center">
+          <h1 className="text-3xl font-bold text-gray-800">Cashier Dashboard</h1>
+          <button
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg shadow hover:bg-blue-700 transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-5 h-5 ${isRefreshing ? 'animate-spin' : ''}`} />
+            {isRefreshing ? 'Refreshing...' : 'Refresh'}
+          </button>
+        </div>
+
         {/* --- View Buttons --- */}
         {/* --- CHANGED --- Swapped 'users' for 'tickets' */}
         <div className="flex flex-wrap gap-4 mb-4">
@@ -363,46 +391,50 @@ export default function CashierDashboard() {
         )}
 
         {/* --- Drop-off --- */}
-        {/* ... (unchanged) ... */}
+        {/* --- MODIFIED: Added key --- */}
         {currentView === 'dropoff' && (
           <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-            <DropOff />
+            <DropOff key={refreshKey} />
           </div>
         )}
 
         {/* --- Pick-up --- */}
-        {/* ... (unchanged) ... */}
+        {/* --- MODIFIED: Added key --- */}
         {currentView === 'pickup' && (
           <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-            <PickUp />
+            <PickUp key={refreshKey} />
           </div>
         )}
 
         {/* --- (Existing) Render RackManagement component --- */}
+        {/* --- MODIFIED: Added key --- */}
         {currentView === 'assign rack' && (
           <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-            <RackManagement />
+            <RackManagement key={refreshKey} />
           </div>
         )}
 
         {/* --- (Existing) Clothing Management (Cashier add/edit) --- */}
+        {/* --- MODIFIED: Added key --- */}
         {currentView === 'clothing' && (
           <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-            <ClothingManagement />
+            <ClothingManagement key={refreshKey} />
           </div>
         )}
 
-        {/* --- Render StatusManagement component */}
+        {/* --- Render StatusManagement component --- */}
+        {/* --- MODIFIED: Added key --- */}
         {currentView === 'status' && (
           <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-            <StatusManagement />
+            <StatusManagement key={refreshKey} />
           </div>
         )}
 
-        {/* --- Render CustomerManagement component */}
+        {/* --- Render CustomerManagement component --- */}
+        {/* --- MODIFIED: Added key --- */}
         {currentView === 'customers' && (
           <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-            <CustomerManagement />
+            <CustomerManagement key={refreshKey} />
           </div>
         )}
 
@@ -415,9 +447,10 @@ export default function CashierDashboard() {
         */}
 
         {/* --- NEW --- Render TicketManagement component */}
+        {/* --- MODIFIED: Added key --- */}
         {currentView === 'tickets' && (
           <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-            <TicketManagement />
+            <TicketManagement key={refreshKey} />
           </div>
         )}
 
