@@ -45,16 +45,17 @@ const WorkersLogin: React.FC = () => {
             const data = response.data;
 
             // ✅ Save token & user info consistently
-            const { access_token, user_role, organization_id, organization_name } = data;
-            localStorage.setItem("accessToken", access_token);
-            localStorage.setItem("userRole", user_role);
-            localStorage.setItem("organizationId", String(organization_id || ""));
-            localStorage.setItem("organizationName", organization_name || "");
-            localStorage.setItem("userEmail", email);
+            // const { access_token, user_role, organization_id, organization_name } = data;
+            localStorage.setItem("accessToken", data.access_token);
+            localStorage.setItem("userRole", data.user.role);
+            localStorage.setItem("organizationId", String(data.user.organization_id || ""));
+            localStorage.setItem("userEmail", data.user.email);
+            localStorage.setItem("organizationName", data.organization_name || ""); // ✅ Save organization name
 
-            // 4. Navigate based on role
-            const route = getRouteByRole(user_role);
-            navigate(route);
+
+            // ✅ Navigate based on role
+            const destination = getRouteByRole(data.user.role);
+            navigate(destination);
 
         } catch (err: any) {
             if (axios.isAxiosError(err) && err.response) {
