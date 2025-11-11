@@ -314,11 +314,12 @@ async def register_customer(
 
 
 @router.post("/tickets", response_model=TicketResponse, status_code=status.HTTP_201_CREATED, tags=["Tickets"])
-async def create_ticket(
+def create_ticket(
     ticket_data: TicketCreate,
     db: Session = Depends(get_db),
     payload: Dict[str, Any] = Depends(get_current_user_payload) 
 ):
+# --- END OF FIX ---
     """Creates a new ticket, saving all item details and financial data."""
     
     try:
@@ -402,7 +403,6 @@ async def create_ticket(
         # 4. DYNAMIC TICKET NUMBER (WITH 'FOR UPDATE' LOCK)
         date_prefix = datetime.now().strftime("%y%m%d")
         
-        # --- THIS IS THE FIX ---
         latest_ticket_query = text("""
             SELECT ticket_number FROM tickets 
             WHERE ticket_number LIKE :prefix || '-%'
@@ -411,7 +411,6 @@ async def create_ticket(
             LIMIT 1
             FOR UPDATE  -- <-- FIX: Prevents duplicate ticket number race condition
         """)
-        # --- END OF FIX ---
         
         latest_ticket_result = db.execute(latest_ticket_query, {
             "prefix": date_prefix,
