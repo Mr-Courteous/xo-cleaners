@@ -4,6 +4,7 @@ import axios from 'axios';
 import baseURL from '../lib/config'; 
 import { Ticket, TicketItem } from '../types'; 
 import PrintPreviewModal from './PrintPreviewModal';
+import renderReceiptHtml from '../lib/receiptTemplate';
 
 // NEW: Define a type for the items being edited
 interface EditableItem {
@@ -184,37 +185,7 @@ export default function TicketManagement() {
   // Removed all logic for receiptConfig and hardcoded a simple, working receipt.
   // This function now safely assumes 'ticket.items' exists because openPrintModal fetches it.
   const generatePrintContent = (ticket: Ticket): string => {
-    // Safely map items
-    const itemsList = ticket.items.map(item => 
-        `<p style="margin: 2px 0; font-size: 9pt;">${item.quantity} x ${item.clothing_name} - $${item.item_total.toFixed(2)}</p>`
-      ).join('');
-
-    // Calculate balance
-    const balance = ticket.total_amount - ticket.paid_amount;
-    
-    // Return the hardcoded HTML string
-    return `
-      <div style="font-family: monospace; font-size: 10pt; width: 55mm; padding: 10px;">
-        <h3 style="text-align: center; margin: 0;">Your Store Name</h3>
-        <p style="text-align: center; font-size: 8pt; margin: 0;">123 Main St | (555) 123-4567</p>
-        <hr/>
-        <p>Ticket: <strong>${ticket.ticket_number}</strong></p>
-        <p>Customer: <strong>${ticket.customer_name}</strong></p>
-        <p>Drop Off: ${new Date(ticket.created_at).toLocaleString()}</p>
-        <p>Ready By: ${ticket.pickup_date ? new Date(ticket.pickup_date).toLocaleString() : 'N/A'}</p>
-        <hr/>
-        <div>
-          <p><strong>Items:</strong></p>
-          ${itemsList}
-        </div>
-        <hr/>
-        <p style="text-align: right;">Subtotal: $${ticket.total_amount.toFixed(2)}</p>
-        <p style="text-align: right;">Paid: $${ticket.paid_amount.toFixed(2)}</p>
-        <p style="text-align: right; font-weight: bold;">Balance Due: $${balance.toFixed(2)}</p>
-        <hr/>
-        <p style="text-align: center; font-size: 8pt;">Thank you for your business!</p>
-      </div>
-    `;
+    return renderReceiptHtml(ticket);
   };
 
 
