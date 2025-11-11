@@ -194,7 +194,7 @@ export default function TicketManagement() {
     
     // Return the hardcoded HTML string
     return `
-      <div style="font-family: monospace; font-size: 10pt; width: 300px; padding: 10px;">
+      <div style="font-family: monospace; font-size: 10pt; width: 55mm; padding: 10px;">
         <h3 style="text-align: center; margin: 0;">Your Store Name</h3>
         <p style="text-align: center; font-size: 8pt; margin: 0;">123 Main St | (555) 123-4567</p>
         <hr/>

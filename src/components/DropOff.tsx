@@ -426,7 +426,7 @@ export default function DropOff() {
 
 
       const plantHtml = `
-        <div style="width:380px;margin:0 auto;font-family: 'Courier New', Courier, monospace;color:#111;font-size:13px;"> 
+        <div style="width:55mm;margin:0 auto;font-family: 'Courier New', Courier, monospace;color:#111;font-size:13px;"> 
           <h2 style="text-align:center; font-size:16px; margin-bottom:10px;">PLANT COPY</h2>
           <p style="text-align:center; margin-bottom:10px; font-size:15px; font-weight:700;">Ticket #: ${newTicket.ticket_number}</p>
           <div style="border-top:1px dashed #444; padding-top:10px; margin-bottom:10px;">
@@ -485,7 +485,7 @@ export default function DropOff() {
 
       // Build the modal content (Customer Receipt)
       const modalHtml = `
-  <div style="width: 400px; margin: 0 auto; font-family: system-ui, -apple-system, sans-serif; font-size: 16px;">
+  <div style="width:55mm; margin: 0 auto; font-family: system-ui, -apple-system, sans-serif; font-size: 16px;">
     <style>
       @media screen {
         .ticket-content {
@@ -613,7 +613,7 @@ export default function DropOff() {
 
       // Prepare preview content for customer receipt
       const customerHtml = `
-  <div style="width:400px;margin:0 auto;font-family:system-ui,-apple-system,sans-serif;font-size:16px;">
+  <div style="width:55mm;margin:0 auto;font-family:system-ui,-apple-system,sans-serif;font-size:16px;">
     <div style="text-align:center;">
       <div style="font-size:36px;font-weight:700;margin-bottom:12px;"><strong>${ticketDetails.ticket_number}</strong></div>
       <div style="font-size:20px;font-weight:600;margin-bottom:8px;">Airport Cleaners</div>

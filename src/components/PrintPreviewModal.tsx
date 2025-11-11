@@ -25,15 +25,23 @@ export default function PrintPreviewModal({ isOpen, onClose, onPrint, content, e
     document.body.appendChild(printFrame);
     
     // Write the content with necessary print styles to the iframe
+    // Force the printed element to be 55mm wide (physical width for receipts)
     printFrame.contentDocument?.write(`
       <html>
         <head>
           <title>Print Receipt</title>
           <style>
+            /* Request the page size to match the receipt width */
+            @page { size: 55mm auto; margin: 0; }
             @media print {
-              body { margin: 0; }
-              /* Ensure receipt content scales correctly when printed */
-              body > * { width: 100% !important; max-width: none !important; }
+              html, body { height: 100%; margin: 0; padding: 0; }
+            }
+            /* Ensure the content element is constrained to 55mm */
+            body > * {
+              width: 55mm !important;
+              max-width: 55mm !important;
+              box-sizing: border-box !important;
+              margin: 0 auto !important;
             }
           </style>
         </head>
@@ -76,6 +84,17 @@ export default function PrintPreviewModal({ isOpen, onClose, onPrint, content, e
             
             {/* 3. Preview Container: Use 'expanded' state to toggle the height
             */}
+            {/* Ensure previewed injected HTML is constrained to 55mm so on-screen preview matches printed width */}
+            <style>{`
+              .preview-inner > * {
+                width: 55mm !important;
+                max-width: 55mm !important;
+                box-sizing: border-box !important;
+                margin: 0 auto !important;
+              }
+              /* When not printing, ensure the preview container centers the 55mm content */
+              .receipt-preview-container { display: flex; justify-content: center; }
+            `}</style>
             <div className={`
                 receipt-preview-container 
                 border-2 border-dashed border-gray-300 rounded-md p-2 
