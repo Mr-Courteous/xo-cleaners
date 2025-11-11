@@ -436,6 +436,7 @@ def create_ticket(
         attempt = 0
         new_sequence = None
         ticket_number = None
+        ticket_result = None  # initialize to avoid UnboundLocalError if loop never assigns
         while attempt < max_retries:
             attempt += 1
             last_seq = _fetch_latest_sequence()
