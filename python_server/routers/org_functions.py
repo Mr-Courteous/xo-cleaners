@@ -334,7 +334,7 @@ async def create_ticket(
             
         print(f"User {user_email} (Org: {organization_id}) is creating a new ticket.")
         
-        # 1. Check customer existence...
+        # 1. Check customer existence (NOW FILTERED BY ORG)
         customer_query = text("""
             SELECT id, first_name, last_name, email 
             FROM allUsers 
@@ -348,7 +348,7 @@ async def create_ticket(
         if not customer:
             raise HTTPException(status_code=404, detail=f"Customer not found in your organization.")
 
-        # ... (Code for fetching prices and preparing items) ...
+        # 2. Fetch prices (NOW FILTERED BY ORG)
         total_amount = decimal.Decimal('0.00')
         ticket_items_to_insert = []
         type_ids = [item.clothing_type_id for item in ticket_data.items]
@@ -375,6 +375,7 @@ async def create_ticket(
             } for row in types_result
         }
         
+        # 3. Calculate total_amount and prepare items
         for item_create in ticket_data.items:
             prices = type_prices.get(item_create.clothing_type_id)
             
@@ -398,7 +399,7 @@ async def create_ticket(
                 "organization_id": organization_id
             })
 
-        # 4. DYNAMIC TICKET NUMBER...
+        # 4. DYNAMIC TICKET NUMBER (WITH 'FOR UPDATE' LOCK)
         date_prefix = datetime.now().strftime("%y%m%d")
         
         latest_ticket_query = text("""
@@ -407,6 +408,7 @@ async def create_ticket(
             AND organization_id = :org_id
             ORDER BY ticket_number DESC 
             LIMIT 1
+            FOR UPDATE  -- <-- FIX: Prevents duplicate ticket number race condition
         """)
         latest_ticket_result = db.execute(latest_ticket_query, {
             "prefix": date_prefix,
@@ -428,7 +430,7 @@ async def create_ticket(
         paid_amount_val = decimal.Decimal(str(ticket_data.paid_amount))
         pickup_date_val = ticket_data.pickup_date
 
-        # 5. Insert Ticket (REMOVED drop_off_date)
+        # 5. Insert Ticket
         ticket_insert_query = text("""
             INSERT INTO tickets (
                 ticket_number, customer_id, total_amount, rack_number, 
@@ -452,7 +454,6 @@ async def create_ticket(
             "paid_amount": paid_amount_val,
             "pickup_date": pickup_date_val,
             "org_id": organization_id
-            # 'drop_off_date' parameter removed
         }).fetchone()
 
         if ticket_result is None:
@@ -462,7 +463,6 @@ async def create_ticket(
         ticket_id = ticket_result[0]
         created_at = ticket_result[1]
         status_val = ticket_result[2] 
-        print("RAW BODY:", ticket_data)
 
         # 6. Insert Ticket Items (Batch insertion)
         item_rows = []
@@ -509,9 +509,7 @@ async def create_ticket(
             )
 
         customer_name = f"{customer.first_name} {customer.last_name}"
-        print("✅ FINAL Ticket Data:", ticket_data.dict())
 
-        
         return TicketResponse(
             id=ticket_id,
             ticket_number=ticket_number,
@@ -536,7 +534,6 @@ async def create_ticket(
         db.rollback()
         print(f"Error during ticket creation: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred during ticket processing.")
-
 
 @router.get("/tickets", response_model=List[TicketSummaryResponse], summary="Get all tickets for *your* organization")
 async def get_tickets_for_organization(
