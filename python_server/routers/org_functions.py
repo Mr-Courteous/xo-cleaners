@@ -7,6 +7,7 @@ from pydantic import BaseModel, EmailStr, Field
 import decimal # ADDED: Import for handling DECIMAL types
 from datetime import datetime, timedelta
 from datetime import timezone
+from sqlalchemy.exc import IntegrityError
 
 
 from utils.common import (
@@ -403,68 +404,99 @@ def create_ticket(
         # 4. DYNAMIC TICKET NUMBER (WITH 'FOR UPDATE' LOCK)
         date_prefix = datetime.now().strftime("%y%m%d")
         
-        latest_ticket_query = text("""
-            SELECT ticket_number FROM tickets 
-            WHERE ticket_number LIKE :prefix || '-%'
-            AND organization_id = :org_id
-            ORDER BY ticket_number DESC 
-            LIMIT 1
-            FOR UPDATE  -- <-- FIX: Prevents duplicate ticket number race condition
-        """)
-        
-        latest_ticket_result = db.execute(latest_ticket_query, {
-            "prefix": date_prefix,
-            "org_id": organization_id
-        }).fetchone()
-        
-        new_sequence = 1
-        if latest_ticket_result:
-            latest_number_str = latest_ticket_result[0].split('-')[-1]
+        # Safely compute next ticket sequence for the day.
+        # Use a retry loop to handle race conditions where another process inserts
+        # the same ticket_number between selecting the latest and inserting.
+        def _fetch_latest_sequence():
+            latest_ticket_query = text("""
+                SELECT ticket_number FROM tickets
+                WHERE ticket_number LIKE :prefix_like
+                AND organization_id = :org_id
+                ORDER BY ticket_number DESC
+                LIMIT 1
+            """)
+            row = db.execute(latest_ticket_query, {
+                "prefix_like": f"{date_prefix}-%",
+                "org_id": organization_id
+            }).fetchone()
+            if not row:
+                return 0
             try:
-                new_sequence = int(latest_number_str) + 1
-            except ValueError:
-                new_sequence = 1 
+                return int(row[0].split('-')[-1])
+            except Exception:
+                return 0
 
-        ticket_number = f"{date_prefix}-{new_sequence:03d}" 
+        # Prepare some ticket fields used during insert
+        rack_number_val = ticket_data.rack_number
+        instructions_val = ticket_data.special_instructions
+        paid_amount_val = decimal.Decimal(str(ticket_data.paid_amount))
+        pickup_date_val = ticket_data.pickup_date
+
+        max_retries = 5
+        attempt = 0
+        new_sequence = None
+        ticket_number = None
+        while attempt < max_retries:
+            attempt += 1
+            last_seq = _fetch_latest_sequence()
+            new_sequence = last_seq + 1
+            ticket_number = f"{date_prefix}-{new_sequence:03d}"
+
+            # Try inserting; if unique constraint fails, retry with next sequence
+            try:
+                ticket_insert_query = text("""
+                    INSERT INTO tickets (
+                        ticket_number, customer_id, total_amount, rack_number, 
+                        special_instructions, paid_amount, pickup_date, 
+                        organization_id
+                    )
+                    VALUES (
+                        :ticket_number, :customer_id, :total_amount, :rack_number, 
+                        :special_instructions, :paid_amount, :pickup_date, 
+                        :org_id
+                    )
+                    RETURNING id, created_at, status
+                """)
+
+                ticket_result = db.execute(ticket_insert_query, {
+                    "ticket_number": ticket_number,
+                    "customer_id": ticket_data.customer_id,
+                    "total_amount": total_amount,
+                    "rack_number": rack_number_val,
+                    "special_instructions": instructions_val,
+                    "paid_amount": paid_amount_val,
+                    "pickup_date": pickup_date_val,
+                    "org_id": organization_id
+                }).fetchone()
+
+                # If insert succeeded, break out of retry loop
+                if ticket_result is not None:
+                    break
+
+            except IntegrityError as ie:
+                # Duplicate ticket_number or other integrity issue; retry sequence
+                db.rollback()
+                # If it's specifically a unique violation on ticket_number, retry
+                # Otherwise re-raise
+                if 'unique' in str(ie).lower() and 'ticket_number' in str(ie).lower():
+                    # continue to next attempt
+                    continue
+                else:
+                    raise
+
+        # If after retries we still don't have a ticket_result, error out
+        if ticket_result is None:
+            db.rollback()
+            raise HTTPException(status_code=500, detail="Failed to generate a unique ticket number after multiple attempts.")
         
         rack_number_val = ticket_data.rack_number
         instructions_val = ticket_data.special_instructions
         paid_amount_val = decimal.Decimal(str(ticket_data.paid_amount))
         pickup_date_val = ticket_data.pickup_date
 
-        # 5. Insert Ticket
-        ticket_insert_query = text("""
-            INSERT INTO tickets (
-                ticket_number, customer_id, total_amount, rack_number, 
-                special_instructions, paid_amount, pickup_date, 
-                organization_id
-            )
-            VALUES (
-                :ticket_number, :customer_id, :total_amount, :rack_number, 
-                :special_instructions, :paid_amount, :pickup_date, 
-                :org_id
-            )
-            RETURNING id, created_at, status
-        """)
-        
-        ticket_result = db.execute(ticket_insert_query, {
-            "ticket_number": ticket_number,
-            "customer_id": ticket_data.customer_id,
-            "total_amount": total_amount,
-            "rack_number": rack_number_val,
-            "special_instructions": instructions_val,
-            "paid_amount": paid_amount_val,
-            "pickup_date": pickup_date_val,
-            "org_id": organization_id
-        }).fetchone()
-
-        if ticket_result is None:
-            db.rollback()
-            raise HTTPException(status_code=500, detail="Database failed to insert ticket.")
-
         ticket_id = ticket_result[0]
         created_at = ticket_result[1]
-        status_val = ticket_result[2] 
+        status_val = ticket_result[2]
 
         # 6. Insert Ticket Items (Batch insertion)
         item_rows = []
