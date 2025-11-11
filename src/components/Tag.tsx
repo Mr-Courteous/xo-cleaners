@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Search, Package, Printer, Eye } from 'lucide-react';
-import { apiCall } from '../hooks/useApi';
+import axios from 'axios';
+import baseURL from '../lib/config';
 import { Ticket } from '../types';
 import PrintPreviewModal from './PrintPreviewModal';
 
@@ -30,14 +31,23 @@ export default function Tag(): JSX.Element {
     
     setLoading(true);
     try {
-      const results = await apiCall(`/find-tickets?query=${encodeURIComponent(searchQuery)}`);
-      
+      const token = localStorage.getItem('accessToken');
+      if (!token) throw new Error('Access token not found');
+      const headers = { Authorization: `Bearer ${token}` };
+
+      const res = await axios.get(
+        `${baseURL}/api/organizations/find-tickets?query=${encodeURIComponent(searchQuery)}`,
+        { headers }
+      );
+      const results = res.data || [];
+
       // Fetch full ticket details including items
       const ticketsWithItems = await Promise.all(
         results.map(async (ticket: Ticket) => {
           try {
             // Use ticket ID to get full details including items, same as other components
-            const ticketDetails = await apiCall(`/tickets/${ticket.id}`);
+            const td = await axios.get(`${baseURL}/api/organizations/tickets/${ticket.id}`, { headers });
+            const ticketDetails = td.data || {};
             return { ...ticket, items: ticketDetails.items || [] };
           } catch (error) {
             console.error(`Failed to fetch items for ticket ${ticket.id}:`, error);
@@ -45,10 +55,12 @@ export default function Tag(): JSX.Element {
           }
         })
       );
-      
+
       setTickets(ticketsWithItems);
     } catch (error) {
       console.error('Failed to search tickets:', error);
+      const message = (error as any).response?.data?.detail || (error as Error).message || 'Failed to search tickets.';
+      alert(message);
     } finally {
       setLoading(false);
     }
@@ -68,15 +80,20 @@ export default function Tag(): JSX.Element {
     const readyDate = new Date(ticket.created_at);
     readyDate.setDate(readyDate.getDate() + 2);
 
-    // Format the customer name
-    const nameParts = ticket.customer_phone.split(' ');
-    const formattedName = `${nameParts[nameParts.length - 1]}, ${nameParts[0][0]}`;
-    const ticketLast4 = ticket.ticket_number.slice(-4);
+    // Format the customer name - prefer customer_name, fall back to phone or 'Guest'
+    const rawName = ticket.customer_name || ticket.customer_phone || 'Guest';
+    const nameParts = rawName.trim().split(/\s+/);
+    const fullName = rawName;
+    const formattedName = nameParts.length > 0
+      ? `${nameParts[nameParts.length - 1]}, ${nameParts[0][0] || ''}`
+      : rawName;
+    const ticketId = ticket.ticket_number || '';
+    const dateIssued = ticket.created_at ? new Date(ticket.created_at).toLocaleDateString() : '';
 
     // Format starch level and crease
     const preferences = [];
-    if (item.starch_level && item.starch_level !== 'no_starch') {
-      preferences.push(`${item.starch_level} startch`);
+    if (item.starch_level && item.starch_level !== 'no_starch' && item.starch_level !== 'none') {
+      preferences.push(`${item.starch_level} starch`);
     }
     if (item.crease === 'crease') {
       preferences.push('Crease');
@@ -86,39 +103,44 @@ export default function Tag(): JSX.Element {
 
     // Create an array with length equal to the quantity
     const tags = Array(item.quantity).fill(null);
+
+    // Pick a font size for the name based on length so it fits within 55mm
+    const nameLen = fullName.length || 0;
+    const nameFontSize = nameLen > 50 ? '8pt' : nameLen > 35 ? '9pt' : nameLen > 20 ? '10pt' : '11pt';
+    const prefFontSize = '9pt';
     
     return `
       <div style="
         display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 20px;
-        padding: 20px;
+        grid-template-columns: repeat(2, 55mm);
+        gap: 8px;
+        padding: 6px;
         font-family: system-ui, -apple-system, sans-serif;
+        justify-content: center;
       ">
         ${tags.map(() => `
           <div style="
-            border: 2px solid #000;
-            padding: 20px;
-            width: 350px;
+            border: 1.5px solid #000;
+            padding: 6px 8px;
+            width: 55mm;
+            box-sizing: border-box;
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 12px;
-            font-size: 24px;
-            line-height: 1.2;
+            gap: 6px;
+            font-size: 10pt;
+            line-height: 1.1;
           ">
-            <!-- Row 1 -->
-            <div style="font-size: 28px; font-weight: 500;">
-              1 - ${ticketLast4}
+            <div style="font-size: 10pt; font-weight: 700; overflow-wrap: break-word; word-break: break-word;">
+              ${ticketId}
             </div>
-            <div style="font-size: 28px; font-weight: 600; text-align: right;">
-              ${formattedName}
+            <div style="font-size: ${nameFontSize}; font-weight: 700; text-align: right; overflow-wrap: break-word; word-break: break-word;">
+              ${fullName}
             </div>
-            
-            <!-- Row 2 -->
-            <div style="font-size: 24px;">
-              Ready: ${readyDate.toLocaleDateString()}
+
+            <div style="font-size: 9pt;">
+              Issued: ${dateIssued}
             </div>
-            <div style="font-size: 24px; text-align: right;">
+            <div style="font-size: ${prefFontSize}; text-align: right; overflow-wrap: break-word; word-break: break-word;">
               ${preferencesText}
             </div>
           </div>

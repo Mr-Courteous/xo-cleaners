@@ -17,6 +17,7 @@ import StatusManagement from './StatusManagement';
 import CustomerManagement from './CustomerManagement';
 // import UsersManagement from './UsersManagement'; // --- REMOVED ---
 import TicketManagement from './TicketManagement'; // --- NEW ---
+import TagManagement from './Tag'; // <-- ADDED THIS IMPORT
 
 
 // --- (Existing) Type for the summary list ---
@@ -256,7 +257,7 @@ export default function CashierDashboard() {
         <div className="flex flex-wrap gap-4 mb-4">
           {[
             'overview', 'dropoff', 'pickup', 'clothing', 'assign rack', 
-            'status', 'customers', 'tickets' // --- CHANGED ---
+            'status', 'customers', 'tickets', 'tag' // <-- ADDED 'tag'
           ].map((view) => (
             <button
               key={view}
@@ -451,6 +452,14 @@ export default function CashierDashboard() {
         {currentView === 'tickets' && (
           <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
             <TicketManagement key={refreshKey} />
+          </div>
+        )}
+
+        {/* --- NEW --- Render TagManagement component */}
+        {/* --- MODIFIED: Added key --- */}
+        {currentView === 'tag' && (
+          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+            <TagManagement key={refreshKey} />
           </div>
         )}
 
