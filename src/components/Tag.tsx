@@ -110,13 +110,13 @@ export default function Tag(): JSX.Element {
     const prefFontSize = '9pt';
     
     return `
-      <div style="
-        display: grid;
-        grid-template-columns: repeat(2, 55mm);
+<div style="
+        display: flex;
+        flex-direction: column;
+        align-items: center;
         gap: 8px;
         padding: 6px;
         font-family: system-ui, -apple-system, sans-serif;
-        justify-content: center;
       ">
         ${tags.map(() => `
           <div style="
