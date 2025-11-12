@@ -16,7 +16,6 @@ from routers.org_functions2 import router as org_functions2_router
 # from routers.clothing_types import router as clothing_types_router
 from routers.clothing_types import router as clothing_types_router
 from routers.org_functions3 import router as org_functions3_router
-from datetime import datetime, timezone
 
 import uvicorn
 
@@ -26,7 +25,7 @@ import uvicorn
 
 # DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5433/cleanpress")
 
-DATABASE_URL = os.getenv("DATABASE_URL",)
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
     # This prevents the app from proceeding without a DATABASE_URL

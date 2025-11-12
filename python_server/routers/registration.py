@@ -167,13 +167,13 @@ async def register_organization_and_admin(
         )
 
         # ✅ 6️⃣ Insert default clothing types (omit total_price)
+        # --- FIX: Removed 'total_price' from the dictionaries ---
         clothing_types = [
             {
                 "name": "Shirt",
                 "plant_price": 1000.0,
                 "margin": 200.0,
                 "image_url": "default_shirt.jpg",
-                'total_price': 1200.0,  # <-- FIX: plant_price + margin
                 "organization_id": organization_id
             },
             {
@@ -181,17 +181,17 @@ async def register_organization_and_admin(
                 "plant_price": 1200.0,
                 "margin": 300.0,
                 "image_url": "default_trouser.jpg",
-                "total_price": 1500.0, # <-- FIX: Trousers: 1200 + 300
                 "organization_id": organization_id
             }
         ]
 
+        # --- FIX: Removed 'total_price' from the SQL statement ---
         db.execute(
             text("""
                 INSERT INTO clothing_types
-                (name, plant_price, margin, total_price, image_url, organization_id)
-                VALUES (:name, :plant_price, :margin, :total_price, :image_url, :organization_id)
-            """), # Note: The traceback suggests double percents (%%) were being used, but this is the correct single-percent style
+                (name, plant_price, margin, image_url, organization_id)
+                VALUES (:name, :plant_price, :margin, :image_url, :organization_id)
+            """),
             clothing_types
         )
 
@@ -205,11 +205,15 @@ async def register_organization_and_admin(
             role="STORE_OWNER"
         )
 
-    except IntegrityError as e: # <-- FIX 2B: Change UniqueViolation to IntegrityError
+    except IntegrityError as e:
         db.rollback()
+        # Note: This will catch the GeneratedAlways error, but the detail
+        # might be misleading. The generic exception below is likely what
+        # caught your original error.
+        print(f"IntegrityError during organization registration: {e}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Duplicate data detected (possible rack number conflict, or a constraint violation)."
+            detail="Duplicate data detected or constraint violation."
         )
 
     except Exception as e:
@@ -219,7 +223,8 @@ async def register_organization_and_admin(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred during registration."
         )
-
+        
+        
 @router.post("/staff", response_model=RegistrationSuccess)
 async def register_staff_user(
     data: UserCreate,
