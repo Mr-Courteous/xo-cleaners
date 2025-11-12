@@ -4,6 +4,7 @@ import axios from "axios";
 import baseURL from "../lib/config"; import { Customer, ClothingType, TicketItem } from '../types';
 import Modal from './Modal';
 import PrintPreviewModal from './PrintPreviewModal';
+import renderReceiptHtml from '../lib/receiptTemplate';
 
 // --- NEW CENTRAL IMAGE MAP FOR CORRELATION AND BETTER IMAGES ---
 // NOTE: You MUST update the key (exact item name) and value (your image URL)
@@ -426,19 +427,14 @@ export default function DropOff() {
 
 
       // Use centralized receipt renderer so DropOff and TicketManagement match exactly
-      const { default: renderReceiptHtml } = await import('../lib/receiptTemplate');
       const html = renderReceiptHtml(newTicket as any);
-      // store versions
+      // store rendered HTML for plant-print and modal preview
       setPlantHtmlState(html);
-      const modalHtml = `
-        <div style="width:55mm; margin: 0 auto; font-family: 'Courier New', Courier, monospace; font-size: 12px;">
-          ${html}
-        </div>
-      `;
-      setModal({ isOpen: true, title: '', type: 'success', message: modalHtml });
       // Prepare preview content for customer receipt
       setPrintContent(html);
       setShowPrintPreview(true);
+      // Show a concise success modal; the modal children render the styled receipt when success
+      setModal({ isOpen: true, title: 'Ticket Created', type: 'success', message: 'Ticket created successfully.' });
       setLoading(false);
 
     } catch (error) {
@@ -1069,8 +1065,14 @@ export default function DropOff() {
           }
         }}
         title={modal.title}
-        message={modal.message}
-      />
+      >
+        {modal.type === 'success' ? (
+          // Render the styled receipt HTML (trusted) inside the modal for quick preview
+          <div dangerouslySetInnerHTML={{ __html: plantHtmlState || modal.message }} />
+        ) : (
+          <div>{modal.message}</div>
+        )}
+      </Modal>
       <PrintPreviewModal
         isOpen={showPrintPreview}
         onClose={() => setShowPrintPreview(false)}
