@@ -24,6 +24,15 @@ export function renderReceiptHtml(ticket: Ticket) {
   const balance = finalTotal - paid;
   // --- END MODIFICATIONS ---
 
+  // --- ADDED: Dynamically calculate the total number of pieces ---
+  const totalPieces = items.reduce((acc, item) => {
+    // Assumes item.pieces is passed from the backend (e.g., Suit=2)
+    // If it's not present, default to 1 piece.
+    const piecesPerItem = item.pieces || 1;
+    return acc + (item.quantity * piecesPerItem);
+  }, 0);
+  // --- END ADDED ---
+
   return `
     <div style="width:55mm;margin:0 auto;font-family: Arial, 'Helvetica Neue', Helvetica, sans-serif;color:#111;padding:8px;">
       
@@ -62,10 +71,10 @@ export function renderReceiptHtml(ticket: Ticket) {
         <div style="display:flex;justify-content:space-between;"> <div>Paid:</div> <div>$${paid.toFixed(2)}</div> </div>
         <div style="display:flex;justify-content:space-between;font-weight:800;margin-top:6px;"> <div>BALANCE:</div> <div>$${balance.toFixed(2)}</div> </div>
       </div>
+      
       <div style="margin-top:10px;text-align:center;font-weight:800;">
-        ${ items.reduce((s,i) => s + (i.quantity||0), 0) } PIECES
+        ${totalPieces} PIECES
       </div>
-
       <div style="margin-top:10px;text-align:center;">
         <div style="display:inline-block;background:#000;color:#fff;padding:6px 12px;border-radius:4px;font-weight:800;">REG/PICKUP</div>
       </div>
