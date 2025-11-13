@@ -11,9 +11,18 @@ export function renderReceiptHtml(ticket: Ticket) {
     `</div>`
   ).join('');
 
+  // --- MODIFIED: Added all calculations ---
   const subtotal = ticket.total_amount || 0;
   const paid = ticket.paid_amount || 0;
-  const balance = subtotal - paid;
+  
+  // Calculate fees based on the subtotal
+  const envCharge = subtotal * 0.047; // 4.7%
+  const tax = subtotal * 0.0825; // 8.25%
+  const finalTotal = subtotal + envCharge + tax;
+  
+  // Balance is based on the new finalTotal
+  const balance = finalTotal - paid;
+  // --- END MODIFICATIONS ---
 
   return `
     <div style="width:55mm;margin:0 auto;font-family: Arial, 'Helvetica Neue', Helvetica, sans-serif;color:#111;padding:8px;">
@@ -43,10 +52,16 @@ export function renderReceiptHtml(ticket: Ticket) {
 
       <div style="font-size:10pt;font-weight: 600;">
         <div style="display:flex;justify-content:space-between;"> <div>Subtotal:</div> <div>$${subtotal.toFixed(2)}</div> </div>
+        <div style="display:flex;justify-content:space-between;"> <div>Env Charge (4.7%):</div> <div>$${envCharge.toFixed(2)}</div> </div>
+        <div style="display:flex;justify-content:space-between;"> <div>Tax (8.25%):</div> <div>$${tax.toFixed(2)}</div> </div>
+        
+        <div style="display:flex;justify-content:space-between;font-weight:800;margin-top:4px;margin-bottom:4px;border-top:1px dashed #444;border-bottom:1px dashed #444;padding:4px 0;">
+          <div>TOTAL:</div> <div>$${finalTotal.toFixed(2)}</div>
+        </div>
+
         <div style="display:flex;justify-content:space-between;"> <div>Paid:</div> <div>$${paid.toFixed(2)}</div> </div>
         <div style="display:flex;justify-content:space-between;font-weight:800;margin-top:6px;"> <div>BALANCE:</div> <div>$${balance.toFixed(2)}</div> </div>
       </div>
-
       <div style="margin-top:10px;text-align:center;font-weight:800;">
         ${ items.reduce((s,i) => s + (i.quantity||0), 0) } PIECES
       </div>
