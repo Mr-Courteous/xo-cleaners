@@ -14,6 +14,7 @@ from fastapi import (
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 import uuid  # For unique filenames
+from datetime import datetime  # <-- ADD THIS LINE
 
 # -----------------------------------------------------------------
 # 🎯 FIXED: Importing REAL dependencies from your utils.common
