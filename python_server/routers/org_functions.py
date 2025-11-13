@@ -408,16 +408,17 @@ def create_ticket(
         # Use a retry loop to handle race conditions where another process inserts
         # the same ticket_number between selecting the latest and inserting.
         def _fetch_latest_sequence():
+            # NOTE: ticket_number has a global UNIQUE constraint, so we must
+            # check across the whole table (not just this org) to avoid
+            # generating a value that already exists for another org.
             latest_ticket_query = text("""
                 SELECT ticket_number FROM tickets
                 WHERE ticket_number LIKE :prefix_like
-                AND organization_id = :org_id
                 ORDER BY ticket_number DESC
                 LIMIT 1
             """)
             row = db.execute(latest_ticket_query, {
                 "prefix_like": f"{date_prefix}-%",
-                "org_id": organization_id
             }).fetchone()
             if not row:
                 return 0
