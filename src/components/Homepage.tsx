@@ -19,6 +19,8 @@ const HomePage: React.FC<HomePageProps> = ({ onLoginClick }) => {
     const [adminLastName, setAdminLastName] = useState('');
     const [companyEmail, setCompanyEmail] = useState('');
     const [adminPassword, setAdminPassword] = useState('');
+    const [adminConfirmPassword, setAdminConfirmPassword] = useState('');
+    const [showAdminPassword, setShowAdminPassword] = useState(false);
     const [message, setMessage] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [isError, setIsError] = useState(false);
@@ -28,6 +30,14 @@ const HomePage: React.FC<HomePageProps> = ({ onLoginClick }) => {
         setMessage('');
         setIsError(false);
         setIsLoading(true);
+
+        // Validate password confirmation before submit
+        if (adminPassword !== adminConfirmPassword) {
+            setIsError(true);
+            setMessage('Passwords do not match.');
+            setIsLoading(false);
+            return;
+        }
 
         const payload = {
             name: companyName.trim(),
@@ -57,6 +67,7 @@ const HomePage: React.FC<HomePageProps> = ({ onLoginClick }) => {
                 setAdminLastName('');
                 setCompanyEmail('');
                 setAdminPassword('');
+                setAdminConfirmPassword('');
                 setIndustry('Dry Cleaning');
 
                 // Redirect after delay
@@ -190,10 +201,41 @@ const HomePage: React.FC<HomePageProps> = ({ onLoginClick }) => {
 
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700">Password</label>
+                                    <div className="relative">
+                                        <input
+                                            type={showAdminPassword ? 'text' : 'password'}
+                                            value={adminPassword}
+                                            onChange={(e) => setAdminPassword(e.target.value)}
+                                            required
+                                            disabled={isLoading}
+                                            minLength={8}
+                                            className="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowAdminPassword(!showAdminPassword)}
+                                            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500"
+                                            aria-label={showAdminPassword ? 'Hide password' : 'Show password'}
+                                        >
+                                            {showAdminPassword ? (
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-5.523 0-10-4.477-10-10a9.97 9.97 0 012.02-5.786M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                </svg>
+                                            ) : (
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3l18 18M4.53 4.53A10.003 10.003 0 001.5 12c0 5.523 4.477 10 10 10 2.486 0 4.767-.834 6.616-2.237M9.88 9.88a3 3 0 014.24 4.24" />
+                                                </svg>
+                                            )}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700">Confirm Password</label>
                                     <input
-                                        type="password"
-                                        value={adminPassword}
-                                        onChange={(e) => setAdminPassword(e.target.value)}
+                                        type={showAdminPassword ? 'text' : 'password'}
+                                        value={adminConfirmPassword}
+                                        onChange={(e) => setAdminConfirmPassword(e.target.value)}
                                         required
                                         disabled={isLoading}
                                         minLength={8}

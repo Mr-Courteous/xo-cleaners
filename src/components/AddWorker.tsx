@@ -3,7 +3,7 @@ import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import baseURL from "../lib/config";
 import Header from "./Header";
-import { User, Mail, Lock, Phone, Briefcase, AlertCircle } from "lucide-react";
+import { User, Mail, Lock, Phone, Briefcase, AlertCircle, Eye, EyeOff } from "lucide-react";
 
 const AddWorker: React.FC = () => {
     const navigate = useNavigate();
@@ -15,6 +15,7 @@ const AddWorker: React.FC = () => {
         email: "",
         phone: "", // <-- ADDED
         password: "",
+        confirm_password: "",
         role: "",
     });
 
@@ -22,6 +23,8 @@ const AddWorker: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
+    const [showPassword, setShowPassword] = useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
     // ============================================================
     // ✅ Decode token and extract organization_id
@@ -71,6 +74,13 @@ const AddWorker: React.FC = () => {
         setError(null);
         setSuccess(null);
 
+        // Password confirmation check
+        if (formData.password !== formData.confirm_password) {
+            setError("Passwords do not match. Please confirm your password.");
+            setLoading(false);
+            return;
+        }
+
         if (!organizationId) {
             setError("Organization ID is missing. Please log in again.");
             setLoading(false);
@@ -107,6 +117,7 @@ const AddWorker: React.FC = () => {
                     email: "",
                     phone: "",
                     password: "",
+                    confirm_password: "",
                     role: "",
                 });
             } else {
@@ -214,7 +225,7 @@ const AddWorker: React.FC = () => {
                             <div className="relative">
                                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
                                 <input
-                                    type="password"
+                                    type={showPassword ? 'text' : 'password'}
                                     name="password"
                                     placeholder="Password (min. 8 chars)"
                                     value={formData.password}
@@ -223,6 +234,37 @@ const AddWorker: React.FC = () => {
                                     required
                                     minLength={8}
                                 />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPassword(!showPassword)}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500"
+                                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                                >
+                                    {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                                </button>
+                            </div>
+
+                            {/* Confirm Password */}
+                            <div className="relative">
+                                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                                <input
+                                    type={showConfirmPassword ? 'text' : 'password'}
+                                    name="confirm_password"
+                                    placeholder="Confirm Password"
+                                    value={formData.confirm_password}
+                                    onChange={handleChange}
+                                    className="w-full border p-3 pl-10 rounded-lg border-gray-300 focus:ring-2 focus:ring-blue-500"
+                                    required
+                                    minLength={8}
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500"
+                                    aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+                                >
+                                    {showConfirmPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                                </button>
                             </div>
 
                             {/* --- UPDATED ROLE LIST --- */}
