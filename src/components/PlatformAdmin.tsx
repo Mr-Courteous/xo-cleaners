@@ -118,6 +118,7 @@ export default function PlatformAdmin({ onBackToHome }: PlatformAdminProps) {
 
         try {
             const res = await axios.post(`${baseUrl}/token/admin-login`, loginForm);
+            window.location.reload();
             const { access_token, admin_role, email } = res.data;
 
             // Save keys that match the useEffect hook
@@ -132,6 +133,7 @@ export default function PlatformAdmin({ onBackToHome }: PlatformAdminProps) {
             
             // Manually fetch data after successful login
             fetchPlatformData(); 
+
         } catch (err: any) {
             console.error(err);
             setError(err.response?.data?.detail || 'Login failed. Check credentials.');

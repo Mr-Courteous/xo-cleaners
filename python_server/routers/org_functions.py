@@ -432,7 +432,7 @@ def create_ticket(
         paid_amount_val = decimal.Decimal(str(ticket_data.paid_amount))
         pickup_date_val = ticket_data.pickup_date
 
-        max_retries = 5
+        max_retries = 20
         attempt = 0
         new_sequence = None
         ticket_number = None
@@ -440,11 +440,13 @@ def create_ticket(
         while attempt < max_retries:
             attempt += 1
             last_seq = _fetch_latest_sequence()
+            print(f"[tickets] attempt={attempt} organization={organization_id} last_seq={last_seq}")
             new_sequence = last_seq + 1
             ticket_number = f"{date_prefix}-{new_sequence:03d}"
 
             # Try inserting; if unique constraint fails, retry with next sequence
             try:
+                print(f"[tickets] trying insert ticket_number={ticket_number} (attempt {attempt})")
                 ticket_insert_query = text("""
                     INSERT INTO tickets (
                         ticket_number, customer_id, total_amount, rack_number, 
@@ -477,13 +479,21 @@ def create_ticket(
             except IntegrityError as ie:
                 # Duplicate ticket_number or other integrity issue; retry sequence
                 db.rollback()
+                print(f"[tickets] IntegrityError on attempt={attempt} ticket_number={ticket_number}: {ie}")
                 # If it's specifically a unique violation on ticket_number, retry
-                # Otherwise re-raise
-                if 'unique' in str(ie).lower() and 'ticket_number' in str(ie).lower():
+                # Otherwise re-raise so we don't mask other integrity problems
+                lower = str(ie).lower()
+                if 'unique' in lower and ('ticket_number' in lower or 'tickets_ticket_number' in lower):
                     # continue to next attempt
                     continue
                 else:
+                    print(f"[tickets] Non-ticket-number IntegrityError, re-raising: {ie}")
                     raise
+            except Exception as e:
+                # Any unexpected exception during insert should be logged and raised
+                db.rollback()
+                print(f"[tickets] Unexpected error during insert attempt={attempt} ticket_number={ticket_number}: {e}")
+                raise
 
         # If after retries we still don't have a ticket_result, error out
         if ticket_result is None:
