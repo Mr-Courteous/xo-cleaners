@@ -39,6 +39,7 @@ class UserCreate(BaseModel):
     last_name: str
     role: ALL_STAFF_ROLES
     organization_id: int = Field(..., description="Required for all staff users.")
+    phone: Optional[str] = None  # <-- ADDED FIELD
 
 # Base schema for an organization
 class OrganizationBase(BaseModel):
@@ -256,12 +257,14 @@ async def register_staff_user(
     try:
         hashed_pw = hash_password(data.password)
 
+        # --- MODIFIED: Added 'phone' column ---
         insert_stmt = text("""
-            INSERT INTO allUsers (organization_id, email, password_hash, first_name, last_name, role)
-            VALUES (:org_id, :email, :password_hash, :first_name, :last_name, :role)
+            INSERT INTO allUsers (organization_id, email, password_hash, first_name, last_name, role, phone)
+            VALUES (:org_id, :email, :password_hash, :first_name, :last_name, :role, :phone)
             RETURNING id
         """)
 
+        # --- MODIFIED: Added 'phone' parameter ---
         result = db.execute(insert_stmt, {
             "org_id": org_id_for_db,
             "email": data.email.strip().lower(),
@@ -269,13 +272,14 @@ async def register_staff_user(
             "first_name": data.first_name,
             "last_name": data.last_name,
             "role": data.role or "staff",
+            "phone": data.phone.strip() if data.phone else None, # <-- ADDED
         }).fetchone()
 
         db.commit()
 
         return RegistrationSuccess(
             message="Staff user registered successfully.",
-            user_id=str(result[0]), # <-- FIX: Cast the UUID object to a string
+            user_id=str(result[0]),
             organization_id=org_id_for_db,
             role=data.role or "staff"
         )
@@ -284,11 +288,13 @@ async def register_staff_user(
         db.rollback()
 
         if "duplicate key value violates unique constraint" in str(e):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"User with email '{data.email}' already exists."
-            )
-
+            if "allusers_email_key" in str(e): # Be more specific if you know the constraint name
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"User with email '{data.email}' already exists."
+                )
+            # You could add another check here for a unique phone constraint
+        
         print("Error during staff registration:", e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

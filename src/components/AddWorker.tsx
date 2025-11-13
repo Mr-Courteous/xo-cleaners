@@ -2,15 +2,18 @@ import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import baseURL from "../lib/config";
+import Header from "./Header";
+import { User, Mail, Lock, Phone, Briefcase, AlertCircle } from "lucide-react";
 
 const AddWorker: React.FC = () => {
     const navigate = useNavigate();
 
-    // 🧠 Form fields
+    // 🧠 Form fields - ADDED 'phone'
     const [formData, setFormData] = useState({
         first_name: "",
         last_name: "",
         email: "",
+        phone: "", // <-- ADDED
         password: "",
         role: "",
     });
@@ -38,27 +41,29 @@ const AddWorker: React.FC = () => {
                     if (storedOrgId) setOrganizationId(Number(storedOrgId));
                 }
             } catch (e) {
-                console.warn("Failed to decode token:", e);
-                const fallback = localStorage.getItem("organization_id");
-                if (fallback) setOrganizationId(Number(fallback));
+                console.error("Error parsing token:", e);
+                const storedOrgId = localStorage.getItem("organization_id");
+                if (storedOrgId) setOrganizationId(Number(storedOrgId));
             }
         } else {
-            const fallback = localStorage.getItem("organization_id");
-            if (fallback) setOrganizationId(Number(fallback));
+            navigate("/login");
         }
-    }, []);
+    }, [navigate]);
 
     // ============================================================
-    // ✅ Input Handler
+    // ✅ Handle form input changes
     // ============================================================
     const handleChange = (
         e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
     ) => {
-        setFormData({ ...formData, [e.target.name]: e.target.value });
+        setFormData({
+            ...formData,
+            [e.target.name]: e.target.value,
+        });
     };
 
     // ============================================================
-    // ✅ Submit Handler
+    // ✅ Handle form submission
     // ============================================================
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -67,21 +72,18 @@ const AddWorker: React.FC = () => {
         setSuccess(null);
 
         if (!organizationId) {
-            setError("Unable to determine organization. Please log in again.");
+            setError("Organization ID is missing. Please log in again.");
             setLoading(false);
             return;
         }
 
         try {
-            const token =
-                localStorage.getItem("accessToken") || localStorage.getItem("token");
-
+            const token = localStorage.getItem("accessToken");
             if (!token) {
-                setError("Authentication token missing. Please log in again.");
-                setLoading(false);
-                return;
+                throw new Error("Access token not found");
             }
 
+            // The 'phone' field is now included automatically from formData
             const response = await axios.post(
                 `${baseURL}/register/staff`,
                 {
@@ -96,119 +98,165 @@ const AddWorker: React.FC = () => {
                 }
             );
 
-            setSuccess(response.data?.message || "Worker added successfully!");
-            setFormData({
-                first_name: "",
-                last_name: "",
-                email: "",
-                password: "",
-                role: "",
-            });
-            console.log(formData)
-            // Redirect after success
-            setTimeout(() => navigate("/org"), 1500);
+            if (response.data && (response.status === 200 || response.status === 201)) { // Accept 201 Created
+                setSuccess(response.data.message || "Worker added successfully!");
+                // Reset form
+                setFormData({
+                    first_name: "",
+                    last_name: "",
+                    email: "",
+                    phone: "",
+                    password: "",
+                    role: "",
+                });
+            } else {
+                setError(response.data.detail || "An unexpected error occurred.");
+            }
         } catch (err: any) {
             console.error("Registration error:", err);
-
-            // 🧠 Handle validation errors from FastAPI
-            if (err.response?.status === 422 && Array.isArray(err.response.data?.detail)) {
-                const details = err.response.data.detail
-                    .map((d: any) => `${d.loc?.[d.loc.length - 1] || "field"}: ${d.msg}`)
-                    .join(", ");
-                setError(`Validation error: ${details}`);
-            } else if (typeof err.response?.data?.detail === "string") {
-                setError(err.response.data.detail);
-            } else if (err.message === "Network Error") {
-                setError("Network error — please check your connection.");
-            } else {
-                setError("An unexpected error occurred. Please try again.");
-            }
+            setError(
+                err.response?.data?.detail ||
+                err.message ||
+                "Failed to add worker."
+            );
         } finally {
             setLoading(false);
         }
     };
 
-    // ============================================================
-    // ✅ Component UI
-    // ============================================================
     return (
-        <div className="max-w-md mx-auto mt-10 bg-white p-6 rounded-2xl shadow">
-            <h2 className="text-xl font-semibold mb-4 text-center">Add New Worker</h2>
+        <div className="flex h-screen bg-gray-100">
+            {/* Assuming sidebar is part of Header or not needed here */}
+            <div className="flex-1 flex flex-col overflow-hidden">
+                <Header /> {/* <-- ADDED HEADER */}
+                
+                <main className="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 p-6">
+                    <div className="max-w-lg mx-auto bg-white p-8 rounded-lg shadow-md border border-gray-200">
+                        <h2 className="text-2xl font-semibold text-gray-900 mb-6">Add New Worker</h2>
+                        
+                        {/* --- Error Message --- */}
+                        {error && (
+                            <div className="mb-4 flex items-center p-4 bg-red-50 text-red-700 rounded-lg border border-red-200">
+                                <AlertCircle className="h-5 w-5 mr-3 flex-shrink-0" />
+                                <div>
+                                    <h4 className="font-semibold">Error</h4>
+                                    <p className="text-sm">{error}</p>
+                                </div>
+                            </div>
+                        )}
 
-            {error && (
-                <p className="text-red-600 mb-3 border border-red-200 bg-red-50 p-2 rounded">
-                    {error}
-                </p>
-            )}
-            {success && (
-                <p className="text-green-600 mb-3 border border-green-200 bg-green-50 p-2 rounded">
-                    {success}
-                </p>
-            )}
+                        {/* --- Success Message --- */}
+                        {success && (
+                            <div className="mb-4 p-4 bg-green-50 text-green-700 rounded-lg border border-green-200">
+                                <h4 className="font-semibold">Success!</h4>
+                                <p className="text-sm">{success}</p>
+                            </div>
+                        )}
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-                <input
-                    type="text"
-                    name="first_name"
-                    placeholder="First Name"
-                    value={formData.first_name}
-                    onChange={handleChange}
-                    className="w-full border p-2 rounded"
-                    required
-                />
+                        <form onSubmit={handleSubmit} className="space-y-5">
+                            {/* First Name */}
+                            <div className="relative">
+                                <User className="absolute left-3 top-1/2 -translatey-1/2 h-5 w-5 text-gray-400" />
+                                <input
+                                    type="text"
+                                    name="first_name"
+                                    placeholder="First Name"
+                                    value={formData.first_name}
+                                    onChange={handleChange}
+                                    className="w-full border p-3 pl-10 rounded-lg border-gray-300 focus:ring-2 focus:ring-blue-500"
+                                    required
+                                />
+                            </div>
 
-                <input
-                    type="text"
-                    name="last_name"
-                    placeholder="Last Name"
-                    value={formData.last_name}
-                    onChange={handleChange}
-                    className="w-full border p-2 rounded"
-                    required
-                />
+                            {/* Last Name */}
+                            <div className="relative">
+                                <User className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                                <input
+                                    type="text"
+                                    name="last_name"
+                                    placeholder="Last Name"
+                                    value={formData.last_name}
+                                    onChange={handleChange}
+                                    className="w-full border p-3 pl-10 rounded-lg border-gray-300 focus:ring-2 focus:ring-blue-500"
+                                    required
+                                />
+                            </div>
 
-                <input
-                    type="email"
-                    name="email"
-                    placeholder="Email Address"
-                    value={formData.email}
-                    onChange={handleChange}
-                    className="w-full border p-2 rounded"
-                    required
-                />
+                            {/* Email */}
+                            <div className="relative">
+                                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                                <input
+                                    type="email"
+                                    name="email"
+                                    placeholder="Email Address"
+                                    value={formData.email}
+                                    onChange={handleChange}
+                                    className="w-full border p-3 pl-10 rounded-lg border-gray-300 focus:ring-2 focus:ring-blue-500"
+                                    required
+                                />
+                            </div>
+                            
+                            {/* --- FIXED PHONE INPUT --- */}
+                            <div className="relative">
+                                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                                <input
+                                    type="tel"
+                                    name="phone"
+                                    placeholder="Phone Number (Optional)"
+                                    value={formData.phone}
+                                    onChange={handleChange}
+                                    className="w-full border p-3 pl-10 rounded-lg border-gray-300 focus:ring-2 focus:ring-blue-500"
+                                />
+                            </div>
+                            {/* --- END FIXED PHONE INPUT --- */}
 
-                <input
-                    type="password"
-                    name="password"
-                    placeholder="Password (min. 8 chars)"
-                    value={formData.password}
-                    onChange={handleChange}
-                    className="w-full border p-2 rounded"
-                    required
-                />
+                            {/* Password */}
+                            <div className="relative">
+                                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                                <input
+                                    type="password"
+                                    name="password"
+                                    placeholder="Password (min. 8 chars)"
+                                    value={formData.password}
+                                    onChange={handleChange}
+                                    className="w-full border p-3 pl-10 rounded-lg border-gray-300 focus:ring-2 focus:ring-blue-500"
+                                    required
+                                    minLength={8}
+                                />
+                            </div>
 
-                <select
-                    name="role"
-                    value={formData.role}
-                    onChange={handleChange}
-                    className="w-full border p-2 rounded"
-                    required
-                >
-                    <option value="">Select Role</option>
-                    <option value="store_admin">Store Admin</option>
-                    <option value="store_manager">Store Manager</option>
-                    <option value="cashier">Cashier</option>
-                    <option value="customer">Customer</option>
-                </select>
+                            {/* --- UPDATED ROLE LIST --- */}
+                            <div className="relative">
+                                <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                                <select
+                                    name="role"
+                                    value={formData.role}
+                                    onChange={handleChange}
+                                    className="w-full border p-3 pl-10 rounded-lg border-gray-300 focus:ring-2 focus:ring-blue-500"
+                                    required
+                                >
+                                    <option value="">Select Role</option>
+                                    <option value="store_manager">Store Manager</option>
+                                    <option value="driver">Driver</option>
+                                    <option value="assistant">Assistant</option>
+                                    <option value="cashier">Cashier</option>
+                                    <option value="customer">Customer</option>
+                                </select>
+                            </div>
+                            {/* --- END UPDATED ROLE LIST --- */}
 
-                <button
-                    type="submit"
-                    disabled={loading}
-                    className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 disabled:opacity-50"
-                >
-                    {loading ? "Adding Worker..." : "Add Worker"}
-                </button>
-            </form>
+                            {/* Submit Button */}
+                            <button
+                                type="submit"
+                                disabled={loading}
+                                className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 font-semibold transition-colors"
+                            >
+                                {loading ? "Adding Worker..." : "Add Worker"}
+                            </button>
+                        </form>
+                    </div>
+                </main>
+            </div>
         </div>
     );
 };
