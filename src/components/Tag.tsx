@@ -104,16 +104,17 @@ export default function Tag(): JSX.Element {
     // Create an array with length equal to the quantity
     const tags = Array(item.quantity).fill(null);
 
-    // Pick a font size for the name based on length so it fits within 55mm
+    // Pick a font size for the name based on length so it fits
     const nameLen = fullName.length || 0;
-    const nameFontSize = nameLen > 50 ? '8pt' : nameLen > 35 ? '9pt' : nameLen > 20 ? '10pt' : '11pt';
+    // Note: With full width, we may not need to shrink the font as aggressively
+    const nameFontSize = nameLen > 50 ? '9pt' : nameLen > 35 ? '10pt' : '11pt';
     const prefFontSize = '9pt';
     
     return `
-<div style="
+      <div style="
         display: flex;
         flex-direction: column;
-        align-items: center;
+        /* align-items: center; <-- REMOVED */
         gap: 8px;
         padding: 6px;
         font-family: system-ui, -apple-system, sans-serif;
@@ -122,7 +123,7 @@ export default function Tag(): JSX.Element {
           <div style="
             border: 1.5px solid #000;
             padding: 6px 8px;
-            width: 55mm;
+            width: 100%; /* <-- CHANGED from 55mm */
             box-sizing: border-box;
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -148,7 +149,6 @@ export default function Tag(): JSX.Element {
       </div>
     `;
   };
-
   return (
     <div className="max-w-6xl mx-auto">
       <div className="mb-8">
