@@ -49,7 +49,9 @@ class ClothingTypeResponse(BaseModel):
     total_price: float
     image_url: Optional[str] = None
     organization_id: int
-    created_at: Any # Using 'Any' for datetime
+    created_at: datetime  # <-- Changed from Any to datetime
+    pieces: int           # <-- ADDED
+    
 
 # Helper function to save files (as seen in your original code)
 async def save_uploaded_file(image_file: UploadFile) -> str:
@@ -100,8 +102,10 @@ async def get_clothing_types_for_organization(
 
     try:
         print(f"[INFO] Fetching clothing types for org_id: {org_id}")
+        
+        # --- MODIFIED: Added 'pieces' to SELECT ---
         stmt = text("""
-            SELECT id, name, plant_price, margin, total_price, image_url, organization_id, created_at
+            SELECT id, name, plant_price, margin, total_price, image_url, organization_id, created_at, pieces
             FROM clothing_types
             WHERE organization_id = :org_id
             ORDER BY name
@@ -118,7 +122,8 @@ async def get_clothing_types_for_organization(
                 total_price=row.total_price,
                 image_url=row.image_url,
                 organization_id=row.organization_id,
-                created_at=row.created_at
+                created_at=row.created_at,
+                pieces=row.pieces  # <-- ADDED
             ) for row in results
         ]
     
@@ -128,13 +133,15 @@ async def get_clothing_types_for_organization(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving data: {e}"
         )
-
+        
+        
 
 @router.post("", response_model=ClothingTypeResponse, summary="Create a new clothing type for *your* organization")
 async def create_clothing_type(
     name: str = Form(...),
     plant_price: float = Form(...),
     margin: float = Form(...),
+    pieces: int = Form(..., description="Number of pieces this item consists of (e.g., Suit=2)"), # <-- ADDED
     image_file: UploadFile = File(...),
     db: Session = Depends(get_db),
     payload: Dict[str, Any] = Depends(get_current_user_payload)
@@ -144,7 +151,7 @@ async def create_clothing_type(
     This is restricted to organization staff/owners.
     """
     if not payload:
-         raise HTTPException(
+        raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
         )
@@ -169,12 +176,14 @@ async def create_clothing_type(
         image_url = await save_uploaded_file(image_file)
 
         # 3. Insert record (NO total_price here - database does it)
+        # --- MODIFIED: Added 'pieces' column ---
         stmt = text("""
-            INSERT INTO clothing_types (name, plant_price, margin, image_url, organization_id)
-            VALUES (:name, :plant_price, :margin, :image_url, :org_id)
+            INSERT INTO clothing_types (name, plant_price, margin, image_url, organization_id, pieces)
+            VALUES (:name, :plant_price, :margin, :image_url, :org_id, :pieces)
             RETURNING id, created_at, total_price
         """)
         
+        # --- MODIFIED: Added 'pieces' parameter ---
         result = db.execute(
             stmt,
             {
@@ -183,6 +192,7 @@ async def create_clothing_type(
                 "margin": margin,
                 "image_url": image_url,
                 "org_id": org_id,
+                "pieces": pieces, # <-- ADDED
             }
         )
         db.commit()
@@ -191,6 +201,7 @@ async def create_clothing_type(
         if not row:
             raise HTTPException(status_code=500, detail="Failed to create clothing type after insertion.")
 
+        # --- MODIFIED: Added 'pieces' to response ---
         return ClothingTypeResponse(
             id=row.id,
             name=name,
@@ -199,7 +210,8 @@ async def create_clothing_type(
             total_price=row.total_price,
             created_at=row.created_at,
             image_url=image_url,
-            organization_id=org_id
+            organization_id=org_id,
+            pieces=pieces # <-- ADDED
         )
 
     except Exception as e:
@@ -209,13 +221,16 @@ async def create_clothing_type(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error saving clothing type: {e}",
         )
-
+        
+        
+        
 @router.put("/{id}", response_model=ClothingTypeResponse, summary="Update a clothing type in *your* organization")
 async def update_clothing_type(
     id: int,
     name: str = Form(...),
     plant_price: float = Form(...),
     margin: float = Form(...),
+    pieces: int = Form(...), # <-- ADDED
     image_file: UploadFile = File(None),
     db: Session = Depends(get_db),
     payload: Dict[str, Any] = Depends(get_current_user_payload)
@@ -275,16 +290,20 @@ async def update_clothing_type(
                     print(f"[WARN] Failed to delete old image file {old_image_url}: {img_err}")
 
 
-        # 5. Update record (NO total_price here - database does it)
+        # 5. Update record
+        # --- MODIFIED: Added 'pieces' to SET clause ---
         stmt = text("""
             UPDATE clothing_types
             SET name = :name,
                 plant_price = :plant_price,
                 margin = :margin,
-                image_url = :image_url
+                image_url = :image_url,
+                pieces = :pieces
             WHERE id = :id AND organization_id = :org_id
             RETURNING created_at, total_price
         """)
+        
+        # --- MODIFIED: Added 'pieces' to parameters ---
         result = db.execute(
             stmt,
             {
@@ -293,7 +312,8 @@ async def update_clothing_type(
                 "plant_price": plant_price,
                 "margin": margin,
                 "image_url": new_image_url,
-                "org_id": org_id
+                "org_id": org_id,
+                "pieces": pieces # <-- ADDED
             }
         )
         db.commit()
@@ -302,6 +322,7 @@ async def update_clothing_type(
         if not updated_row:
              raise HTTPException(status_code=404, detail="Failed to update clothing type after commit.")
 
+        # --- MODIFIED: Added 'pieces' to response ---
         return ClothingTypeResponse(
             id=id,
             name=name,
@@ -310,7 +331,8 @@ async def update_clothing_type(
             total_price=updated_row.total_price,
             created_at=updated_row.created_at,
             image_url=new_image_url,
-            organization_id=org_id
+            organization_id=org_id,
+            pieces=pieces # <-- ADDED
         )
 
     except HTTPException:
@@ -321,6 +343,7 @@ async def update_clothing_type(
         print(f"[ERROR] Failed to update clothing type: {e}")
         raise HTTPException(status_code=500, detail=f"Error updating clothing type: {e}")
     
+        
     
 @router.delete("/{id}", summary="Delete a clothing type from *your* organization")
 async def delete_clothing_type(

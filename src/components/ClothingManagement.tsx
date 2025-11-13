@@ -15,6 +15,7 @@ interface ClothingType {
   margin: number;
   total_price: number;
   image_url: string | null;
+  pieces?: number;
 }
 // 🎯 Using baseURL. Assuming it's defined in '../lib/config'
 // If this fails to compile in your project, please check the path.
@@ -46,7 +47,8 @@ export default function ClothingManagement() {
   const [formData, setFormData] = useState({
     name: '',
     plant_price: '',
-    margin: ''
+    margin: '',
+    pieces: ''
   });
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
@@ -90,12 +92,13 @@ export default function ClothingManagement() {
       }
       const data: ClothingType[] = await response.json();
       // Process URLs to be absolute
-      const processedData = data.map(item => ({
-        ...item,
-        image_url: item.image_url
-          ? (item.image_url.startsWith('http') ? item.image_url : `${baseURL}${item.image_url}`)
-          : null
-      }));
+      const processedData = data.map(item => ({
+        ...item,
+        image_url: item.image_url
+          ? (item.image_url.startsWith('http') ? item.image_url : `${baseURL}${item.image_url}`)
+          : null,
+        pieces: (item as any).pieces ? (item as any).pieces : 1,
+      }));
       setClothingTypes(processedData);
     } catch (error: any) {
       console.error('Failed to fetch clothing types:', error);
@@ -122,6 +125,11 @@ export default function ClothingManagement() {
       setFormError("Margin must be a valid, positive number.");
       return false;
     }
+    const piecesVal = parseInt(formData.pieces, 10);
+    if (isNaN(piecesVal) || piecesVal <= 0) {
+      setFormError("Pieces must be a valid positive integer (e.g., Suit=2).");
+      return false;
+    }
     if (isCreating && !imageFile) {
         setFormError("Item Image is required when creating a new item.");
         return false;
@@ -151,6 +159,8 @@ export default function ClothingManagement() {
     if (imageFile) {
       form.append('image_file', imageFile);
     }
+    // pieces
+    form.append('pieces', formData.pieces);
 
     const authHeaders = getAuthHeaders();
     
@@ -209,7 +219,8 @@ export default function ClothingManagement() {
     setFormData({
       name: clothingType.name,
       plant_price: clothingType.plant_price.toString(),
-      margin: clothingType.margin.toString()
+      margin: clothingType.margin.toString(),
+      pieces: (clothingType as any).pieces ? String((clothingType as any).pieces) : '1'
     });
     setImageFile(null); 
     setImagePreviewUrl(clothingType.image_url); 
@@ -250,7 +261,7 @@ export default function ClothingManagement() {
   };
 
   const resetForm = () => {
-    setFormData({ name: '', plant_price: '', margin: '' });
+    setFormData({ name: '', plant_price: '', margin: '', pieces: '' });
     setImageFile(null); 
     setImagePreviewUrl(null); 
     setShowAddForm(false);
@@ -296,7 +307,7 @@ export default function ClothingManagement() {
             <button
               onClick={() => {
                   // This just opens the form, no API call, so no loading state needed
-                  setFormData({ name: '', plant_price: '', margin: '' });
+                 setFormData({ name: '', plant_price: '', margin: '', pieces: '' });
                   setImageFile(null); 
                   setImagePreviewUrl(null); 
                   setEditingId(null);
@@ -359,64 +370,82 @@ export default function ClothingManagement() {
                   )}
               </div>
               
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Item Name *
-                  </label>
-                  <input
-          _           type="text"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="e.g., Men's Shirt"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
-                    required
-                    disabled={isSubmitting} // 🎯 Disable field while submitting
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Plant Price ($) *
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={formData.plant_price}
-                    onChange={(e) => setFormData({ ...formData, plant_price: e.target.value })}
-                    placeholder="8.00"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
-                    required
-                    disabled={isSubmitting} // 🎯 Disable field while submitting
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Margin ($) *                   </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={formData.margin}
-                    onChange={(e) => setFormData({ ...formData, margin: e.target.value })}
-                    placeholder="4.00" // Example for $4
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
-                    required
-                    disabled={isSubmitting} // 🎯 Disable field while submitting
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Total Price (Form Preview) ($)
-                  </label>
-                  <div className="w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-700 font-medium">
-                    ${calculateTotal().toFixed(2)}
-                  </div>
-                </div>
-              </div>
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Item Name *
+                </label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="e.g., Men's Shirt"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
+                  required
+                  disabled={isSubmitting}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Plant Price ($) *
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={formData.plant_price}
+                  onChange={(e) => setFormData({ ...formData, plant_price: e.target.value })}
+                  placeholder="8.00"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
+                  required
+                  disabled={isSubmitting}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Margin ($) *
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={formData.margin}
+                  onChange={(e) => setFormData({ ...formData, margin: e.target.value })}
+                  placeholder="4.00"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
+                  required
+                  disabled={isSubmitting}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Pieces *
+                </label>
+                <input
+                  type="number"
+                  step="1"
+                  min="1"
+                  value={formData.pieces}
+                  onChange={(e) => setFormData({ ...formData, pieces: e.target.value })}
+                  placeholder="1"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
+                  required
+                  disabled={isSubmitting}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Total Price (Form Preview) ($)
+                </label>
+                <div className="w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-700 font-medium">
+                  ${calculateTotal().toFixed(2)}
+                </div>
+              </div>
+            </div>
               
               <div className="flex space-x-4">
                 <button
@@ -429,9 +458,9 @@ export default function ClothingManagement() {
                 </button>
 page-break
                 {/* 🎯 6. MODIFIED THIS BUTTON 🎯 */}
-                <button
-          _         type="submit"
-                  className="bg-blue-600 text-white py-2 px-6 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+                <button
+                  type="submit"
+                  className="bg-blue-600 text-white py-2 px-6 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
                   disabled={isSubmitting}
                 >
                   {isSubmitting ? (
@@ -450,27 +479,30 @@ page-break
           <table className="w-full">
             {/* ... (Table Head) ... */}
             <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16">
-                  Image
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Item Name
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Plant Price
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Margin ($)
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Total Price
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16">
+                  Image
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Item Name
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Plant Price
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Margin ($)
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Pieces
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Total Price
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
+                </th>
+              </tr>
+            </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {clothingTypes.map((item) => (
                 <tr key={item.id} className="hover:bg-gray-50">
@@ -495,14 +527,17 @@ page-break
                     <td className="px-6 py-4 whitespace-nowrap text-gray-900">
                         ${item.margin.toFixed(2)}
                     </td>
+          <td className="px-6 py-4 whitespace-nowrap text-gray-900">
+            {(item as any).pieces ? String((item as any).pieces) : '1'}
+          </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="font-bold text-blue-600">
-                          ${item.total_price.toFixed(2)}
-          _           </span>
+                <span className="font-bold text-blue-600">
+                  ${item.total_price.toFixed(2)}
+                </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <div className="flex space-x-2">
-                          <button
+                <div className="flex space-x-2">
+                  <button
                             onClick={() => handleEdit(item)}
                             className="text-blue-600 hover:text-blue-900 p-1 rounded hover:bg-blue-50 transition-colors"
                           >
@@ -514,8 +549,8 @@ page-break
                           >
                             <Trash2 className="h-4 w-4" />
 Click                 </button>
-                        </div>
-                  _ </td>
+                </div>
+              </td>
                 </tr>
               ))}
             </tbody>
@@ -529,7 +564,7 @@ Click                 </button>
               <button
                 onClick={() => { 
                   // This just opens the form, no API call, so no loading state needed
-                  setFormData({ name: '', plant_price: '', margin: '' });
+                 setFormData({ name: '', plant_price: '', margin: '', pieces: '' });
                   setImageFile(null); 
                   setImagePreviewUrl(null); 
                   setEditingId(null);
@@ -551,7 +586,7 @@ Click                 </button>
           <div className="p-4 bg-blue-50 rounded-lg">
             <h4 className="font-medium text-blue-900 mb-2">Plant Price</h4>
             <p className="text-sm text-blue-700">
-          _   The base cost for processing each clothing item at the cleaning facility.
+            The base cost for processing each clothing item at the cleaning facility.
 This       </p>
           </div>
           <div className="p-4 bg-green-50 rounded-lg">
@@ -567,7 +602,7 @@ This       </p>
             </p>
           </div>
         </div>
-    _ </div>
+    </div>
 
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
@@ -584,10 +619,10 @@ This       </p>
               Are you sure you want to delete the item <strong className="text-gray-900">{showDeleteConfirm.name}</strong>? This action cannot be undone.
 Example       </p>
             <div className="mt-6 flex justify-end gap-3">
-              <button
-                type="button"
-is             onClick={() => setShowDeleteConfirm(null)}
-                className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg shadow-sm hover:bg-gray-50 transition-colors"
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(null)}
+                className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg shadow-sm hover:bg-gray-50 transition-colors"
                 disabled={isDeleting} // 🎯 Disable
               >
                 Cancel
