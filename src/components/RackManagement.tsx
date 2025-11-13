@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { MapPin, Search, Package, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { Rack } from '../types'; // Assuming this type is { number: number, is_occupied: boolean, ticket_id: number, ticket_number: string }
 import Modal from './Modal';
-import { apiCall } from '../hooks/useApi'; // We still need apiCall for the PUT request
+// import { apiCall } from '../hooks/useApi'; // <-- REMOVED
 import baseURL from "../lib/config"; // Added import
 import axios from 'axios'; // Added import
 
@@ -47,6 +47,7 @@ export default function RackManagement() {
   const [isValidating, setIsValidating] = useState(false);
   const debouncedTicketNumber = useDebounce(ticketNumber, 500); // Wait 500ms after user stops typing
   const [assignRackNumber, setAssignRackNumber] = useState('');
+  const [assigning, setAssigning] = useState(false); // <-- ADDED for API call state
 
 
   // --- Main Data Fetching Function ---
@@ -129,33 +130,32 @@ export default function RackManagement() {
   const refetch = () => fetchRacks();
 
   // --- Assign Rack Function ---
+  // --- REPLACED THIS ENTIRE FUNCTION ---
   const assignRack = async () => {
-    // --- CHANGED ---
-    // Check against the validated ticket, not the input string
     if (!validatedTicket || !assignRackNumber) {
       setModalMessage('Please select a valid ticket and rack number');
       setIsModalOpen(true);
       return;
     }
 
-    // --- CHANGED ---
-    // We now use the numeric ID from the validated ticket
+    setAssigning(true);
     const ticketId = validatedTicket.ticket_id; 
 
     try {
-      // --- THE FIX for 401 Unauthorized ---
       const token = localStorage.getItem("accessToken");
       if (!token) throw new Error("Access token missing");
 
-      await apiCall(`/api/organizations/tickets/${ticketId}/rack`, {
-        method: 'PUT',
-        body: JSON.stringify({ rack_number: parseInt(assignRackNumber) }),
-        // 1. Add the Authorization header to apiCall
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+      // Use axios.put to make the API call
+      await axios.put(
+        `${baseURL}/api/organizations/tickets/${ticketId}/rack`, // Endpoint
+        { rack_number: parseInt(assignRackNumber) }, // Request body
+        { // Config object with headers
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          }
         }
-      });
+      );
 
       // Clear the form first
       setTicketNumber(''); // Clear ticket number input
@@ -169,11 +169,13 @@ export default function RackManagement() {
       setModalMessage(`Rack #${assignRackNumber} assigned successfully!`);
       setIsModalOpen(true);
       
-    } catch (error) {
+    } catch (error: any) {
       console.error('Rack assignment error:', error);
-      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      const errorMessage = error.response?.data?.detail || error.message || 'An unknown error occurred';
       setModalMessage(`Failed to assign rack: ${errorMessage}. Please check if the ticket exists and the rack is available.`);
       setIsModalOpen(true);
+    } finally {
+      setAssigning(false);
     }
   };
 
@@ -273,11 +275,12 @@ export default function RackManagement() {
 
             <button
               onClick={assignRack}
-              // --- CHANGED --- Button is disabled if ticket isn't valid
-              disabled={!validatedTicket || !assignRackNumber || isValidating}
+              // --- CHANGED --- Button disabled if validating OR assigning
+              disabled={!validatedTicket || !assignRackNumber || isValidating || assigning}
               className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              Assign Rack
+              {/* --- CHANGED --- Show loading text */}
+              {assigning ? 'Assigning...' : 'Assign Rack'}
             </button>
           </div>
         </div>
@@ -364,4 +367,3 @@ export default function RackManagement() {
     </div>
   );
 }
-
