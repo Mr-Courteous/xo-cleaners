@@ -185,6 +185,7 @@ class TicketItemResponse(BaseModel):
     plant_price: float
     margin: float
     additional_charge: float
+    pieces: Optional[int] = None  # <-- THIS IS THE FIX
 
     class Config:
         orm_mode = True

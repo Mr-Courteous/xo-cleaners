@@ -338,7 +338,7 @@ def create_ticket(
         
         # 1. Check customer existence (NOW FILTERED BY ORG)
         customer_query = text("""
-            SELECT id, first_name, last_name, email 
+            SELECT id, first_name, last_name, email  
             FROM allUsers 
             WHERE id = :id AND organization_id = :org_id AND role = 'customer'
         """)
@@ -359,7 +359,7 @@ def create_ticket(
                 raise HTTPException(status_code=400, detail="No items provided for the ticket.")
         
         types_query = text("""
-            SELECT id, name, plant_price, margin, total_price 
+            SELECT id, name, plant_price, margin, total_price, pieces 
             FROM clothing_types 
             WHERE id IN :ids AND organization_id = :org_id
         """)
@@ -373,7 +373,8 @@ def create_ticket(
                 "name": row[1], 
                 "plant_price": decimal.Decimal(str(row[2])),
                 "margin": decimal.Decimal(str(row[3])),
-                "total_price": decimal.Decimal(str(row[4]))
+                "total_price": decimal.Decimal(str(row[4])),
+                "pieces": row[5]  # <-- ADD THIS LINE
             } for row in types_result
         }
         
@@ -550,7 +551,8 @@ def create_ticket(
                     item_total=float(item['item_total']),
                     plant_price=float(item['plant_price']),
                     margin=float(item['margin']),
-                    additional_charge=0.0
+                    additional_charge=0.0,
+                    pieces=type_prices[clothing_type_id]['pieces']  # <-- ADD THIS LINE
                 )
             )
 

@@ -14,23 +14,18 @@ export function renderReceiptHtml(ticket: Ticket) {
   // --- MODIFIED: Added all calculations ---
   const subtotal = ticket.total_amount || 0;
   const paid = ticket.paid_amount || 0;
-  
+
   // Calculate fees based on the subtotal
   const envCharge = subtotal * 0.047; // 4.7%
   const tax = subtotal * 0.0825; // 8.25%
   const finalTotal = subtotal + envCharge + tax;
-  
+
   // Balance is based on the new finalTotal
   const balance = finalTotal - paid;
   // --- END MODIFICATIONS ---
 
   // --- ADDED: Dynamically calculate the total number of pieces ---
-  const totalPieces = items.reduce((acc, item) => {
-    // Assumes item.pieces is passed from the backend (e.g., Suit=2)
-    // If it's not present, default to 1 piece.
-    const piecesPerItem = item.pieces || 1;
-    return acc + (item.quantity * piecesPerItem);
-  }, 0);
+  const totalPieces = items.reduce((sum, item) => sum + (item.quantity * (item.pieces || 0)), 0);
   // --- END ADDED ---
 
   return `
@@ -50,7 +45,7 @@ export function renderReceiptHtml(ticket: Ticket) {
 
       <div style="display:flex;justify-content:space-between;font-size:10pt;margin-bottom:6px;font-weight: 600;">
         <div>${ticket.customer_name || ''}</div>
-        <div>${ticket.created_at ? new Date(ticket.created_at).toLocaleDateString() + ' ' + new Date(ticket.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : ''}</div>
+        <div>${ticket.created_at ? new Date(ticket.created_at).toLocaleDateString() + ' ' + new Date(ticket.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</div>
       </div>
 
       <div style="margin-bottom:6px;font-size:10pt;">
