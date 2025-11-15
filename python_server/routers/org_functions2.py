@@ -141,96 +141,126 @@ async def search_tickets(
 # --- ROUTE 2: The "parameter" path must come SECOND ---
 # In org_functions2.py
 
-@router.get("/tickets/{ticket_id}", response_model=TicketResponse, summary="Get full details for a single ticket")
-async def get_ticket_details(
-    ticket_id: int,
-    db: Session = Depends(get_db),
-    payload: Dict[str, Any] = Depends(get_current_user_payload)
-):
-    """
-    Retrieve all details for a specific ticket, including customer info,
-    all items, and payment status, restricted by organization.
-    """
-    org_id = payload.get("organization_id")
-    if not org_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Organization ID missing from token."
-        )
+# @router.get("/tickets/{ticket_id}", response_model=TicketResponse, summary="Get full details for a single ticket")
+# async def get_ticket_details(
+#     ticket_id: int,
+#     db: Session = Depends(get_db),
+#     payload: Dict[str, Any] = Depends(get_current_user_payload)
+# ):
+#     """
+#     Retrieve all details for a specific ticket, including customer info,
+#     all items, and payment status, restricted by organization.
+    
+#     --- UPDATED TO MATCH create_ticket RESPONSE STRUCTURE ---
+#     """
+#     org_id = payload.get("organization_id")
+#     if not org_id:
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             detail="Organization ID missing from token."
+#         )
 
-    try:
-        # 1. Get main ticket info and join with customer info
-        ticket_stmt = text("""
-            SELECT 
-                t.id, t.ticket_number, t.customer_id, t.total_amount, 
-                t.paid_amount, t.status, t.rack_number, t.created_at, 
-                t.created_by_user_id, t.pickup_date,
-                u.first_name, u.last_name, u.email, u.phone_number
-            FROM tickets t
-            JOIN allUsers u ON t.customer_id = u.id
-            WHERE t.id = :ticket_id AND t.organization_id = :org_id
-        """)
-        ticket = db.execute(ticket_stmt, {"ticket_id": ticket_id, "org_id": org_id}).fetchone()
+#     try:
+#         # 1. Get main ticket info and join with customer info
+#         # --- UPDATED: Added 't.special_instructions' ---
+#         ticket_stmt = text("""
+#             SELECT 
+#                 t.id, t.ticket_number, t.customer_id, t.total_amount, 
+#                 t.paid_amount, t.status, t.rack_number, t.created_at, 
+#                 t.created_by_user_id, t.pickup_date,
+#                 t.special_instructions, -- <-- ADDED THIS
+#                 u.first_name, u.last_name, u.email, u.phone_number
+#             FROM tickets t
+#             JOIN allUsers u ON t.customer_id = u.id
+#             WHERE t.id = :ticket_id AND t.organization_id = :org_id
+#         """)
+#         ticket = db.execute(ticket_stmt, {"ticket_id": ticket_id, "org_id": org_id}).fetchone()
 
-        if not ticket:
-            raise HTTPException(status_code=404, detail="Ticket not found in this organization")
+#         if not ticket:
+#             raise HTTPException(status_code=404, detail="Ticket not found in this organization")
 
-        # 2. Get all items for the ticket
-        # --- MODIFIED: Added 'ct.pieces' to the SELECT ---
-        items_stmt = text("""
-            SELECT 
-                ti.id, ti.ticket_id, ti.clothing_type_id, ti.quantity, 
-                ti.item_total, ti.unit_price,
-                ct.name AS clothing_name,
-                ct.image_url AS clothing_image_url,
-                ct.pieces AS pieces  -- <-- ADDED THIS LINE
-            FROM ticket_items ti
-            JOIN clothing_types ct ON ti.clothing_type_id = ct.id
-            WHERE ti.ticket_id = :ticket_id AND ti.organization_id = :org_id
-        """)
+#         # 2. Get all items for the ticket
+#         # --- UPDATED: Added all fields to match create_ticket item response ---
+#         items_stmt = text("""
+#             SELECT 
+#                 ti.id, ti.ticket_id, ti.clothing_type_id, ti.quantity, 
+#                 ti.item_total,
+#                 ti.plant_price, ti.margin, ti.starch_level, ti.crease, -- <-- ADDED THESE
+#                 ct.name AS clothing_name,
+#                 ct.image_url AS clothing_image_url,
+#                 COALESCE(ti.pieces, ct.pieces) AS pieces
+#             FROM ticket_items ti
+#             JOIN clothing_types ct ON ti.clothing_type_id = ct.id
+#             WHERE ti.ticket_id = :ticket_id
+#               AND ct.organization_id = :org_id
+#         """)
         
-        items_results = db.execute(items_stmt, {"ticket_id": ticket_id, "org_id": org_id}).fetchall()
+#         items_results = db.execute(items_stmt, {"ticket_id": ticket_id, "org_id": org_id}).fetchall()
+#         # --- UPDATED: Building the item list to match create_ticket ---
+#         items_list = [
+#             TicketItemResponse(
+#                 id=item_row.id,
+#                 ticket_id=item_row.ticket_id,
+#                 clothing_type_id=item_row.clothing_type_id,
+#                 quantity=item_row.quantity,
+#                 starch_level=item_row.starch_level,      # <-- ADDED
+#                 crease=item_row.crease,                # <-- ADDED
+#                 item_total=item_row.item_total,
+#                 plant_price=item_row.plant_price,        # <-- ADDED
+#                 margin=item_row.margin,                # <-- ADDED
+#                 additional_charge=0.0,                 # <-- ADDED (for consistency)
+#                 clothing_name=item_row.clothing_name,
+#                 clothing_image_url=item_row.clothing_image_url,
+#                 pieces=item_row.pieces
+#                 # unit_price=item_row.unit_price,  <-- REMOVED (not in create_ticket)
+#             ) for item_row in items_results
+#         ]
 
-        items_list = [
-            TicketItemResponse(
-                id=item_row.id,
-                ticket_id=item_row.ticket_id,
-                clothing_type_id=item_row.clothing_type_id,
-                quantity=item_row.quantity,
-                item_total=item_row.item_total,
-                unit_price=item_row.unit_price,
-                clothing_name=item_row.clothing_name,
-                clothing_image_url=item_row.clothing_image_url,
-                pieces=item_row.pieces  # <-- ADDED THIS LINE
-            ) for item_row in items_results
-        ]
+#         # 3. Construct the final response to match create_ticket
+        
+#         # --- ADDED: Create the nested customer fields ---
+#         customer_name = f"{ticket.first_name} {ticket.last_name or ''}".strip()
+#         customer_phone = ticket.email  # Matches create_ticket logic
 
-        # 3. Construct the final response
-        return TicketResponse(
-            id=ticket.id,
-            ticket_number=ticket.ticket_number,
-            customer_id=ticket.customer_id,
-            total_amount=ticket.total_amount,
-            paid_amount=ticket.paid_amount,
-            status=ticket.status,
-            rack_number=ticket.rack_number,
-            created_at=ticket.created_at,
-            created_by_user_id=ticket.created_by_user_id,
-            pickup_date=ticket.pickup_date,
-            first_name=ticket.first_name,
-            last_name=ticket.last_name,
-            email=ticket.email,
-            phone_number=ticket.phone_number,
-            items=items_list  # This list now contains 'pieces' for each item
-        )
+#         return TicketResponse(
+#             id=ticket.id,
+#             ticket_number=ticket.ticket_number,
+#             customer_id=ticket.customer_id,
+            
+#             # --- ADDED THESE FIELDS ---
+#             customer_name=customer_name,
+#             customer_phone=customer_phone,
+            
+#             total_amount=ticket.total_amount,
+#             paid_amount=ticket.paid_amount,
+#             status=ticket.status,
+#             rack_number=ticket.rack_number,
+            
+#             # --- ADDED THIS FIELD ---
+#             special_instructions=ticket.special_instructions,
+            
+#             pickup_date=ticket.pickup_date,
+#             created_at=ticket.created_at,
+#             items=items_list,
+            
+#             # --- ADDED THIS FIELD ---
+#             organization_id=org_id 
+            
+#             # --- REMOVED (not in create_ticket response) ---
+#             # created_by_user_id=ticket.created_by_user_id,
+#             # first_name=ticket.first_name,
+#             # last_name=ticket.last_name,
+#             # email=ticket.email,
+#             # phone_number=ticket.phone_number,
+#         )
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"[ERROR] Getting ticket {ticket_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Error retrieving ticket: {e}")
-
-# --- NEW ROUTE 3: Ticket number validation ---
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         print(f"[ERROR] Getting ticket {ticket_id}: {e}")
+#         raise HTTPException(status_code=500, detail=f"Error retrieving ticket: {e}")
+        
+    # --- NEW ROUTE 3: Ticket number validation ---
 @router.get(
     "/tickets/validate/{ticket_number}", 
     response_model=TicketValidationResponse,

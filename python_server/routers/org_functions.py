@@ -676,126 +676,126 @@ async def get_tickets_for_organization(
             detail="Error retrieving tickets for organization."
         )        
         
-@router.get(
-    "/tickets/{ticket_id}", 
-    response_model=TicketResponse, 
-    summary="Get full details for a single ticket"
-)
-async def get_ticket_by_id(
-    ticket_id: int,
-    db: Session = Depends(get_db),
-    payload: Dict[str, Any] = Depends(get_current_user_payload)
-):
-    """
-    Returns the complete details for a single ticket, including all items,
-    if it belongs to the logged-in user's organization.
-    """
-    try:
-        organization_id = payload.get("organization_id")
-        user_role = payload.get("role")
+# @router.get(
+#     "/tickets/{ticket_id}", 
+#     response_model=TicketResponse, 
+#     summary="Get full details for a single ticket"
+# )
+# async def get_ticket_by_id(
+#     ticket_id: int,
+#     db: Session = Depends(get_db),
+#     payload: Dict[str, Any] = Depends(get_current_user_payload)
+# ):
+#     """
+#     Returns the complete details for a single ticket, including all items,
+#     if it belongs to the logged-in user's organization.
+#     """
+#     try:
+#         organization_id = payload.get("organization_id")
+#         user_role = payload.get("role")
 
-        # Authorization check
-        allowed_roles = ["cashier", "store_admin", "org_owner", "STORE_OWNER"]
-        if user_role not in allowed_roles:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You do not have permission to access this resource."
-            )
-        if not organization_id:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token: Organization ID missing."
-            )
+#         # Authorization check
+#         allowed_roles = ["cashier", "store_admin", "org_owner", "STORE_OWNER"]
+#         if user_role not in allowed_roles:
+#             raise HTTPException(
+#                 status_code=status.HTTP_403_FORBIDDEN,
+#                 detail="You do not have permission to access this resource."
+#             )
+#         if not organization_id:
+#             raise HTTPException(
+#                 status_code=status.HTTP_401_UNAUTHORIZED,
+#                 detail="Invalid token: Organization ID missing."
+#             )
 
-        # Query for the main ticket
-        ticket_query = text("""
-            SELECT 
-                t.id, t.ticket_number, t.customer_id, t.total_amount, 
-                t.paid_amount, t.status, t.rack_number, t.special_instructions, 
-                t.pickup_date, t.created_at, t.organization_id,
-                u.first_name, u.last_name, u.email AS customer_phone
-            FROM tickets AS t
-            JOIN allUsers AS u ON t.customer_id = u.id
-            WHERE t.id = :ticket_id AND t.organization_id = :org_id
-        """)
-        ticket_result = db.execute(ticket_query, {
-            "ticket_id": ticket_id,
-            "org_id": organization_id
-        }).fetchone()
+#         # Query for the main ticket
+#         ticket_query = text("""
+#             SELECT 
+#                 t.id, t.ticket_number, t.customer_id, t.total_amount, 
+#                 t.paid_amount, t.status, t.rack_number, t.special_instructions, 
+#                 t.pickup_date, t.created_at, t.organization_id,
+#                 u.first_name, u.last_name, u.email AS customer_phone
+#             FROM tickets AS t
+#             JOIN allUsers AS u ON t.customer_id = u.id
+#             WHERE t.id = :ticket_id AND t.organization_id = :org_id
+#         """)
+#         ticket_result = db.execute(ticket_query, {
+#             "ticket_id": ticket_id,
+#             "org_id": organization_id
+#         }).fetchone()
 
-        if not ticket_result:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Ticket not found in your organization."
-            )
+#         if not ticket_result:
+#             raise HTTPException(
+#                 status_code=status.HTTP_404_NOT_FOUND,
+#                 detail="Ticket not found in your organization."
+#             )
 
-        # Query for the ticket items
-        items_query = text("""
-            SELECT 
-                ti.id, ti.ticket_id, ti.clothing_type_id, ti.quantity, 
-                ti.starch_level, ti.crease, ti.item_total, 
-                ti.plant_price, ti.margin,
-                ct.name AS clothing_name
-            FROM ticket_items AS ti
-            JOIN clothing_types AS ct ON ti.clothing_type_id = ct.id
-            WHERE ti.ticket_id = :ticket_id
-            AND ti.organization_id = :org_id 
-            AND ct.organization_id = :org_id
-        """)
-        items_result = db.execute(items_query, {
-            "ticket_id": ticket_id,
-            "org_id": organization_id
-        }).fetchall()
+#         # Query for the ticket items
+#         items_query = text("""
+#             SELECT 
+#                 ti.id, ti.ticket_id, ti.clothing_type_id, ti.quantity, 
+#                 ti.starch_level, ti.crease, ti.item_total, 
+#                 ti.plant_price, ti.margin,
+#                 ct.name AS clothing_name
+#             FROM ticket_items AS ti
+#             JOIN clothing_types AS ct ON ti.clothing_type_id = ct.id
+#             WHERE ti.ticket_id = :ticket_id
+#             AND ti.organization_id = :org_id 
+#             AND ct.organization_id = :org_id
+#         """)
+#         items_result = db.execute(items_query, {
+#             "ticket_id": ticket_id,
+#             "org_id": organization_id
+#         }).fetchall()
 
-        # Build the response items
-        response_items = []
-        for item in items_result:
-            response_items.append(
-                TicketItemResponse(
-                    id=item.id,
-                    ticket_id=item.ticket_id,
-                    clothing_type_id=item.clothing_type_id,
-                    clothing_name=item.clothing_name,
-                    quantity=item.quantity,
-                    starch_level=item.starch_level,
-                    crease=item.crease,
-                    item_total=float(item.item_total),
-                    plant_price=float(item.plant_price),
-                    margin=float(item.margin),
-                    additional_charge=0.0
-                )
-            )
+#         # Build the response items
+#         response_items = []
+#         for item in items_result:
+#             response_items.append(
+#                 TicketItemResponse(
+#                     id=item.id,
+#                     ticket_id=item.ticket_id,
+#                     clothing_type_id=item.clothing_type_id,
+#                     clothing_name=item.clothing_name,
+#                     quantity=item.quantity,
+#                     starch_level=item.starch_level,
+#                     crease=item.crease,
+#                     item_total=float(item.item_total),
+#                     plant_price=float(item.plant_price),
+#                     margin=float(item.margin),
+#                     additional_charge=0.0
+#                 )
+#             )
 
-        # Build the final TicketResponse
-        return TicketResponse(
-            id=ticket_result.id,
-            ticket_number=ticket_result.ticket_number,
-            customer_id=ticket_result.customer_id,
-            customer_name=f"{ticket_result.first_name} {ticket_result.last_name}",
-            customer_phone=ticket_result.customer_phone,
-            total_amount=float(ticket_result.total_amount),
-            paid_amount=float(ticket_result.paid_amount),
-            status=ticket_result.status,
+#         # Build the final TicketResponse
+#         return TicketResponse(
+#             id=ticket_result.id,
+#             ticket_number=ticket_result.ticket_number,
+#             customer_id=ticket_result.customer_id,
+#             customer_name=f"{ticket_result.first_name} {ticket_result.last_name}",
+#             customer_phone=ticket_result.customer_phone,
+#             total_amount=float(ticket_result.total_amount),
+#             paid_amount=float(ticket_result.paid_amount),
+#             status=ticket_result.status,
             
-            # --- THIS IS THE FIX ---
-            # Convert the int to a string, or keep it None if it's null
-            rack_number=str(ticket_result.rack_number) if ticket_result.rack_number is not None else None,
+#             # --- THIS IS THE FIX ---
+#             # Convert the int to a string, or keep it None if it's null
+#             rack_number=str(ticket_result.rack_number) if ticket_result.rack_number is not None else None,
             
-            special_instructions=ticket_result.special_instructions,
-            pickup_date=ticket_result.pickup_date,
-            created_at=ticket_result.created_at,
-            items=response_items,
-            organization_id=ticket_result.organization_id
-        )
+#             special_instructions=ticket_result.special_instructions,
+#             pickup_date=ticket_result.pickup_date,
+#             created_at=ticket_result.created_at,
+#             items=response_items,
+#             organization_id=ticket_result.organization_id
+#         )
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"Error fetching ticket: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error retrieving ticket details."
-        )
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         print(f"Error fetching ticket: {e}")
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail="Error retrieving ticket details."
+#         )
 
         
         

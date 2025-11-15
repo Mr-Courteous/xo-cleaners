@@ -64,6 +64,7 @@ export default function TicketManagement() {
         { headers }
       );
       setSelectedTicket(response.data);
+      console.log('Fetched ticket details:', response.data);
     } catch (error) {
       console.error('Failed to fetch ticket details:', error);
       alert('Failed to fetch ticket details.');

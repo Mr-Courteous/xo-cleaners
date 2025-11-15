@@ -53,95 +53,122 @@ router = APIRouter(prefix="/api/organizations", tags=["Organization Resources"])
 
 @router.get("/tickets/{ticket_id}", response_model=TicketResponse, summary="Get full details for a single ticket")
 async def get_ticket_details(
-    ticket_id: int, 
-    db: Session = Depends(get_db), 
+    ticket_id: int,
+    db: Session = Depends(get_db),
     payload: Dict[str, Any] = Depends(get_current_user_payload)
 ):
     """
-    Retrieves the complete details for a single ticket, including customer
-    information and all associated line items.
+    Retrieve all details for a specific ticket, including customer info,
+    all items, and payment status, restricted by organization.
+    
+    --- UPDATED TO MATCH create_ticket RESPONSE STRUCTURE ---
     """
-    
-    # 1. (SECURITY) Get the organization ID
-    organization_id = payload.get("organization_id")
-    if not organization_id:
+    org_id = payload.get("organization_id")
+    if not org_id:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token: Organization ID missing."
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Organization ID missing from token."
         )
 
-    # 2. Query for the main ticket details
-    ticket_query = text("""
-        SELECT
-            t.id, t.ticket_number, t.customer_id, t.total_amount, t.paid_amount,
-            t.status, t.rack_number, t.special_instructions, t.pickup_date, 
-            t.created_at, t.organization_id,
-            u.first_name, u.last_name, u.phone AS customer_phone
-        FROM tickets AS t
-        JOIN allusers AS u ON t.customer_id = u.id
-        WHERE t.id = :ticket_id AND t.organization_id = :org_id
-    """)
-    
-    ticket_result = db.execute(
-        ticket_query, 
-        {"ticket_id": ticket_id, "org_id": organization_id}
-    ).fetchone()
+    try:
+        # 1. Get main ticket info and join with customer info
+        # --- UPDATED: Added 't.special_instructions' ---
+        ticket_stmt = text("""
+            SELECT 
+                t.id, t.ticket_number, t.customer_id, t.total_amount, 
+                t.paid_amount, t.status, t.rack_number, t.created_at, 
+                t.pickup_date,
+                t.special_instructions, -- <-- ADDED THIS
+                u.first_name, u.last_name, u.email, u.phone
+            FROM tickets t
+            JOIN allUsers u ON t.customer_id = u.id
+            WHERE t.id = :ticket_id AND t.organization_id = :org_id
+        """)
+        ticket = db.execute(ticket_stmt, {"ticket_id": ticket_id, "org_id": org_id}).fetchone()
 
-    if not ticket_result:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Ticket not found in your organization."
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Ticket not found in this organization")
+
+        # 2. Get all items for the ticket
+        # --- UPDATED: Added all fields to match create_ticket item response ---
+        items_stmt = text("""
+            SELECT 
+                ti.id, ti.ticket_id, ti.clothing_type_id, ti.quantity, 
+                ti.item_total,
+                ti.plant_price, ti.margin, ti.starch_level, ti.crease,
+                ct.name AS clothing_name,
+                ct.image_url AS clothing_image_url,
+                COALESCE(ct.pieces, 1) AS pieces
+            FROM ticket_items ti
+            JOIN clothing_types ct ON ti.clothing_type_id = ct.id
+            WHERE ti.ticket_id = :ticket_id  -- <-- FIXED
+        """)
+        
+        items_results = db.execute(items_stmt, {"ticket_id": ticket_id, "org_id": org_id}).fetchall()
+        # --- UPDATED: Building the item list to match create_ticket ---
+        items_list = [
+            TicketItemResponse(
+                id=item_row.id,
+                ticket_id=item_row.ticket_id,
+                clothing_type_id=item_row.clothing_type_id,
+                quantity=item_row.quantity,
+                starch_level=item_row.starch_level,      # <-- ADDED
+                crease=item_row.crease,                # <-- ADDED
+                item_total=item_row.item_total,
+                plant_price=item_row.plant_price,        # <-- ADDED
+                margin=item_row.margin,                # <-- ADDED
+                additional_charge=0.0,                 # <-- ADDED (for consistency)
+                clothing_name=item_row.clothing_name,
+                clothing_image_url=item_row.clothing_image_url,
+                pieces=item_row.pieces
+                # unit_price=item_row.unit_price,  <-- REMOVED (not in create_ticket)
+            ) for item_row in items_results
+        ]
+
+        # 3. Construct the final response to match create_ticket
+        
+        # --- ADDED: Create the nested customer fields ---
+        customer_name = f"{ticket.first_name} {ticket.last_name or ''}".strip()
+        customer_phone = ticket.email  # Matches create_ticket logic
+
+        return TicketResponse(
+            id=ticket.id,
+            ticket_number=ticket.ticket_number,
+            customer_id=ticket.customer_id,
+            
+            # --- ADDED THESE FIELDS ---
+            customer_name=customer_name,
+            customer_phone=customer_phone,
+            
+            total_amount=ticket.total_amount,
+            paid_amount=ticket.paid_amount,
+            status=ticket.status,
+            rack_number=ticket.rack_number,
+            
+            # --- ADDED THIS FIELD ---
+            special_instructions=ticket.special_instructions,
+            
+            pickup_date=ticket.pickup_date,
+            created_at=ticket.created_at,
+            items=items_list,
+            
+            # --- ADDED THIS FIELD ---
+            organization_id=org_id 
+            
+            # --- REMOVED (not in create_ticket response) ---
+            # created_by_user_id=ticket.created_by_user_id,
+            # first_name=ticket.first_name,
+            # last_name=ticket.last_name,
+            # email=ticket.email,
+            # phone_number=ticket.phone_number,
         )
 
-    # 3. Query for all items associated with this ticket
-    items_query = text("""
-        SELECT
-            ti.id, ti.ticket_id, ti.clothing_type_id, ti.quantity,
-            ti.starch_level, ti.crease, ti.item_total,
-            ti.plant_price, ti.margin,
-            ct.name AS clothing_name
-        FROM ticket_items AS ti
-        JOIN clothing_types AS ct ON ti.clothing_type_id = ct.id
-        WHERE ti.ticket_id = :ticket_id
-    """)
-    
-    items_result = db.execute(items_query, {"ticket_id": ticket_id}).fetchall()
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] Getting ticket {ticket_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error retrieving ticket: {e}")
 
-    # 4. Format the items into the Pydantic model
-    ticket_items = [
-        TicketItemResponse(
-            id=item.id,
-            ticket_id=item.ticket_id,
-            clothing_type_id=item.clothing_type_id,
-            clothing_name=item.clothing_name,
-            quantity=item.quantity,
-            starch_level=item.starch_level,
-            crease=item.crease,
-            item_total=item.item_total,
-            plant_price=item.plant_price,
-            margin=item.margin,
-            additional_charge=0 
-        ) for item in items_result
-    ]
-
-    # 5. Combine all info into the final TicketResponse
-    # --- CHANGED: Convert rack_number to str() to match Pydantic model ---
-    return TicketResponse(
-        id=ticket_result.id,
-        ticket_number=ticket_result.ticket_number,
-        customer_id=ticket_result.customer_id,
-        customer_name=f"{ticket_result.first_name} {ticket_result.last_name}",
-        customer_phone=ticket_result.customer_phone,
-        total_amount=ticket_result.total_amount,
-        paid_amount=ticket_result.paid_amount,
-        status=ticket_result.status,
-        rack_number=str(ticket_result.rack_number) if ticket_result.rack_number is not None else None,
-        special_instructions=ticket_result.special_instructions,
-        pickup_date=ticket_result.pickup_date,
-        created_at=ticket_result.created_at,
-        organization_id=ticket_result.organization_id,
-        items=ticket_items
-    )
 # --- END OF get_ticket_details FUNCTION ---
 
 
