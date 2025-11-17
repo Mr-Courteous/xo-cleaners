@@ -134,8 +134,7 @@ const Header = () => {
     return (
         <>
             <header className="bg-white shadow-lg sticky top-0 z-10 font-sans">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex justify-between items-center">
-                    
+<div className="w-full max-w-[98vw] mx-auto px-4 sm:px-6 lg:px-8 py-3 flex justify-between items-center">                    
                     {/* Logo and App Name */}
                     <Link to="/" className="flex items-center space-x-3 group">
                         <div className="bg-blue-600 p-2 rounded-xl shadow-lg transform transition-all duration-300 group-hover:scale-105 group-hover:shadow-blue-300">

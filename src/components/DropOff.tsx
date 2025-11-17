@@ -46,7 +46,9 @@ const ClothingGrid: React.FC<ClothingGridProps> = ({ clothingTypes, addItemByTyp
   }, [clothingTypes]);
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 p-4 bg-gray-50 rounded-lg">
+    // ⭐ UPDATED: Expanded grid columns to fill the wider area.
+    // Since the parent is now 50% of a 100% screen, we can fit more columns comfortably.
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-5 2xl:grid-cols-6 gap-4 p-4 bg-gray-50 rounded-lg">
       {sortedTypes.map((type) => {
         // Get the image URL from the map. Fallback to a type-specific URL if available, or null.
         const imageUrl = CLOTHING_IMAGE_MAP[type.name] || type.image_url;
@@ -109,7 +111,7 @@ export default function DropOff() {
   const [customerSearch, setCustomerSearch] = useState('');
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-  const [newCustomer, setNewCustomer] = useState({ name: '', phone: '', email: '', address: '' });
+  const [newCustomer, setNewCustomer] = useState({ first_name: '', last_name: '', phone: '', email: '', address: '' });
   const [clothingTypes, setClothingTypes] = useState<ClothingType[]>([]);
   const [items, setItems] = useState<TicketItem[]>([]);
   const [specialInstructions, setSpecialInstructions] = useState('');
@@ -473,8 +475,8 @@ export default function DropOff() {
 
 
   return (
-    // ⭐ MODIFIED: Changed max-w-full to max-w-screen-2xl to make the drop-off component visibly wider
-    <div className="max-w-screen-2xl mx-auto">
+    // ⭐ MODIFIED: Use 100% Width (w-full) with small padding (px-4) to use the whole page
+    <div className="w-full max-w-full mx-auto px-4 py-4 min-h-screen bg-gray-100 font-sans">
       <div className="mb-8">
         <h2 className="text-2xl font-bold text-gray-900">Drop Off Clothes</h2>
         <div className="flex items-center mt-2 space-x-4">
@@ -576,7 +578,7 @@ export default function DropOff() {
           ) : (
             <div>
               <h4 className="font-medium mb-4">New Customer Information</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-4">
                 {/* --- CHANGED --- */}
                 <input
                   type="text"
@@ -613,7 +615,7 @@ export default function DropOff() {
                   placeholder="Address"
                   value={newCustomer.address}
                   onChange={(e) => setNewCustomer({ ...newCustomer, address: e.target.value })}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent md:col-span-2 lg:col-span-4"
                 />
               </div>
               <div className="flex space-x-4">
@@ -663,11 +665,13 @@ export default function DropOff() {
             </div>
           </div>
 
-          {/* --- MODIFIED: TWO-COLUMN LAYOUT FOR SELECTION AND TICKET --- */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* --- MODIFIED: 50/50 WIDE LAYOUT --- */}
+          {/* ⭐ UPDATED: Used grid-cols-2 so both sides get equal space (50% each) to satisfy 'at least equal' */}
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
 
             {/* COLUMN 1: ITEM SELECTION UI (GRID or MANUAL ADD) */}
-            <div className="lg:order-1">
+            {/* ⭐ UPDATED: Now takes 50% of the 100% width screen */}
+            <div className="xl:col-span-1 lg:order-1">
               {viewMode === 'grid' && clothingTypes.length > 0 && (
                 <div>
                   <ClothingGrid clothingTypes={clothingTypes} addItemByTypeId={addItemByTypeId} />
@@ -689,7 +693,8 @@ export default function DropOff() {
             </div>
 
             {/* COLUMN 2: CURRENT TICKET ITEMS LIST */}
-            <div className="lg:order-2">
+            {/* ⭐ UPDATED: Now takes 50% of the 100% width screen */}
+            <div className="xl:col-span-1 lg:order-2">
               <h4 className="text-md font-semibold mb-2">Current Ticket ({items.length} Items)</h4>
               {items.length === 0 && (
                 <div className="p-4 text-center text-gray-500 border border-dashed rounded-lg">
@@ -699,72 +704,49 @@ export default function DropOff() {
 
               {/* --- MODIFICATION START: ADDED COLUMN HEADERS FOR ITEM LIST --- */}
               {items.length > 0 && (
-                // ⭐ MODIFIED: Changed md:grid-cols-7 to md:grid-cols-10 and adjusted spans for width redistribution
-                <div className="grid grid-cols-1 md:grid-cols-10 gap-4 p-2 mb-2 text-sm font-semibold text-gray-700 border-b border-gray-300">
-                  <div className="col-span-2">Item Type</div> {/* MODIFIED: col-span-3 -> col-span-2 */}
-                  <div className="col-span-1">Qty</div> {/* MODIFIED: Added col-span-1 */}
-                  <div className="col-span-3">Starch</div> {/* MODIFIED: col-span-2 -> col-span-3 */}
-                  <div className="col-span-1">Crease</div>
-                  <div className="col-span-1">Addtl Chg</div>
+                // ⭐ MODIFIED: Responsive headers
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-4 p-2 mb-2 text-sm font-semibold text-gray-700 border-b border-gray-300">
+                  <div className="col-span-3">Item Type</div>
+                  <div className="col-span-1 text-center">Qty</div>
+                  <div className="col-span-3 text-center">Starch</div>
+                  <div className="col-span-2 text-center">Crease</div>
+                  <div className="col-span-1 text-center">Addtl</div>
                   <div className="col-span-1 text-center">Total</div>
-                  <div className="col-span-1"></div> {/* Corresponds to the Trash icon button */}
+                  <div className="col-span-1"></div>
                 </div>
               )}
               {/* --- MODIFICATION END --- */}
 
               {/* Added max-h and overflow-y for scrolling on long lists */}
-              <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+              <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-2">
                 {items.map((item, index) => (
-                  // Grid column configuration for item line
-                  // ⭐ MODIFIED: Changed md:grid-cols-7 to md:grid-cols-10
-                  <div key={index} className="grid grid-cols-1 md:grid-cols-10 gap-4 p-4 border border-gray-200 rounded-lg">
-                    {/* Item Type Select */}
-                    <select
-                      value={item.clothing_type_id}
-                      onChange={(e) => {
-                        const newTypeId = parseInt(e.target.value);
-                        const selectedType = getClothingTypeById(newTypeId);
-                        // Manually update name and prices when type changes in the dropdown
-                        updateItem(index, {
-                          clothing_type_id: newTypeId,
-                          clothing_name: selectedType?.name || 'Unknown',
-                          plant_price: selectedType?.plant_price || 0,
-                          margin: selectedType?.margin || 0,
-                        });
-                      }}
-                      // ⭐ MODIFIED: Updated col-span-3 to col-span-2
-                      className="px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 col-span-2"
-                    >
-                      <option value={item.clothing_type_id}>
-                        {item.clothing_name} (${(getClothingTypeById(item.clothing_type_id)?.total_price || item.item_total).toFixed(2)})
-                      </option>
-                      {/* Filter out the already selected item's ID from the options */}
-                      {clothingTypes
-                        .filter(type => type.id !== item.clothing_type_id)
-                        .map((type) => (
-                          <option key={type.id} value={type.id}>
-                            {type.name} (${type.total_price.toFixed(2)})
-                          </option>
-                        ))}
-                    </select>
+                    // Grid column configuration for item line
+                    // ⭐ UPDATED: Fits nicely in the 50% width container
+                    <div key={index} className="grid grid-cols-1 md:grid-cols-12 gap-3 p-3 border border-gray-200 rounded-lg items-center">
+                      {/* Item Type Display (NOT a dropdown) */}
+                      <div className="col-span-3 flex flex-col">
+                        <span className="font-medium text-sm truncate">{item.clothing_name}</span>
+                        <span className="text-xs text-gray-500">${((getClothingTypeById(item.clothing_type_id)?.total_price) || item.item_total).toFixed(2)}</span>
+                      </div>
 
-                    {/* Quantity Input */}
+                    {/* Quantity Input (text field to avoid number spinner) */}
                     <input
-                      type="number"
-                      min="1"
-                      value={item.quantity || ''}
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={String(item.quantity || '')}
                       onChange={(e) => {
-                        const val = e.target.value === '' ? 0 : parseInt(e.target.value);
+                        // Allow typing but sanitize to digits only for calculation
+                        const digits = e.target.value.replace(/\D/g, '');
+                        const val = digits === '' ? 0 : parseInt(digits, 10);
                         updateItem(index, { quantity: val });
                       }}
-                      // ⭐ MODIFIED: Added col-span-1 for reduced width
-                      className="px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 col-span-1"
+                      className="px-2 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 col-span-1 text-center"
                       required
                       placeholder="Qty"
                     />
 
                     {/* --- MODIFIED: Starch Buttons (Increased size via col-span-3) --- */}
-                    {/* ⭐ MODIFIED: col-span-2 -> col-span-3 */}
                     <div className="flex space-x-1 col-span-3">
                       {/* The 'none' value is implicitly 'no_starch' for functionality */}
                       {['no_starch', 'light', 'medium', 'heavy'].map(level => (
@@ -772,49 +754,36 @@ export default function DropOff() {
                           key={level}
                           onClick={() => updateItem(index, { starch_level: level as any })}
                           title={level.replace('_', ' ')}
-                          className={`
-                                  flex-1 text-sm py-3 rounded transition-colors font-medium // ⭐ MODIFIED: text-xs to text-sm and py-2 to py-3
-                                  ${item.starch_level === level ?
-                              'bg-blue-600 text-white shadow-md' :
-                              'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                            }
-                              `}
+                          className={`flex-1 text-xs py-2 rounded-md transition-colors font-medium border ${item.starch_level === level ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}
                         >
-                          {level === 'no_starch' ? 'None' : level.charAt(0).toUpperCase()}
+                          {level === 'no_starch' ? 'None' : (level === 'light' ? 'Light' : level === 'medium' ? 'Med' : 'Hvy')}
                         </button>
                       ))}
                     </div>
                     {/* ---------------------------------- */}
 
-                    {/* --- MODIFIED: Crease Toggle Button (Increased padding) --- */}
-                    {/* ⭐ MODIFIED: Added col-span-1 */}
+                    {/* --- MODIFIED: Crease Toggle Button --- */}
                     <button
                       onClick={() => updateItem(index, { crease: item.crease === 'crease' ? 'no_crease' : 'crease' as any })}
-                      className={`
-                            w-full text-sm py-3 rounded transition-colors font-medium col-span-1
-                            ${item.crease === 'crease' ?
-                          'bg-green-600 text-white shadow-md' :
-                          'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                        }
-                        `}
+                      className={`w-full text-xs py-2 rounded-md transition-colors font-medium col-span-2 border ${item.crease === 'crease' ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}
                     >
-                      {item.crease === 'crease' ? 'Crease ON' : 'No Crease'}
+                      {item.crease === 'crease' ? 'Crease' : 'No Crease'}
                     </button>
                     {/* ---------------------------------- */}
 
-                    {/* --- MODIFIED: Additional Charge Quick Input/Button (Increased padding) --- */}
-                    {/* ⭐ MODIFIED: Added col-span-1 */}
+                    {/* --- MODIFIED: Additional Charge Quick Input/Button --- */}
                     <div className="relative col-span-1">
                       {additionalChargeInputIndex === index ? (
                         <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          // Use item.additional_charge || '' to allow empty input for easy clearing
-                          value={item.additional_charge === 0 ? '' : item.additional_charge}
-                          onChange={(e) => updateItem(index, { additional_charge: parseFloat(e.target.value) || 0 })}
+                          type="text"
+                          inputMode="decimal"
+                          value={item.additional_charge === 0 ? '' : String(item.additional_charge)}
+                          onChange={(e) => {
+                            // sanitize to allow numbers and decimal point
+                            const cleaned = e.target.value.replace(/[^0-9.]/g, '');
+                            updateItem(index, { additional_charge: parseFloat(cleaned) || 0 });
+                          }}
                           onBlur={() => {
-                            // When blurring, if the value is 0 or empty, close the input
                             if (!item.additional_charge || item.additional_charge === 0) {
                               setAdditionalChargeInputIndex(null);
                             }
@@ -822,43 +791,39 @@ export default function DropOff() {
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') {
                               setAdditionalChargeInputIndex(null);
-                              // Also ensure the field is saved on Enter
                               updateItem(index, { additional_charge: parseFloat((e.target as HTMLInputElement).value) || 0 });
                             }
                           }}
                           placeholder="Amt"
                           autoFocus
-                          // ⭐ MODIFIED: Increased py-2 to py-3 for height
-                          className="w-full px-2 py-3 border-2 border-blue-500 rounded-lg text-sm"
+                          className="w-full px-1 py-2 border border-gray-300 rounded-md text-sm text-center"
                         />
                       ) : (
                         <button
                           onClick={() => setAdditionalChargeInputIndex(index)}
                           className={`
-                                    w-full text-sm py-3 rounded transition-colors font-medium // ⭐ MODIFIED: py-2 to py-3
+                                    w-full text-xs py-2 rounded transition-colors font-medium truncate
                                     ${item.additional_charge > 0 ?
                               'bg-amber-500 text-white shadow-md' :
                               'bg-gray-200 text-gray-700 hover:bg-gray-300'
                             }
                                 `}
                         >
-                          {item.additional_charge > 0 ? `$${item.additional_charge.toFixed(2)}` : 'Add Charge'}
+                          {item.additional_charge > 0 ? `$${item.additional_charge.toFixed(2)}` : 'Add'}
                         </button>
                       )}
                     </div>
                     {/* ---------------------------------------------------- */}
 
                     {/* Total Display */}
-                    {/* ⭐ MODIFIED: Added col-span-1 */}
-                    <div className="px-3 py-3 bg-gray-50 rounded-lg text-center font-medium col-span-1">
+                    <div className="px-1 py-2 bg-gray-50 rounded-lg text-center font-medium text-sm col-span-1">
                       ${item.item_total.toFixed(2)}
                     </div>
 
                     {/* Trash Button */}
-                    {/* ⭐ MODIFIED: Added col-span-1 */}
                     <button
                       onClick={() => removeItem(index)}
-                      className="px-3 py-3 text-red-600 hover:bg-red-50 rounded-lg transition-colors col-span-1"
+                      className="px-2 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors col-span-1 flex justify-center"
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -893,9 +858,7 @@ export default function DropOff() {
             </div>
 
           </div>
-          {/* --- END OF MODIFIED: TWO-COLUMN LAYOUT --- */}
-
-          {/* REMOVED: Redundant 'Add Clothing Item (Manual)' button below the map */}
+          {/* --- END OF MODIFIED: WIDE LAYOUT --- */}
 
 
           <div className="mt-6"> {/* Moved instructions and footer outside the grid to span full width */}
@@ -955,28 +918,30 @@ export default function DropOff() {
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
           <h3 className="text-lg font-semibold mb-4">Review Order</h3>
 
-          <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-            <h4 className="font-medium mb-2">Customer Information</h4>
-            <p><strong>Name:</strong> {selectedCustomer.name}</p>
-            <p><strong>Phone:</strong> {selectedCustomer.phone}</p>
-            {selectedCustomer.email && <p><strong>Email:</strong> {selectedCustomer.email}</p>}
-          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <div className="p-4 bg-gray-50 rounded-lg">
+              <h4 className="font-medium mb-2">Customer Information</h4>
+              <p><strong>Name:</strong> {selectedCustomer.name}</p>
+              <p><strong>Phone:</strong> {selectedCustomer.phone}</p>
+              {selectedCustomer.email && <p><strong>Email:</strong> {selectedCustomer.email}</p>}
+            </div>
 
-          {/* --- EDITED: ADDED PICKUP DATE INPUT --- */}
-          <div className="mb-6">
-            <label htmlFor="pickup-date" className="block text-sm font-medium text-gray-700 mb-2">
-              **Scheduled Pickup Date & Time**
-            </label>
-            <input
-              type="datetime-local"
-              id="pickup-date"
-              value={pickupDate}
-              onChange={(e) => setPickupDate(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              required
-            />
+            {/* --- EDITED: ADDED PICKUP DATE INPUT --- */}
+            <div className="p-4 bg-gray-50 rounded-lg">
+              <label htmlFor="pickup-date" className="block font-medium mb-2">
+                **Scheduled Pickup Date & Time**
+              </label>
+              <input
+                type="datetime-local"
+                id="pickup-date"
+                value={pickupDate}
+                onChange={(e) => setPickupDate(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                required
+              />
+            </div>
+            {/* ------------------------------------- */}
           </div>
-          {/* ------------------------------------- */}
 
           <div className="mb-6">
             <h4 className="font-medium mb-2">Items</h4>
