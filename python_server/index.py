@@ -2,45 +2,34 @@ import os
 from typing import Optional
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles  # ✅ ADDED THIS IMPORT
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import create_engine, text
 from utils.common import hash_password
- 
+
 # Routers
 from routers.registration import router as registration_router
 from routers.auth import router as auth_router
 from routers.organizations import router as organizations_router
 from routers.org_functions import router as org_functions_router
 from routers.org_functions2 import router as org_functions2_router
-# from routers.clothing_types import router as clothing_types_router
 from routers.clothing_types import router as clothing_types_router
 from routers.org_functions3 import router as org_functions3_router
 
 import uvicorn
 
 # ======================
-# CONFIGURATION (CLEAN & SSL-ENABLED) 
+# CONFIGURATION
 # ====================== 
-
 # DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5433/cleanpress")
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
+
 if not DATABASE_URL:
-    # This prevents the app from proceeding without a DATABASE_URL
     raise EnvironmentError("The DATABASE_URL environment variable is missing!")
 
-# --- FIX: These lines must be comments ---
-# CRITICAL FIX: Add connect_args to require SSL/TLS for cloud PostgreSQL.
-# This runs immediately when the module loads, ensuring initial connection checks pass.
-# --- END FIX ---
-engine = create_engine(
-    DATABASE_URL,
-    # Use this line if your cloud database requires SSL
-    # connect_args={"sslmode": "require"}
-)
-
+engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Default Platform Admin credentials 
@@ -62,6 +51,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ✅✅✅ NEW STATIC FILES MOUNTING LOGIC ✅✅✅
+# 1. Get the directory where this index.py file is located
+current_dir = os.path.dirname(os.path.realpath(__file__))
+
+# 2. Construct the path: python_server/static/clothing_images
+static_folder_path = os.path.join(current_dir, "static", "clothing_images")
+
+# 3. Mount the folder
+#    URL: http://localhost:8001/static/images/shirt.jpg
+#    File: static/clothing_images/shirt.jpg
+if os.path.exists(static_folder_path):
+    app.mount("/static/clothing_images", StaticFiles(directory=static_folder_path), name="static_images")
+    print(f"✅ Static images mounted from: {static_folder_path}")
+else:
+    print(f"⚠️ WARNING: Static folder not found at: {static_folder_path}")
+    # Create it if it doesn't exist (optional helper)
+    # os.makedirs(static_folder_path, exist_ok=True)
+# ✅✅✅ END NEW LOGIC ✅✅✅
+
+
 # ======================
 # ROUTES
 # ======================
@@ -70,7 +79,6 @@ app.include_router(auth_router)
 app.include_router(organizations_router)
 app.include_router(org_functions_router)
 app.include_router(org_functions2_router)
-# app.include_router(clothing_types_router)
 app.include_router(clothing_types_router)
 app.include_router(org_functions3_router)
 
@@ -85,16 +93,13 @@ def read_root():
 def create_platform_admin_on_startup():
     print("🔥 Running startup event: create_platform_admin_on_startup()")
     try:
-        # Check database connection is actually possible
         db = SessionLocal()
     except Exception as conn_error:
-        # This will now catch connection errors that occur after successful loading
         print("❌ Could not connect to the database after app started!")
         print("   Connection error:", conn_error)
         return
 
     try:
-        # Check if admin already exists
         check_stmt = text("SELECT id FROM platform_admins WHERE email = :email")
         existing_admin = db.execute(check_stmt, {"email": DEFAULT_ADMIN_EMAIL}).fetchone()
 
@@ -102,10 +107,8 @@ def create_platform_admin_on_startup():
             print(f"✅ Platform admin '{DEFAULT_ADMIN_EMAIL}' already exists. Skipping creation.")
             return
 
-        # Hash the default password
         hashed_pw = hash_password(DEFAULT_ADMIN_PASSWORD)
 
-        # Insert the platform admin
         insert_stmt = text("""
             INSERT INTO platform_admins (full_name, email, password_hash, role, is_super_admin)
             VALUES (:name, :email, :password_hash, 'platform_admin', TRUE)

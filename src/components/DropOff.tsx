@@ -183,6 +183,7 @@ export default function DropOff() {
         // The API already provides plant_price, margin, and total_price.
         // No extra processing is needed.
         setClothingTypes(response.data.clothing_types);
+        console.log('Clothing types fetched:', response.data.clothing_types);
       } else {
         console.error("Data received is not in the expected format:", response.data);
         setClothingTypes([]); // Set to empty array on unexpected format

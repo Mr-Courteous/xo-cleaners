@@ -100,6 +100,7 @@ export default function ClothingManagement() {
         pieces: (item as any).pieces ? (item as any).pieces : 1,
       }));
       setClothingTypes(processedData);
+console.log(processedData)
     } catch (error: any) {
       console.error('Failed to fetch clothing types:', error);
       setFormError(`Failed to load items: ${error.message || 'Unknown error'}`);
@@ -455,7 +456,8 @@ export default function ClothingManagement() {
                   disabled={isSubmitting} // 🎯 Disable field while submitting
                 >
                   Cancel
-  </button>
+                </button>
+page-break
                 {/* 🎯 6. MODIFIED THIS BUTTON 🎯 */}
                 <button
                   type="submit"
@@ -546,8 +548,8 @@ export default function ClothingManagement() {
                             onClick={() => handleDelete(item.id, item.name)}
                             className="text-red-600 hover:text-red-900 p-1 rounded hover:bg-red-50 transition-colors"
                           >
-                  <Trash2 className="h-4 w-4" />
-                </button>
+                            <Trash2 className="h-4 w-4" />
+Click                 </button>
                 </div>
               </td>
                 </tr>
@@ -618,10 +620,10 @@ This       </p>
               Are you sure you want to delete the item <strong className="text-gray-900">{showDeleteConfirm.name}</strong>? This action cannot be undone.
 Example       </p>
             <div className="mt-6 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setShowDeleteConfirm(null)}
-                className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg shadow-sm hover:bg-gray-50 transition-colors"
+              <button
+                type="button"
+is             onClick={() => setShowDeleteConfirm(null)}
+                className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg shadow-sm hover:bg-gray-50 transition-colors"
                 disabled={isDeleting} // 🎯 Disable
               >
                 Cancel

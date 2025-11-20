@@ -76,6 +76,156 @@ def get_organization_id(db: Session, name: str) -> Optional[int]:
 # =======================
 
 
+# @router.post(
+#     "/new-organization",
+#     response_model=RegistrationSuccess,
+#     status_code=status.HTTP_201_CREATED,
+#     summary="Register a new organization and its Store Owner"
+# )
+# async def register_organization_and_admin(
+#     data: OrganizationWithAdminCreate,
+#     db: Session = Depends(get_db)
+# ):
+#     """
+#     Registers a new Organization and automatically creates:
+#     - The store owner
+#     - 500 racks
+#     - 2 default clothing types
+#     """
+#     owner_email = data.admin_email.strip().lower()
+
+#     # 1️⃣ Check if organization name already exists
+#     if get_organization_id(db, data.name):
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             detail=f"Organization name '{data.name}' already exists."
+#         )
+
+#     # 2️⃣ Check if owner email exists
+#     email_check = db.execute(
+#         text("SELECT id FROM organizations WHERE LOWER(owner_email) = :email"),
+#         {"email": owner_email}
+#     ).fetchone()
+#     if email_check:
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             detail=f"Owner email '{data.admin_email}' already exists."
+#         )
+
+#     try:
+#         # 3️⃣ Hash password
+#         hashed_pw = hash_password(data.admin_password)
+
+#         # 4️⃣ Insert into organizations table
+#         org_insert_stmt = text("""
+#             INSERT INTO organizations (
+#                 name,
+#                 industry,
+#                 owner_first_name,
+#                 owner_last_name,
+#                 owner_email,
+#                 owner_password_hash,
+#                 role
+#             )
+#             VALUES (
+#                 :name,
+#                 :industry,
+#                 :owner_first_name,
+#                 :owner_last_name,
+#                 :owner_email,
+#                 :owner_password_hash,
+#                 'store_owner'
+#             )
+#             RETURNING id
+#         """)
+
+#         org_result = db.execute(org_insert_stmt, {
+#             "name": data.name,
+#             "industry": data.industry,
+#             "owner_first_name": data.admin_first_name,
+#             "owner_last_name": data.admin_last_name,
+#             "owner_email": owner_email,
+#             "owner_password_hash": hashed_pw,
+#         }).fetchone()
+
+#         organization_id = org_result[0]
+
+#         # ✅ 5️⃣ Create 500 racks for the new organization
+#         racks = [
+#             {
+#                 "number": i + 1,
+#                 "is_occupied": False,
+#                 "organization_id": organization_id
+#             }
+#             for i in range(500)
+#         ]
+#         db.execute(
+#             text("""
+#                 INSERT INTO racks (number, is_occupied, organization_id)
+#                 VALUES (:number, :is_occupied, :organization_id)
+#             """),
+#             racks
+#         )
+
+#         # ✅ 6️⃣ Insert default clothing types (omit total_price)
+#         # --- FIX: Removed 'total_price' from the dictionaries ---
+#         clothing_types = [
+#             {
+#                 "name": "Shirt",
+#                 "plant_price": 1000.0,
+#                 "margin": 200.0,
+#                 "image_url": "default_shirt.jpg",
+#                 "organization_id": organization_id
+#             },
+#             {
+#                 "name": "Trousers",
+#                 "plant_price": 1200.0,
+#                 "margin": 300.0,
+#                 "image_url": "default_trouser.jpg",
+#                 "organization_id": organization_id
+#             }
+#         ]
+
+#         # --- FIX: Removed 'total_price' from the SQL statement ---
+#         db.execute(
+#             text("""
+#                 INSERT INTO clothing_types
+#                 (name, plant_price, margin, image_url, organization_id)
+#                 VALUES (:name, :plant_price, :margin, :image_url, :organization_id)
+#             """),
+#             clothing_types
+#         )
+
+#         # ✅ 7️⃣ Commit all
+#         db.commit()
+
+#         return RegistrationSuccess(
+#             message=f"Organization '{data.name}' registered successfully with Store Owner '{data.admin_email}'.",
+#             organization_id=organization_id,
+#             user_id=None,
+#             role="STORE_OWNER"
+#         )
+
+#     except IntegrityError as e:
+#         db.rollback()
+#         # Note: This will catch the GeneratedAlways error, but the detail
+#         # might be misleading. The generic exception below is likely what
+#         # caught your original error.
+#         print(f"IntegrityError during organization registration: {e}")
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             detail="Duplicate data detected or constraint violation."
+#         )
+
+#     except Exception as e:
+#         db.rollback()
+#         print(f"Error during organization registration: {e}")
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail="An unexpected error occurred during registration."
+#         )
+        
+
 @router.post(
     "/new-organization",
     response_model=RegistrationSuccess,
@@ -119,22 +269,12 @@ async def register_organization_and_admin(
         # 4️⃣ Insert into organizations table
         org_insert_stmt = text("""
             INSERT INTO organizations (
-                name,
-                industry,
-                owner_first_name,
-                owner_last_name,
-                owner_email,
-                owner_password_hash,
-                role
+                name, industry, owner_first_name, owner_last_name, 
+                owner_email, owner_password_hash, role
             )
             VALUES (
-                :name,
-                :industry,
-                :owner_first_name,
-                :owner_last_name,
-                :owner_email,
-                :owner_password_hash,
-                'store_owner'
+                :name, :industry, :owner_first_name, :owner_last_name, 
+                :owner_email, :owner_password_hash, 'store_owner'
             )
             RETURNING id
         """)
@@ -150,13 +290,9 @@ async def register_organization_and_admin(
 
         organization_id = org_result[0]
 
-        # ✅ 5️⃣ Create 500 racks for the new organization
+        # ✅ 5️⃣ Create 500 racks
         racks = [
-            {
-                "number": i + 1,
-                "is_occupied": False,
-                "organization_id": organization_id
-            }
+            {"number": i + 1, "is_occupied": False, "organization_id": organization_id}
             for i in range(500)
         ]
         db.execute(
@@ -167,26 +303,28 @@ async def register_organization_and_admin(
             racks
         )
 
-        # ✅ 6️⃣ Insert default clothing types (omit total_price)
-        # --- FIX: Removed 'total_price' from the dictionaries ---
+        # ✅ 6️⃣ Insert default clothing types (UPDATED PATHS)
+        # These URLs must match the mount path in index.py (/static/images)
+        # AND the actual filenames in your folder.
         clothing_types = [
             {
                 "name": "Shirt",
                 "plant_price": 1000.0,
                 "margin": 200.0,
-                "image_url": "default_shirt.jpg",
+                # 👇 Ensure you have a file named 'shirt.jpg' or change this string
+                "image_url": "/static/images/shirt.jpg", 
                 "organization_id": organization_id
             },
             {
                 "name": "Trousers",
                 "plant_price": 1200.0,
                 "margin": 300.0,
-                "image_url": "default_trouser.jpg",
+                # 👇 Ensure you have a file named 'trousers.jpg' or change this string
+                "image_url": "/static/images/trousers.jpg",
                 "organization_id": organization_id
             }
         ]
 
-        # --- FIX: Removed 'total_price' from the SQL statement ---
         db.execute(
             text("""
                 INSERT INTO clothing_types
@@ -200,7 +338,7 @@ async def register_organization_and_admin(
         db.commit()
 
         return RegistrationSuccess(
-            message=f"Organization '{data.name}' registered successfully with Store Owner '{data.admin_email}'.",
+            message=f"Organization '{data.name}' registered successfully.",
             organization_id=organization_id,
             user_id=None,
             role="STORE_OWNER"
@@ -208,24 +346,21 @@ async def register_organization_and_admin(
 
     except IntegrityError as e:
         db.rollback()
-        # Note: This will catch the GeneratedAlways error, but the detail
-        # might be misleading. The generic exception below is likely what
-        # caught your original error.
-        print(f"IntegrityError during organization registration: {e}")
+        print(f"IntegrityError: {e}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Duplicate data detected or constraint violation."
+            detail="Duplicate data detected."
         )
-
     except Exception as e:
         db.rollback()
-        print(f"Error during organization registration: {e}")
+        print(f"Error during registration: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An unexpected error occurred during registration."
+            detail="An unexpected error occurred."
         )
         
         
+                
 @router.post("/staff", response_model=RegistrationSuccess)
 async def register_staff_user(
     data: UserCreate,
