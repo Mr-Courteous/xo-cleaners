@@ -104,51 +104,65 @@ async def get_racks_for_organization(
         )
         
 
+from fastapi import APIRouter, HTTPException, Depends, status, Request # <--- 1. Import Request
+from typing import List, Dict, Any
+from sqlalchemy.orm import Session
+from sqlalchemy import text
+from utils.common import get_db, get_current_user_payload
+
+# ... existing router definition ...
+
 @router.get("/clothing-types", summary="Get all clothing types for *your* organization")
 async def get_clothing_types_for_organization(
+    request: Request,  # <--- 2. Add Request parameter here
     db: Session = Depends(get_db), 
-    # 1. Get the secure payload from the user's token
     payload: Dict[str, Any] = Depends(get_current_user_payload)
 ):
     """
-    Returns all clothing types belonging to the logged-in staff member's organization (using raw SQL).
+    Returns clothing types with FULL image URLs (http://localhost:8001/...)
+    while maintaining the dictionary response format.
     """
     try:
-        # 2. Get organization_id AND role from the trusted token
+        # --- Auth Checks ---
         organization_id = payload.get("organization_id")
         user_role = payload.get("role")
 
-        # 3. ADDED: Role-based authorization check
         allowed_roles = ["cashier", "store_admin", "org_owner", "STORE_OWNER"]
         if user_role not in allowed_roles:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You do not have permission to access this resource."
-            )
+            raise HTTPException(status_code=403, detail="Access denied")
 
         if not organization_id:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token: Organization ID missing."
-            )
+            raise HTTPException(status_code=401, detail="Invalid token")
             
+        # --- Fetch Data ---
         query = text("""
-            SELECT id, name, plant_price, margin, total_price, image_url, organization_id, created_at
+            SELECT id, name, plant_price, margin, total_price, image_url, organization_id, created_at, pieces
             FROM clothing_types
             WHERE organization_id = :organization_id
             ORDER BY name ASC
         """)
-        
-        # 4. Use the secure organization_id from the token
-        clothing_types = db.execute(query, {"organization_id": organization_id}).fetchall()
+        results = db.execute(query, {"organization_id": organization_id}).fetchall()
 
-        if not clothing_types:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="No clothing types found for your organization"
-            )
+        if not results:
+             return {"organization_id": organization_id, "count": 0, "clothing_types": []}
 
-        clothing_list = [dict(row._mapping) for row in clothing_types]
+        # --- 3. URL Construction Logic ---
+        # Get base URL (e.g. "http://localhost:8001") and strip trailing slash
+        base_url = str(request.base_url).rstrip("/")
+
+        # Clean list comprehension to map rows and fix URLs
+        clothing_list = [
+            {
+                **dict(row._mapping),
+                # Logic: If image exists & isn't already http, prepend base_url + /
+                "image_url": (
+                    f"{base_url}/{row.image_url.lstrip('/')}" 
+                    if row.image_url and not row.image_url.startswith("http") 
+                    else row.image_url
+                )
+            }
+            for row in results
+        ]
 
         return {
             "organization_id": organization_id,
@@ -157,14 +171,10 @@ async def get_clothing_types_for_organization(
         }
 
     except HTTPException:
-        # Re-raise HTTPExceptions directly
         raise
     except Exception as e:
         print(f"Error fetching clothing types: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error retrieving clothing types for organization."
-        )
+        raise HTTPException(status_code=500, detail=str(e))
         
 
 @router.get("/customers", response_model=List[Dict[str, Any]])
