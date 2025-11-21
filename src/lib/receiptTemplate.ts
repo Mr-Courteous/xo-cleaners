@@ -43,11 +43,15 @@ export function renderReceiptHtml(ticket: Ticket) {
       </div>
       <hr style="border:none;border-top:1px dashed #444;margin:8px 0;"/>
 
-      <div style="display:flex;justify-content:space-between;font-size:10pt;margin-bottom:6px;font-weight: 600;">
-        <div>${ticket.customer_name || ''}</div>
-        <div>${ticket.created_at ? new Date(ticket.created_at).toLocaleDateString() + ' ' + new Date(ticket.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</div>
+      <div style="text-align:center; margin-bottom:6px;">
+        <div style="font-size:14pt; font-weight:800; text-transform:uppercase; margin-bottom: 2px;">
+          ${ticket.customer_name || 'GUEST'}
+        </div>
+        
+        <div style="font-size:10pt; font-weight:600;">
+          ${ticket.created_at ? new Date(ticket.created_at).toLocaleDateString() + ' ' + new Date(ticket.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+        </div>
       </div>
-
       <div style="margin-bottom:6px;font-size:10pt;">
         ${itemsList}
       </div>
@@ -75,7 +79,7 @@ export function renderReceiptHtml(ticket: Ticket) {
       </div>
 
       <div style="margin-top:8px;text-align:center;font-family: Arial, 'Helvetica Neue', Helvetica, sans-serif;font-size:12pt;font-weight: 600;">
-        ${ticket.ticket_number}
+        Pickup: ${ticket.pickup_date ? new Date(ticket.pickup_date).toLocaleDateString() : 'TBD'}
       </div>
     </div>
   `;
