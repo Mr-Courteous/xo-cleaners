@@ -821,10 +821,8 @@ async def assign_rack_to_ticket(
     payload: Dict[str, Any] = Depends(get_current_user_payload)
 ):
     """
-    Assigns an available rack to a ticket. This is a special transaction that:
-    1. Checks if the rack is available in the user's org.
-    2. Updates the ticket with the rack number AND sets status to 'ready_for_pickup'.
-    3. Marks the rack as occupied and links it to the ticket.
+    Assigns an available rack to a ticket. 
+    Includes checks to prevent double-assignment of tickets or racks.
     """
     try:
         # 1. Get organization_id AND role from the trusted token
@@ -844,12 +842,40 @@ async def assign_rack_to_ticket(
                 detail="Invalid token: Organization ID missing."
             )
 
-        # 3. Check if the rack is available IN THIS ORG
+        # --- CHECK 1: Validate Ticket Existence & Status ---
+        # We check if the ticket already has a rack_number to prevent double-assignment.
+        ticket_check_sql = text("""
+            SELECT id, rack_number 
+            FROM tickets 
+            WHERE id = :ticket_id AND organization_id = :org_id
+        """)
+        existing_ticket = db.execute(ticket_check_sql, {
+            "ticket_id": ticket_id,
+            "org_id": organization_id
+        }).fetchone()
+
+        if not existing_ticket:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Ticket not found in your organization."
+            )
+
+        # If ticket already has a rack, STOP.
+        if existing_ticket.rack_number is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Ticket {ticket_id} is ALREADY assigned to Rack #{existing_ticket.rack_number}. Please clear the current rack assignment first."
+            )
+
+        # --- CHECK 2: Check Rack Availability with LOCK ---
+        # We use 'FOR UPDATE' to lock this row. This prevents a race condition 
+        # where two users try to claim the exact same rack at the same millisecond.
         rack_query = text("""
             SELECT id FROM racks 
             WHERE number = :rack_number 
             AND organization_id = :org_id 
             AND is_occupied = false
+            FOR UPDATE 
         """)
         available_rack = db.execute(rack_query, {
             "rack_number": req.rack_number,
@@ -858,34 +884,25 @@ async def assign_rack_to_ticket(
 
         if not available_rack:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Rack #{req.rack_number} is not available or does not exist in your organization."
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Rack #{req.rack_number} is already occupied or does not exist."
             )
 
-        # 4. Update the ticket, ensuring it's in the same org
-        # --- THIS IS THE MODIFIED PART ---
+        # 4. Update the ticket
         ticket_update_sql = text("""
             UPDATE tickets 
             SET 
                 rack_number = :rack_number, 
-                status = 'ready_for_pickup'  -- <-- ADDED THIS LINE
+                status = 'ready_for_pickup'
             WHERE id = :ticket_id AND organization_id = :org_id
             RETURNING id
         """)
-        # ---------------------------------
         
-        ticket_result = db.execute(ticket_update_sql, {
+        db.execute(ticket_update_sql, {
             "rack_number": req.rack_number,
             "ticket_id": ticket_id,
             "org_id": organization_id
-        }).fetchone()
-
-        if not ticket_result:
-            db.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Ticket not found in your organization."
-            )
+        })
 
         # 5. Update the rack to mark it as occupied
         rack_update_sql = text("""
@@ -901,7 +918,7 @@ async def assign_rack_to_ticket(
 
         # 6. Commit the transaction
         db.commit()
-        return {"success": True, "message": f"Ticket {ticket_id} assigned to rack {req.rack_number} and marked as ready."}
+        return {"success": True, "message": f"Ticket {ticket_id} assigned to rack {req.rack_number}."}
 
     except HTTPException:
         db.rollback()
@@ -909,8 +926,8 @@ async def assign_rack_to_ticket(
     except Exception as e:
         db.rollback()
         print(f"Error during rack assignment: {e}")
-        raise HTTPException(status_code=500, detail="An unexpected error occurred.")
-
+        raise HTTPException(status_code=500, detail="An unexpected error occurred.")    
+    
 @router.put(
     "/tickets/{ticket_id}", 
     response_model=TicketResponse, 

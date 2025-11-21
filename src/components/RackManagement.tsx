@@ -48,6 +48,35 @@ export default function RackManagement() {
   const debouncedTicketNumber = useDebounce(ticketNumber, 500); // Wait 500ms after user stops typing
   const [assignRackNumber, setAssignRackNumber] = useState('');
   const [assigning, setAssigning] = useState(false); // <-- ADDED for API call state
+  const [assignError, setAssignError] = useState<string | null>(null);
+
+  // Helper to parse backend error responses into a friendly message
+  const parseApiError = (error: any) => {
+    if (!error) return 'An unknown error occurred';
+    // axios response format
+    const resp = error.response?.data;
+    if (resp) {
+      // Common FastAPI: { detail: 'message' } or { detail: [ { msg: '...' } ] }
+      if (typeof resp.detail === 'string') return resp.detail;
+      if (Array.isArray(resp.detail) && resp.detail.length > 0) {
+        // try to extract msg or text
+        const first = resp.detail[0];
+        if (first.msg) return first.msg;
+        if (first.message) return first.message;
+        try { return JSON.stringify(resp.detail); } catch { /* fallthrough */ }
+      }
+      // Other conventions
+      if (typeof resp.message === 'string') return resp.message;
+      if (typeof resp.error === 'string') return resp.error;
+      // If entire body is a string
+      if (typeof resp === 'string') return resp;
+      // Fallback to stringify
+      try { return JSON.stringify(resp); } catch { /* fallthrough */ }
+    }
+    // axios error message fallback
+    if (error.message) return error.message;
+    return 'An unknown error occurred';
+  };
 
 
   // --- Main Data Fetching Function ---
@@ -116,7 +145,8 @@ export default function RackManagement() {
         setValidatedTicket(response.data);
       } catch (error: any) {
         console.error('Ticket validation error:', error);
-        setTicketError(error.response?.data?.detail || 'Ticket not found');
+        const msg = parseApiError(error);
+        setTicketError(msg || 'Ticket not found');
       } finally {
         setIsValidating(false);
       }
@@ -171,7 +201,8 @@ export default function RackManagement() {
       
     } catch (error: any) {
       console.error('Rack assignment error:', error);
-      const errorMessage = error.response?.data?.detail || error.message || 'An unknown error occurred';
+      const errorMessage = parseApiError(error);
+      setAssignError(errorMessage);
       setModalMessage(`Failed to assign rack: ${errorMessage}. Please check if the ticket exists and the rack is available.`);
       setIsModalOpen(true);
     } finally {
@@ -204,8 +235,9 @@ export default function RackManagement() {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         title="Rack Management"
-        message={modalMessage}
-      />
+      >
+        {modalMessage}
+      </Modal>
       <div className="mb-8">
         <h2 className="text-2xl font-bold text-gray-900">Rack Management</h2>
         <p className="text-gray-600">Manage clothing placement and rack assignments</p>
@@ -282,6 +314,9 @@ export default function RackManagement() {
               {/* --- CHANGED --- Show loading text */}
               {assigning ? 'Assigning...' : 'Assign Rack'}
             </button>
+            {assignError && (
+              <p className="mt-2 text-sm text-red-600">{assignError}</p>
+            )}
           </div>
         </div>
 
