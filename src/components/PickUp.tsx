@@ -129,12 +129,45 @@ export default function PickUp() {
   };
 
   const completePickup = async () => {
-    // ... (existing validation logic)
+ if (!selectedTicket) return;
+
+    const outstandingBalance = selectedTicket.total_amount - selectedTicket.paid_amount;
+
+    // Frontend validation
+    if (balancePaid < outstandingBalance - 0.001) { 
+        setModal({
+            isOpen: true,
+            title: 'Payment Required',
+            message: `The required balance of $${outstandingBalance.toFixed(2)} must be paid. Please adjust the payment amount.`,
+            type: 'error'
+        });
+        return;
+    }
 
     try {
-      // ... (existing API call)
+        setLoading(true); 
+        
+        // --- FIXED ---
+        // 1. Get token
+        const token = localStorage.getItem("accessToken");
+        if (!token) throw new Error("Access token missing");
 
-      // Create the updated ticket object
+        const payload = {
+            amount_paid: balancePaid,
+        };
+        
+        // 2. Call the correct, full URL with axios, payload, and auth headers
+        const response = await axios.put(
+          `${baseURL}/api/organizations/tickets/${selectedTicket.id}/pickup`,
+          payload, // axios sends this as the body
+          {
+            headers: { 'Authorization': `Bearer ${token}` }
+          }
+        );
+
+        // 3. Get data from response.data
+        const pickupResult = response.data;
+        
       const updatedTicketForReceipt: Ticket = {
         ...selectedTicket,
         status: 'picked_up',
