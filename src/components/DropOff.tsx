@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Plus, Search, Trash2, User, Phone, Calendar, Grid, List, Shirt, ImageOf, Mail } from 'lucide-react';
+import { Plus, Search, Trash2, User, Phone, Calendar, Grid, List, Shirt, ImageOf, Mail, Printer } from 'lucide-react';
 import axios from "axios";
 import baseURL from "../lib/config"; import { Customer, ClothingType, TicketItem } from '../types';
 import Modal from './Modal';
 import PrintPreviewModal from './PrintPreviewModal';
 import renderReceiptHtml from '../lib/receiptTemplate';
+import renderPlantReceiptHtml from '../lib/plantReceiptTemplate';
 
 // --- NEW CENTRAL IMAGE MAP FOR CORRELATION AND BETTER IMAGES ---
 // NOTE: You MUST update the key (exact item name) and value (your image URL)
@@ -337,6 +338,52 @@ export default function DropOff() {
     setItems(items.filter((_, i) => i !== index));
   };
 
+  // --- ADDED: Handle specialized printing with page breaks ---
+  const handlePrintJob = (htmlContent: string) => {
+    const printFrame = document.createElement('iframe');
+    printFrame.style.display = 'none';
+    document.body.appendChild(printFrame);
+    
+    // Inject Styles including Page Break support
+    printFrame.contentDocument?.write(`
+      <html>
+        <head>
+          <title>Print</title>
+          <style>
+            @page { size: 55mm auto; margin: 0; }
+            @media print {
+              html, body { margin: 0; padding: 0; }
+              /* Force a real page break */
+              .page-break { 
+                page-break-before: always; 
+                break-before: page;
+                display: block; 
+                height: 0; 
+                overflow: hidden;
+              }
+            }
+            body { font-family: sans-serif; }
+          </style>
+        </head>
+        <body>${htmlContent}</body>
+      </html>
+    `);
+    
+    printFrame.contentDocument?.close();
+    printFrame.contentWindow?.focus();
+    
+    // Allow images/styles to load briefly
+    setTimeout(() => {
+        printFrame.contentWindow?.print();
+        // Cleanup
+        setTimeout(() => {
+            if(document.body.contains(printFrame)) {
+                document.body.removeChild(printFrame);
+            }
+        }, 1000);
+    }, 100);
+  };
+
   const createTicket = async () => {
     // ... (omitted content for brevity)
 
@@ -365,7 +412,7 @@ export default function DropOff() {
       };
 
       const ticketData = {
-        customer_id: Number(selectedCustomer.id),
+        customer_id: Number(selectedCustomer!.id),
         items: itemsWithValidQuantity.map(item => ({
           clothing_type_id: Number(item.clothing_type_id),
           quantity: Number(item.quantity) || 0,
@@ -411,36 +458,22 @@ export default function DropOff() {
       // 5. Receipt Generation (This part is now safe to run)
       //    It correctly uses the `newTicket` object as the source of truth.
       // =================================================================
+      // 1. Generate Customer Receipt (Standard)
+      const customerHtml = renderReceiptHtml(newTicket as any);
+      
+      // 2. Generate Plant Receipt (New Logic)
+      const plantHtml = renderPlantReceiptHtml(newTicket as any);
 
-      // Calculate totals for receipt generation from the API response
-      const receiptConfig = JSON.parse(localStorage.getItem(RECEIPT_STORAGE_KEY) || '{}');
-      const taxRate = parseFloat(receiptConfig.tax_rate) || 0.0825;
-      const envChargeRate = parseFloat(receiptConfig.env_charge_rate) || 0.047;
-      const total = itemsWithValidQuantity.reduce((sum, item) => sum + item.item_total, 0);
+      // 3. Update State for Printing
+      setPrintContent(customerHtml); // This shows in the immediate preview for the customer
+      setPlantHtmlState(plantHtml);  // This is stored for the "Print Plant" button
 
-      const subtotal = newTicket.total_amount;
-      const envCharge = subtotal * envChargeRate;
-      const tax = subtotal * taxRate;
-      const finalTotal = subtotal + envCharge + tax;
-      const totalPaid = newTicket.paid_amount;
-      const balance = finalTotal - totalPaid;
-      const totalPieces = newTicket.items.reduce((sum, item) => sum + item.quantity, 0);
-      const now = new Date();
-      const ticketDetails = newTicket; // Assumed alias for newTicket, backend should return customer_phone
-
-
-      // Use centralized receipt renderer so DropOff and TicketManagement match exactly
-      const html = renderReceiptHtml(newTicket as any);
-      // store rendered HTML for plant-print and modal preview
-      setPlantHtmlState(html);
-      // Prepare preview content for customer receipt
-      setPrintContent(html);
       setShowPrintPreview(true);
       // Show a concise success modal; the modal children render the styled receipt when success
       setModal({ isOpen: true, title: 'Ticket Created', type: 'success', message: 'Ticket created successfully.' });
       setLoading(false);
 
-    } catch (error) {
+    } catch (error: any) {
       setLoading(false); // Turn off loading on error
       console.error('Failed to create ticket:', error);
 
@@ -721,14 +754,14 @@ export default function DropOff() {
               {/* Added max-h and overflow-y for scrolling on long lists */}
               <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-2">
                 {items.map((item, index) => (
-                    // Grid column configuration for item line
-                    // ⭐ UPDATED: Fits nicely in the 50% width container
-                    <div key={index} className="grid grid-cols-1 md:grid-cols-12 gap-3 p-3 border border-gray-200 rounded-lg items-center">
-                      {/* Item Type Display (NOT a dropdown) */}
-                      <div className="col-span-3 flex flex-col">
-                        <span className="font-medium text-sm truncate">{item.clothing_name}</span>
-                        <span className="text-xs text-gray-500">${((getClothingTypeById(item.clothing_type_id)?.total_price) || item.item_total).toFixed(2)}</span>
-                      </div>
+                  // Grid column configuration for item line
+                  // ⭐ UPDATED: Fits nicely in the 50% width container
+                  <div key={index} className="grid grid-cols-1 md:grid-cols-12 gap-3 p-3 border border-gray-200 rounded-lg items-center">
+                    {/* Item Type Display (NOT a dropdown) */}
+                    <div className="col-span-3 flex flex-col">
+                      <span className="font-medium text-sm truncate">{item.clothing_name}</span>
+                      <span className="text-xs text-gray-500">${((getClothingTypeById(item.clothing_type_id)?.total_price) || item.item_total).toFixed(2)}</span>
+                    </div>
 
                     {/* Quantity Input (text field to avoid number spinner) */}
                     <input
@@ -1039,31 +1072,43 @@ export default function DropOff() {
           <div>{modal.message}</div>
         )}
       </Modal>
+
+      {/* --- MODIFIED: PRINT PREVIEW MODAL --- */}
       <PrintPreviewModal
         isOpen={showPrintPreview}
         onClose={() => setShowPrintPreview(false)}
-        onPrint={() => setShowPrintPreview(false)}
-        content={printContent}
+        onPrint={() => {}} // No-op, hiding default button
+        content={printContent} // Customer receipt for preview
+        hideDefaultButton={true} // Hides standard print button
         extraActions={(
-          <button
-            onClick={() => {
-              try {
-                // This is the implementation of the "Print Plant (2 copies)" button
-                const w = window.open('', '_blank');
-                if (w) {
-                  // Print plant copy twice
-                  w.document.write(plantHtmlState + plantHtmlState);
-                  w.document.close();
-                  w.focus();
-                  w.print();
-                  setTimeout(() => { try { w.close(); } catch (e) { } }, 500);
-                }
-              } catch (e) { console.error(e); }
-            }}
-            className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
-          >
-            Print Plant (2 copies)
-          </button>
+          <>
+            {/* Button 1: Print Customer + Plant (Page Break handled by handlePrintJob) */}
+            <button
+              onClick={() => {
+                const combinedHtml = `
+                    ${printContent}
+                    <div class="page-break"></div>
+                    ${plantHtmlState}
+                `;
+                handlePrintJob(combinedHtml);
+              }}
+              className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 flex items-center gap-2"
+            >
+              <Printer size={18} />
+              Print Receipts (All)
+            </button>
+
+            {/* Button 2: Print Plant Receipt Only */}
+            <button
+              onClick={() => {
+                handlePrintJob(plantHtmlState);
+              }}
+              className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 flex items-center gap-2"
+            >
+              <Printer size={18} />
+              Print Plant Only
+            </button>
+          </>
         )}
       />
     </div>

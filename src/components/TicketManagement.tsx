@@ -5,6 +5,8 @@ import baseURL from '../lib/config';
 import { Ticket, TicketItem } from '../types'; 
 import PrintPreviewModal from './PrintPreviewModal';
 import renderReceiptHtml from '../lib/receiptTemplate';
+// Import the plant receipt template generator
+import renderPlantReceiptHtml from '../lib/plantReceiptTemplate';
 
 // NEW: Define a type for the items being edited
 interface EditableItem {
@@ -19,14 +21,15 @@ export default function TicketManagement() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [loading, setLoading] = useState(false);
+  
+  // Printing States
   const [showPrintPreview, setShowPrintPreview] = useState(false);
-  const [printContent, setPrintContent] = useState('');
+  const [printContent, setPrintContent] = useState('');      // Customer Receipt
+  const [plantPrintContent, setPlantPrintContent] = useState(''); // Plant Receipt
 
   // State for Edit Modal
   const [showEditModal, setShowEditModal] = useState(false);
   const [editedItems, setEditedItems] = useState<EditableItem[]>([]);
-
-  // --- (REMOVED receiptConfig states and useEffect) ---
 
   // --- (Existing) searchTickets ---
   const searchTickets = async () => {
@@ -73,8 +76,51 @@ export default function TicketManagement() {
     }
   };
 
+  // --- NEW: Handle Specialized Print Job ---
+  // This handles creating the iframe, styles, and page breaks
+  const handlePrintJob = (htmlContent: string) => {
+    const printFrame = document.createElement('iframe');
+    printFrame.style.display = 'none';
+    document.body.appendChild(printFrame);
+    
+    printFrame.contentDocument?.write(`
+      <html>
+        <head>
+          <title>Print</title>
+          <style>
+            @page { size: 55mm auto; margin: 0; }
+            @media print {
+              html, body { margin: 0; padding: 0; }
+              /* Force a real page break */
+              .page-break { 
+                page-break-before: always; 
+                break-before: page;
+                display: block; 
+                height: 0; 
+                overflow: hidden;
+              }
+            }
+            body { font-family: sans-serif; }
+          </style>
+        </head>
+        <body>${htmlContent}</body>
+      </html>
+    `);
+    
+    printFrame.contentDocument?.close();
+    printFrame.contentWindow?.focus();
+    
+    setTimeout(() => {
+        printFrame.contentWindow?.print();
+        setTimeout(() => {
+            if(document.body.contains(printFrame)) {
+                document.body.removeChild(printFrame);
+            }
+        }, 1000);
+    }, 100);
+  };
+
   // --- UPDATED: openPrintModal ---
-  // Now fetches full ticket details to ensure 'items' array is present
   const openPrintModal = async (ticket: Ticket) => {
     setLoading(true);
     try {
@@ -82,16 +128,22 @@ export default function TicketManagement() {
       if (!token) throw new Error("Access token not found");
       const headers = { 'Authorization': `Bearer ${token}` };
 
-      // Fetch the full ticket details
+      // Fetch the full ticket details to ensure we have items
       const response = await axios.get(
         `${baseURL}/api/organizations/tickets/${ticket.id}`,
         { headers }
       );
-      const fullTicket: Ticket = response.data; // This ticket has the items array
+      const fullTicket: Ticket = response.data; 
 
-      const content = generatePrintContent(fullTicket); // Pass the full ticket
-      setPrintContent(content);
+      // 1. Generate Customer Receipt HTML
+      const customerHtml = renderReceiptHtml(fullTicket);
+      // 2. Generate Plant Receipt HTML
+      const plantHtml = renderPlantReceiptHtml(fullTicket);
+
+      setPrintContent(customerHtml);
+      setPlantPrintContent(plantHtml);
       setShowPrintPreview(true);
+
     } catch (error) {
       console.error('Failed to fetch ticket for printing:', error);
       alert('Failed to fetch ticket details for printing.');
@@ -100,10 +152,8 @@ export default function TicketManagement() {
     }
   };
 
-
   // --- (Existing) openEditModal ---
   const openEditModal = (ticket: Ticket) => {
-    // Re-fetch to ensure we have the latest item data before editing
     const fetchAndOpen = async () => {
       setLoading(true);
       try {
@@ -180,15 +230,6 @@ export default function TicketManagement() {
       setLoading(false);
     }
   };
-
-
-  // --- UPDATED: generatePrintContent ---
-  // Removed all logic for receiptConfig and hardcoded a simple, working receipt.
-  // This function now safely assumes 'ticket.items' exists because openPrintModal fetches it.
-  const generatePrintContent = (ticket: Ticket): string => {
-    return renderReceiptHtml(ticket);
-  };
-
 
   return (
     <div className="p-4">
@@ -292,7 +333,7 @@ export default function TicketManagement() {
 
       {/* --- MODALS --- */}
       
-      {/* View Details Modal (Modal Component) */}
+      {/* View Details Modal */}
       {selectedTicket && !showEditModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4">
@@ -409,13 +450,43 @@ export default function TicketManagement() {
         </div>
       )}
 
-      {/* Print Preview Modal */}
+      {/* --- MODIFIED: Print Preview Modal with Custom Buttons --- */}
       <PrintPreviewModal
         isOpen={showPrintPreview}
         onClose={() => setShowPrintPreview(false)}
-        onPrint={() => setShowPrintPreview(false)}
-        content={printContent}
-        extraActions={null} 
+        onPrint={() => {}} // No-op because we use the custom buttons below
+        content={printContent} // Displays Customer Receipt in Preview
+        hideDefaultButton={true} // Hides the standard print button
+        extraActions={(
+          <>
+            {/* Button 1: Print Customer + PageBreak + Plant */}
+            <button
+              onClick={() => {
+                const combinedHtml = `
+                    ${printContent}
+                    <div class="page-break"></div>
+                    ${plantPrintContent}
+                `;
+                handlePrintJob(combinedHtml);
+              }}
+              className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 flex items-center gap-2"
+            >
+              <Printer size={18} />
+              Print Receipts (All)
+            </button>
+
+            {/* Button 2: Print Plant Receipt Only */}
+            <button
+              onClick={() => {
+                handlePrintJob(plantPrintContent);
+              }}
+              className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 flex items-center gap-2"
+            >
+              <Printer size={18} />
+              Print Plant Only
+            </button>
+          </>
+        )}
       />
     </div>
   );
