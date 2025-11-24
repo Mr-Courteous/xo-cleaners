@@ -5,8 +5,9 @@ import baseURL from '../lib/config';
 import { Ticket, TicketItem } from '../types'; 
 import PrintPreviewModal from './PrintPreviewModal';
 import renderReceiptHtml from '../lib/receiptTemplate';
-// Import the plant receipt template generator
 import renderPlantReceiptHtml from '../lib/plantReceiptTemplate';
+// --- NEW IMPORT: Pickup Receipt Template ---
+import { renderPickupReceiptHtml } from '../lib/pickupReceiptTemplate';
 
 // NEW: Define a type for the items being edited
 interface EditableItem {
@@ -76,8 +77,7 @@ export default function TicketManagement() {
     }
   };
 
-  // --- NEW: Handle Specialized Print Job ---
-  // This handles creating the iframe, styles, and page breaks
+  // --- (Existing) Handle Specialized Print Job ---
   const handlePrintJob = (htmlContent: string) => {
     const printFrame = document.createElement('iframe');
     printFrame.style.display = 'none';
@@ -135,9 +135,19 @@ export default function TicketManagement() {
       );
       const fullTicket: Ticket = response.data; 
 
-      // 1. Generate Customer Receipt HTML
-      const customerHtml = renderReceiptHtml(fullTicket);
-      // 2. Generate Plant Receipt HTML
+      // 1. Generate Customer Receipt HTML based on status
+      let customerHtml = '';
+      
+      // --- CHANGED: Check for picked_up status ---
+      if (fullTicket.status === 'picked_up') {
+          // Use the specific PICKUP template (shows "Picked Up On" date + Badge)
+          customerHtml = renderPickupReceiptHtml(fullTicket);
+      } else {
+          // Use the standard template
+          customerHtml = renderReceiptHtml(fullTicket);
+      }
+
+      // 2. Generate Plant Receipt HTML (Always the same)
       const plantHtml = renderPlantReceiptHtml(fullTicket);
 
       setPrintContent(customerHtml);
@@ -455,7 +465,7 @@ export default function TicketManagement() {
         isOpen={showPrintPreview}
         onClose={() => setShowPrintPreview(false)}
         onPrint={() => {}} // No-op because we use the custom buttons below
-        content={printContent} // Displays Customer Receipt in Preview
+        content={printContent} // Displays Customer Receipt (Standard or Pickup) in Preview
         hideDefaultButton={true} // Hides the standard print button
         extraActions={(
           <>
