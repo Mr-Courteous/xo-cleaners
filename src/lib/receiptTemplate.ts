@@ -2,7 +2,7 @@ import { Ticket } from '../types';
 
 export function renderReceiptHtml(ticket: Ticket) {
   const items = ticket.items || [];
-  
+
   const subtotal = ticket.total_amount || 0;
   const paid = ticket.paid_amount || 0;
 
@@ -16,22 +16,22 @@ export function renderReceiptHtml(ticket: Ticket) {
   const itemsList = items.map(item => {
     const details = [];
     if (item.starch_level && item.starch_level !== 'none' && item.starch_level !== 'no_starch') {
-        details.push(`Starch: ${item.starch_level}`);
+      details.push(`Starch: ${item.starch_level}`);
     }
     if (item.crease) details.push('Crease');
-    
-    const detailsHtml = details.length > 0 
-        ? `<div style="font-size:8pt;color:#666;font-style:italic;margin-left:8px;">+ ${details.join(', ')}</div>` 
-        : '';
+
+    const detailsHtml = details.length > 0
+      ? `<div style="font-size:8pt;color:#666;font-style:italic;margin-left:8px;">+ ${details.join(', ')}</div>`
+      : '';
 
     return (
       `<div style="margin:4px 0;">` +
-        `<div style="display:flex;justify-content:space-between;font-size:10pt;font-weight: 600;">` +
-            `<div style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.clothing_name}</div>` +
-            `<div style="margin-left:8px;min-width:28px;text-align:right">x${item.quantity}</div>` +
-            `<div style="width:56px;text-align:right;margin-left:8px">$${item.item_total.toFixed(2)}</div>` +
-        `</div>` +
-        detailsHtml +
+      `<div style="display:flex;justify-content:space-between;font-size:10pt;font-weight: 600;">` +
+      `<div style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.clothing_name}</div>` +
+      `<div style="margin-left:8px;min-width:28px;text-align:right">x${item.quantity}</div>` +
+      `<div style="width:56px;text-align:right;margin-left:8px">$${item.item_total.toFixed(2)}</div>` +
+      `</div>` +
+      detailsHtml +
       `</div>`
     );
   }).join('');
@@ -47,6 +47,8 @@ export function renderReceiptHtml(ticket: Ticket) {
       </div>
       
       <div style="text-align:center;margin-top:10px;border-top:1px dashed #444;padding-top:5px;">
+        <div style="font-size:12pt;font-weight:900;">CUSTOMER'S COPY</div>
+
         <div style="font-size:24px;font-weight:800;">${ticket.ticket_number}</div>
         <div style="font-size:9pt;">${new Date(ticket.created_at || Date.now()).toLocaleDateString()}</div>
       </div>

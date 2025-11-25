@@ -3,24 +3,27 @@ import { Ticket } from '../types';
 export function renderPlantReceiptHtml(ticket: Ticket) {
   const items = ticket.items || [];
   
+  // --- CALCULATION: Plant Price Sum ---
   const totalPlantPrice = items.reduce((sum, item) => sum + ((item.plant_price || 0) * item.quantity), 0);
+
+  // --- CALCULATION: Plant Tax & Env (Requirement: Plant Price + Tax + Env) ---
   const envCharge = totalPlantPrice * 0.047;
   const tax = totalPlantPrice * 0.0825;
   const finalPlantTotal = totalPlantPrice + envCharge + tax;
 
   const totalPieces = items.reduce((sum, item) => sum + (item.quantity * (item.pieces || 1)), 0);
 
+  // --- LOGIC: Check Status for "Picked Up" Badge ---
+  // Matches the look of the Pickup Receipt style if picked up
   const isPickedUp = ticket.status === 'picked_up';
-  const statusBadge = isPickedUp 
-    ? `<div style="text-align:center;margin-top:5px;margin-bottom:5px;">
-         <span style="background:#000;color:#fff;padding:4px 8px;font-weight:900;font-size:12pt;border-radius:4px;">PICKED UP</span>
-         <div style="font-size:9pt;margin-top:2px;">${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}</div>
-       </div>`
-    : `<div style="font-size:9pt;text-align:center;">${new Date().toLocaleDateString()}</div>`;
+  const statusDate = isPickedUp 
+    ? `${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`
+    : new Date(ticket.created_at || Date.now()).toLocaleDateString();
 
   const itemsList = items.map(item => {
     const plantLineTotal = (item.plant_price || 0) * item.quantity;
     
+    // --- REQUIREMENT: Show Special Instructions/Details (Starch, Crease) ---
     const details = [];
     if (item.starch_level && item.starch_level !== 'none' && item.starch_level !== 'no_starch') {
         details.push(`Starch: ${item.starch_level}`);
@@ -28,15 +31,15 @@ export function renderPlantReceiptHtml(ticket: Ticket) {
     if (item.crease) details.push('Crease: Yes');
 
     const detailsHtml = details.length > 0 
-        ? `<div style="font-size:8pt;color:#444;margin-left:8px;">[${details.join(', ')}]</div>` 
+        ? `<div style="font-size:8pt;color:#666;font-style:italic;margin-left:8px;">+ ${details.join(', ')}</div>` 
         : '';
 
     return (
-      `<div style="margin:4px 0;border-bottom:1px dotted #ccc;padding-bottom:2px;">` +
+      `<div style="margin:4px 0;">` +
         `<div style="display:flex;justify-content:space-between;font-size:10pt;font-weight: 600;">` +
-            `<div style="flex:1;">${item.clothing_name}</div>` +
-            `<div style="margin-left:8px;">x${item.quantity}</div>` +
-            `<div style="width:56px;text-align:right;">$${plantLineTotal.toFixed(2)}</div>` +
+            `<div style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.clothing_name}</div>` +
+            `<div style="margin-left:8px;min-width:28px;text-align:right">x${item.quantity}</div>` +
+            `<div style="width:56px;text-align:right;margin-left:8px">$${plantLineTotal.toFixed(2)}</div>` +
         `</div>` +
         detailsHtml +
       `</div>`
@@ -44,50 +47,58 @@ export function renderPlantReceiptHtml(ticket: Ticket) {
   }).join('');
 
   return `
-    <div style="width:55mm;margin:0 auto;font-family: 'Courier New', Courier, monospace;color:#000;padding:5px;">
+    <div style="width:55mm;margin:0 auto;font-family: Arial, sans-serif;color:#111;padding:8px;">
       
-      <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:5px;">
-        <div style="font-size:12pt;font-weight:900;">PLANT COPY</div>
-        <div style="font-size:16pt;font-weight:900;">#${ticket.ticket_number}</div>
-        ${statusBadge}
+      <!-- HEADER (Styled exactly like Store Receipt) -->
+      <div style="text-align:center;">
+        <div style="font-size:20px;font-weight:900;">PLANT COPY</div>
+        <div style="font-size:9pt;">INTERNAL RECORD</div>
+        <div style="font-size:9pt;">DO NOT DISTRIBUTE</div>
+      </div>
+      
+      <!-- TICKET INFO -->
+      <div style="text-align:center;margin-top:10px;border-top:1px dashed #444;padding-top:5px;">
+        <div style="font-size:24px;font-weight:800;">${ticket.ticket_number}</div>
+        ${isPickedUp ? `<div style="font-size:12pt;font-weight:900;margin-top:2px;">PICKED UP</div>` : ''}
+        <div style="font-size:9pt;">${statusDate}</div>
       </div>
 
-      <div style="margin-top:5px;font-weight:bold;font-size:10pt;border-bottom:1px dashed #000;padding-bottom:5px;">
-        CUST: ${ticket.customer_name}
+      <!-- CUSTOMER -->
+      <div style="margin-top:10px;font-weight:bold;font-size:11pt;border-bottom:1px solid #444;">
+        ${ticket.customer_name}
       </div>
 
+      <!-- SPECIAL INSTRUCTIONS (Consistent Style) -->
       ${ticket.special_instructions ? `
-        <div style="background:#eee;padding:6px;margin:8px 0;font-weight:900;font-size:11pt;border:2px solid #000;text-transform:uppercase;">
+        <div style="margin-top:8px;padding:6px;border:2px solid #000;background-color:#eee;font-weight:bold;font-size:10pt;">
           NOTE: ${ticket.special_instructions}
         </div>
       ` : ''}
 
+      <!-- ITEMS LIST -->
       <div style="margin-top:5px;">
         ${itemsList}
       </div>
 
-      <div style="margin-top:10px;border-top:2px solid #000;padding-top:5px;font-size:10pt;">
-        <div style="display:flex;justify-content:space-between;"> 
-            <span>Plant Subtotal:</span> <span>$${totalPlantPrice.toFixed(2)}</span> 
-        </div>
-        <div style="display:flex;justify-content:space-between;"> 
-            <span>Env Charge (4.7%):</span> <span>$${envCharge.toFixed(2)}</span> 
-        </div>
-        <div style="display:flex;justify-content:space-between;"> 
-            <span>Tax (8.25%):</span> <span>$${tax.toFixed(2)}</span> 
-        </div>
-        <div style="display:flex;justify-content:space-between;font-weight:900;font-size:11pt;margin-top:5px;"> 
-            <span>PLANT TOTAL:</span> <span>$${finalPlantTotal.toFixed(2)}</span> 
-        </div>
-      </div>
+      <hr style="border:none;border-top:1px dashed #444;margin:8px 0;"/>
 
-      <div style="text-align:center;margin-top:15px;font-weight:900;font-size:12pt;border:2px solid #000;padding:5px;">
-        ${totalPieces} PIECES
+      <!-- FINANCIALS (Plant Values) -->
+      <div style="font-size:10pt;font-weight: 600;">
+        <div style="display:flex;justify-content:space-between;"> <div>Plant Subtotal:</div> <div>$${totalPlantPrice.toFixed(2)}</div> </div>
+        <div style="display:flex;justify-content:space-between;"> <div>Env Charge (4.7%):</div> <div>$${envCharge.toFixed(2)}</div> </div>
+        <div style="display:flex;justify-content:space-between;"> <div>Tax (8.25%):</div> <div>$${tax.toFixed(2)}</div> </div>
+        
+        <div style="display:flex;justify-content:space-between;font-weight:800;font-size:12pt;margin-top:6px;border-top:2px solid #000;padding-top:2px;">
+          <div>PLANT TOTAL:</div> <div>$${finalPlantTotal.toFixed(2)}</div>
+        </div>
       </div>
       
-      <div style="text-align:center;margin-top:5px;font-size:8pt;">
-        INTERNAL USE ONLY
+      <!-- PIECE COUNT -->
+      <div style="margin-top:12px;text-align:center;font-weight:800;font-size:11pt;border:1px solid #000;padding:4px;">
+        ${totalPieces} PIECES
       </div>
+
+      <!-- FOOTER -->
     </div>
   `;
 }
