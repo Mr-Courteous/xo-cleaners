@@ -14,7 +14,6 @@ export function renderPlantReceiptHtml(ticket: Ticket) {
   const totalPieces = items.reduce((sum, item) => sum + (item.quantity * (item.pieces || 1)), 0);
 
   // --- LOGIC: Check Status for "Picked Up" Badge ---
-  // Matches the look of the Pickup Receipt style if picked up
   const isPickedUp = ticket.status === 'picked_up';
   const statusDate = isPickedUp 
     ? `${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`
@@ -23,12 +22,17 @@ export function renderPlantReceiptHtml(ticket: Ticket) {
   const itemsList = items.map(item => {
     const plantLineTotal = (item.plant_price || 0) * item.quantity;
     
-    // --- REQUIREMENT: Show Special Instructions/Details (Starch, Crease) ---
+    // --- REQUIREMENT: Show Special Instructions/Details (Starch, Crease, Alterations) ---
     const details = [];
     if (item.starch_level && item.starch_level !== 'none' && item.starch_level !== 'no_starch') {
         details.push(`Starch: ${item.starch_level}`);
     }
     if (item.crease) details.push('Crease: Yes');
+
+    // --- ADDED: Alterations ---
+    if (item.alterations) {
+        details.push(`<span style="font-weight:900; color:#000; font-style:normal;">Alt: ${item.alterations}</span>`);
+    }
 
     const detailsHtml = details.length > 0 
         ? `<div style="font-size:8pt;color:#666;font-style:italic;margin-left:8px;">+ ${details.join(', ')}</div>` 
@@ -49,40 +53,34 @@ export function renderPlantReceiptHtml(ticket: Ticket) {
   return `
     <div style="width:55mm;margin:0 auto;font-family: Arial, sans-serif;color:#111;padding:8px;">
       
-      <!-- HEADER (Styled exactly like Store Receipt) -->
       <div style="text-align:center;">
         <div style="font-size:20px;font-weight:900;">PLANT COPY</div>
         <div style="font-size:9pt;">INTERNAL RECORD</div>
         <div style="font-size:9pt;">DO NOT DISTRIBUTE</div>
       </div>
       
-      <!-- TICKET INFO -->
       <div style="text-align:center;margin-top:10px;border-top:1px dashed #444;padding-top:5px;">
         <div style="font-size:24px;font-weight:800;">${ticket.ticket_number}</div>
         ${isPickedUp ? `<div style="font-size:12pt;font-weight:900;margin-top:2px;">PICKED UP</div>` : ''}
         <div style="font-size:9pt;">${statusDate}</div>
       </div>
 
-      <!-- CUSTOMER -->
       <div style="margin-top:10px;font-weight:bold;font-size:11pt;border-bottom:1px solid #444;">
         ${ticket.customer_name}
       </div>
 
-      <!-- SPECIAL INSTRUCTIONS (Consistent Style) -->
       ${ticket.special_instructions ? `
         <div style="margin-top:8px;padding:6px;border:2px solid #000;background-color:#eee;font-weight:bold;font-size:10pt;">
           NOTE: ${ticket.special_instructions}
         </div>
       ` : ''}
 
-      <!-- ITEMS LIST -->
       <div style="margin-top:5px;">
         ${itemsList}
       </div>
 
       <hr style="border:none;border-top:1px dashed #444;margin:8px 0;"/>
 
-      <!-- FINANCIALS (Plant Values) -->
       <div style="font-size:10pt;font-weight: 600;">
         <div style="display:flex;justify-content:space-between;"> <div>Plant Subtotal:</div> <div>$${totalPlantPrice.toFixed(2)}</div> </div>
         <div style="display:flex;justify-content:space-between;"> <div>Env Charge (4.7%):</div> <div>$${envCharge.toFixed(2)}</div> </div>
@@ -93,12 +91,9 @@ export function renderPlantReceiptHtml(ticket: Ticket) {
         </div>
       </div>
       
-      <!-- PIECE COUNT -->
       <div style="margin-top:12px;text-align:center;font-weight:800;font-size:11pt;border:1px solid #000;padding:4px;">
         ${totalPieces} PIECES
       </div>
-
-      <!-- FOOTER -->
     </div>
   `;
 }

@@ -19,6 +19,11 @@ export function renderPickupReceiptHtml(ticket: Ticket) {
     if (item.starch_level && item.starch_level !== 'none' && item.starch_level !== 'no_starch') details.push(item.starch_level);
     if (item.crease) details.push('Crease');
 
+    // --- UPDATED: BOLD ALTERATIONS ---
+    if (item.alterations) {
+        details.push(`<span style="font-weight:900; color:#000; font-style:normal;">Alt: ${item.alterations}</span>`);
+    }
+
     const detailsHtml = details.length > 0 
         ? `<div style="font-size:8pt;color:#666;margin-left:8px;">+ ${details.join(', ')}</div>` 
         : '';

@@ -172,6 +172,10 @@ class TicketItemCreate(BaseModel):
     starch_level: StarchLevel = StarchLevel.none
     crease: bool = False
     additional_charge: Optional[float] = 0.0
+    alterations: Optional[str] = None  # <--- ADD THIS
+
+    
+    
 class TicketItemResponse(BaseModel):
     """Data returned for a single item on a ticket."""
     id: int
@@ -186,7 +190,7 @@ class TicketItemResponse(BaseModel):
     margin: float
     additional_charge: float
     pieces: Optional[int] = None  # <-- THIS IS THE FIX
-
+    alterations: Optional[str] = None
     class Config:
         orm_mode = True
 
@@ -210,6 +214,7 @@ class TicketResponse(BaseModel):
     status: str
     rack_number: Optional[str]
     special_instructions: Optional[str]
+    alterations: Optional[str] = None # <--- ADD THIS
     
     # 👇 THIS IS THE FIX
     pickup_date: Optional[datetime]
@@ -236,6 +241,7 @@ class TicketItemCreate(BaseModel):
     starch_level: StarchLevel = StarchLevel.none
     crease: bool = False
     additional_charge: Optional[float] = 0.0
+    alterations: Optional[str] = None  # <--- ADD THIS
     
     
     

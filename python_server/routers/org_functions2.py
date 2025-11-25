@@ -557,6 +557,7 @@ async def process_ticket_pickup(
     """
     Processes a ticket pickup. It updates the ticket status to 'picked_up',
     adds the final payment, and frees up the associated rack.
+    Includes item details and alterations in the generated receipt.
     """
     try:
         organization_id = payload.get("organization_id")
@@ -575,8 +576,7 @@ async def process_ticket_pickup(
                 detail="Invalid token: Organization ID missing."
             )
 
-        # 2. Get the current ticket details (joining with allUsers for the receipt)
-        # --- MODIFIED: Added t.rack_number ---
+        # 2. Get the current ticket details
         ticket_query = text("""
             SELECT 
                 t.total_amount, t.paid_amount, t.status, t.ticket_number, t.rack_number,
@@ -639,12 +639,12 @@ async def process_ticket_pickup(
         db.execute(update_query, {
             "status": new_status,
             "paid_amount": new_total_paid,
-            "pickup_date": datetime.now(), # Set pickup date to now
+            "pickup_date": datetime.now(),
             "ticket_id": ticket_id,
             "org_id": organization_id
         })
         
-        # --- NEW 6: Free up the rack if one was assigned ---
+        # 6. Free up the rack if one was assigned
         if ticket.rack_number:
             rack_free_query = text("""
                 UPDATE racks
@@ -658,10 +658,49 @@ async def process_ticket_pickup(
                 "rack_number": ticket.rack_number,
                 "org_id": organization_id
             })
-        # ----------------------------------------------------
 
         # 7. Commit the transaction
         db.commit()
+
+        # --- NEW SECTION: Fetch Items for Receipt ---
+        items_query = text("""
+            SELECT 
+                ti.quantity, ti.item_total, ti.starch_level, ti.crease, ti.alterations,
+                ct.name as clothing_name
+            FROM ticket_items ti
+            JOIN clothing_types ct ON ti.clothing_type_id = ct.id
+            WHERE ti.ticket_id = :ticket_id
+        """)
+        items_result = db.execute(items_query, {"ticket_id": ticket_id}).fetchall()
+
+        # Build Items HTML string
+        items_html = ""
+        for item in items_result:
+            details = []
+            if item.starch_level and item.starch_level not in ['none', 'no_starch']:
+                details.append(f"Starch: {item.starch_level}")
+            if item.crease:
+                details.append("Crease")
+            
+            # BOLD ALTERATIONS
+            if item.alterations:
+                details.append(f'<span style="font-weight:900; color:#000;">Alt: {item.alterations}</span>')
+            
+            details_html = ""
+            if details:
+                details_html = f'<div style="font-size:8pt;color:#666;margin-left:8px;font-style:italic;">+ {", ".join(details)}</div>'
+
+            items_html += f"""
+            <div style="margin:4px 0;">
+                <div style="display:flex;justify-content:space-between;font-size:10pt;font-weight:600;">
+                    <div style="flex:1;">{item.clothing_name}</div>
+                    <div style="margin-left:8px;">x{item.quantity}</div>
+                    <div style="width:56px;text-align:right;">${float(item.item_total):.2f}</div>
+                </div>
+                {details_html}
+            </div>
+            """
+        # ---------------------------------------------
         
         # 8. Generate a receipt
         receipt_html = f"""
@@ -670,6 +709,12 @@ async def process_ticket_pickup(
                 <p>Ticket #: <strong>{ticket.ticket_number}</strong></p>
                 <p>Customer: {ticket.first_name} {ticket.last_name}</p>
                 <hr style="margin: 8px 0; border: 0; border-top: 1px dashed #000;" />
+                
+                <div style="margin-bottom: 10px;">
+                    {items_html}
+                </div>
+                <hr style="margin: 8px 0; border: 0; border-top: 1px dashed #000;" />
+
                 <p>Total Amount: ${current_total:.2f}</p>
                 <p>Previously Paid: ${current_paid:.2f}</p>
                 <p>Amount Paid Now: ${amount_paying:.2f}</p>
@@ -697,4 +742,3 @@ async def process_ticket_pickup(
         db.rollback()
         print(f"Error during ticket pickup: {e}")
         raise HTTPException(status_code=500, detail="An unexpected error occurred.")
-

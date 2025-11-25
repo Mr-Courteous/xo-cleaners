@@ -324,14 +324,285 @@ async def register_customer(
 
 
 
+# @router.post("/tickets", response_model=TicketResponse, status_code=status.HTTP_201_CREATED, tags=["Tickets"])
+# def create_ticket(
+#     ticket_data: TicketCreate,
+#     db: Session = Depends(get_db),
+#     payload: Dict[str, Any] = Depends(get_current_user_payload) 
+# ):
+# # --- END OF FIX ---
+#     """Creates a new ticket, saving all item details and financial data."""
+    
+#     try:
+#         # 3. GET SECURE DATA FROM TOKEN:
+#         organization_id = payload.get("organization_id")
+#         user_email = payload.get("sub")
+        
+#         if not organization_id:
+#             raise HTTPException(
+#                 status_code=status.HTTP_401_UNAUTHORIZED,
+#                 detail="Invalid token: Organization ID missing."
+#             )
+            
+#         print(f"User {user_email} (Org: {organization_id}) is creating a new ticket.")
+        
+#         # 1. Check customer existence (NOW FILTERED BY ORG)
+#         customer_query = text("""
+#             SELECT id, first_name, last_name, email  
+#             FROM allUsers 
+#             WHERE id = :id AND organization_id = :org_id AND role = 'customer'
+#         """)
+#         customer = db.execute(customer_query, {
+#             "id": ticket_data.customer_id, 
+#             "org_id": organization_id
+#         }).fetchone()
+        
+#         if not customer:
+#             raise HTTPException(status_code=404, detail=f"Customer not found in your organization.")
+
+#         # 2. Fetch prices (NOW FILTERED BY ORG)
+#         total_amount = decimal.Decimal('0.00')
+#         ticket_items_to_insert = []
+#         type_ids = [item.clothing_type_id for item in ticket_data.items]
+        
+#         if not type_ids:
+#                 raise HTTPException(status_code=400, detail="No items provided for the ticket.")
+        
+#         types_query = text("""
+#             SELECT id, name, plant_price, margin, total_price, pieces 
+#             FROM clothing_types 
+#             WHERE id IN :ids AND organization_id = :org_id
+#         """)
+#         types_result = db.execute(types_query, {
+#             "ids": tuple(type_ids),
+#             "org_id": organization_id
+#         }).fetchall()
+
+#         type_prices = {
+#             row[0]: {
+#                 "name": row[1], 
+#                 "plant_price": decimal.Decimal(str(row[2])),
+#                 "margin": decimal.Decimal(str(row[3])),
+#                 "total_price": decimal.Decimal(str(row[4])),
+#                 "pieces": row[5]  # <-- ADD THIS LINE
+#             } for row in types_result
+#         }
+        
+#         # 3. Calculate total_amount and prepare items
+#         for item_create in ticket_data.items:
+#             prices = type_prices.get(item_create.clothing_type_id)
+            
+#             if prices is None:
+#                 raise HTTPException(
+#                     status_code=400, 
+#                     detail=f"Invalid item: Clothing type ID {item_create.clothing_type_id} not found in your organization."
+#                 )
+
+#             item_total_price = prices["total_price"] * item_create.quantity
+#             total_amount += item_total_price
+
+#             ticket_items_to_insert.append({
+#                 "clothing_type_id": item_create.clothing_type_id,
+#                 "quantity": item_create.quantity,
+#                 "starch_level": item_create.starch_level,
+#                 "crease": item_create.crease,
+#                 "plant_price": prices["plant_price"],
+#                 "margin": prices["margin"],
+#                 "item_total": item_total_price,
+#                 "organization_id": organization_id
+#             })
+
+#         # 4. DYNAMIC TICKET NUMBER (WITH 'FOR UPDATE' LOCK)
+#         date_prefix = datetime.now().strftime("%y%m%d")
+        
+#         # Safely compute next ticket sequence for the day.
+#         # Use a retry loop to handle race conditions where another process inserts
+#         # the same ticket_number between selecting the latest and inserting.
+#         def _fetch_latest_sequence():
+#             # NOTE: ticket_number has a global UNIQUE constraint, so we must
+#             # check across the whole table (not just this org) to avoid
+#             # generating a value that already exists for another org.
+#             latest_ticket_query = text("""
+#                 SELECT ticket_number FROM tickets
+#                 WHERE ticket_number LIKE :prefix_like
+#                 ORDER BY ticket_number DESC
+#                 LIMIT 1
+#             """)
+#             row = db.execute(latest_ticket_query, {
+#                 "prefix_like": f"{date_prefix}-%",
+#             }).fetchone()
+#             if not row:
+#                 return 0
+#             try:
+#                 return int(row[0].split('-')[-1])
+#             except Exception:
+#                 return 0
+
+#         # Prepare some ticket fields used during insert
+#         rack_number_val = ticket_data.rack_number
+#         instructions_val = ticket_data.special_instructions
+#         paid_amount_val = decimal.Decimal(str(ticket_data.paid_amount))
+#         pickup_date_val = ticket_data.pickup_date
+
+#         max_retries = 20
+#         attempt = 0
+#         new_sequence = None
+#         ticket_number = None
+#         ticket_result = None  # initialize to avoid UnboundLocalError if loop never assigns
+#         while attempt < max_retries:
+#             attempt += 1
+#             last_seq = _fetch_latest_sequence()
+#             print(f"[tickets] attempt={attempt} organization={organization_id} last_seq={last_seq}")
+#             new_sequence = last_seq + 1
+#             ticket_number = f"{date_prefix}-{new_sequence:03d}"
+
+#             # Try inserting; if unique constraint fails, retry with next sequence
+#             try:
+#                 print(f"[tickets] trying insert ticket_number={ticket_number} (attempt {attempt})")
+#                 ticket_insert_query = text("""
+#                     INSERT INTO tickets (
+#                         ticket_number, customer_id, total_amount, rack_number, 
+#                         special_instructions, paid_amount, pickup_date, 
+#                         organization_id
+#                     )
+#                     VALUES (
+#                         :ticket_number, :customer_id, :total_amount, :rack_number, 
+#                         :special_instructions, :paid_amount, :pickup_date, 
+#                         :org_id
+#                     )
+#                     RETURNING id, created_at, status
+#                 """)
+
+#                 ticket_result = db.execute(ticket_insert_query, {
+#                     "ticket_number": ticket_number,
+#                     "customer_id": ticket_data.customer_id,
+#                     "total_amount": total_amount,
+#                     "rack_number": rack_number_val,
+#                     "special_instructions": instructions_val,
+#                     "paid_amount": paid_amount_val,
+#                     "pickup_date": pickup_date_val,
+#                     "org_id": organization_id
+#                 }).fetchone()
+
+#                 # If insert succeeded, break out of retry loop
+#                 if ticket_result is not None:
+#                     break
+
+#             except IntegrityError as ie:
+#                 # Duplicate ticket_number or other integrity issue; retry sequence
+#                 db.rollback()
+#                 print(f"[tickets] IntegrityError on attempt={attempt} ticket_number={ticket_number}: {ie}")
+#                 # If it's specifically a unique violation on ticket_number, retry
+#                 # Otherwise re-raise so we don't mask other integrity problems
+#                 lower = str(ie).lower()
+#                 if 'unique' in lower and ('ticket_number' in lower or 'tickets_ticket_number' in lower):
+#                     # continue to next attempt
+#                     continue
+#                 else:
+#                     print(f"[tickets] Non-ticket-number IntegrityError, re-raising: {ie}")
+#                     raise
+#             except Exception as e:
+#                 # Any unexpected exception during insert should be logged and raised
+#                 db.rollback()
+#                 print(f"[tickets] Unexpected error during insert attempt={attempt} ticket_number={ticket_number}: {e}")
+#                 raise
+
+#         # If after retries we still don't have a ticket_result, error out
+#         if ticket_result is None:
+#             db.rollback()
+#             raise HTTPException(status_code=500, detail="Failed to generate a unique ticket number after multiple attempts.")
+        
+#         rack_number_val = ticket_data.rack_number
+#         instructions_val = ticket_data.special_instructions
+#         paid_amount_val = decimal.Decimal(str(ticket_data.paid_amount))
+#         pickup_date_val = ticket_data.pickup_date
+
+#         ticket_id = ticket_result[0]
+#         created_at = ticket_result[1]
+#         status_val = ticket_result[2]
+
+#         # 6. Insert Ticket Items (Batch insertion)
+#         item_rows = []
+#         for item in ticket_items_to_insert:
+#             item["ticket_id"] = ticket_id
+#             if "organization_id" not in item:
+#                 item["organization_id"] = organization_id
+#             item_rows.append(item)
+
+#         item_insert_query = text("""
+#             INSERT INTO ticket_items (
+#                 ticket_id, clothing_type_id, quantity, starch_level, crease, plant_price, margin, item_total, organization_id
+#             )
+#             VALUES (
+#                 :ticket_id, :clothing_type_id, :quantity, :starch_level, :crease, :plant_price, :margin, :item_total, :organization_id
+#             )
+#             RETURNING id
+#         """)
+#         db.execute(item_insert_query, item_rows)
+        
+#         # 7. Commit transaction
+#         db.commit()
+
+#         # 8. Build the complete response object
+#         response_items = []
+#         for i, item in enumerate(ticket_items_to_insert, 1):
+#             clothing_type_id = item['clothing_type_id']
+#             clothing_name = type_prices[clothing_type_id]['name']
+
+#             response_items.append(
+#                 TicketItemResponse(
+#                     id=i, 
+#                     ticket_id=ticket_id,
+#                     clothing_type_id=clothing_type_id,
+#                     clothing_name=clothing_name,
+#                     quantity=item['quantity'],
+#                     starch_level=item['starch_level'],
+#                     crease=item['crease'],
+#                     item_total=float(item['item_total']),
+#                     plant_price=float(item['plant_price']),
+#                     margin=float(item['margin']),
+#                     additional_charge=0.0,
+#                     pieces=type_prices[clothing_type_id]['pieces']  # <-- ADD THIS LINE
+#                 )
+#             )
+
+#         customer_name = f"{customer.first_name} {customer.last_name}"
+
+#         return TicketResponse(
+#             id=ticket_id,
+#             ticket_number=ticket_number,
+#             customer_id=ticket_data.customer_id,
+#             customer_name=customer_name,
+#             customer_phone=customer.email, 
+#             total_amount=float(total_amount),
+#             paid_amount=float(paid_amount_val), 
+#             status=status_val,
+#             rack_number=rack_number_val,
+#             special_instructions=instructions_val,
+#             pickup_date=pickup_date_val,
+#             created_at=created_at,
+#             items=response_items,
+#             organization_id=organization_id 
+#         )
+
+#     except HTTPException:
+#         db.rollback()
+#         raise
+#     except Exception as e:
+#         db.rollback()
+#         print(f"Error during ticket creation: {e}")
+#         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred during ticket processing.")
+
+
+
+
 @router.post("/tickets", response_model=TicketResponse, status_code=status.HTTP_201_CREATED, tags=["Tickets"])
 def create_ticket(
     ticket_data: TicketCreate,
     db: Session = Depends(get_db),
     payload: Dict[str, Any] = Depends(get_current_user_payload) 
 ):
-# --- END OF FIX ---
-    """Creates a new ticket, saving all item details and financial data."""
+    """Creates a new ticket, saving all item details (including alterations) and financial data."""
     
     try:
         # 3. GET SECURE DATA FROM TOKEN:
@@ -384,7 +655,7 @@ def create_ticket(
                 "plant_price": decimal.Decimal(str(row[2])),
                 "margin": decimal.Decimal(str(row[3])),
                 "total_price": decimal.Decimal(str(row[4])),
-                "pieces": row[5]  # <-- ADD THIS LINE
+                "pieces": row[5]
             } for row in types_result
         }
         
@@ -401,11 +672,13 @@ def create_ticket(
             item_total_price = prices["total_price"] * item_create.quantity
             total_amount += item_total_price
 
+            # Prepare the item dictionary for batch insert
             ticket_items_to_insert.append({
                 "clothing_type_id": item_create.clothing_type_id,
                 "quantity": item_create.quantity,
                 "starch_level": item_create.starch_level,
                 "crease": item_create.crease,
+                "alterations": item_create.alterations, # <--- CHANGED: Added Alterations field
                 "plant_price": prices["plant_price"],
                 "margin": prices["margin"],
                 "item_total": item_total_price,
@@ -415,13 +688,7 @@ def create_ticket(
         # 4. DYNAMIC TICKET NUMBER (WITH 'FOR UPDATE' LOCK)
         date_prefix = datetime.now().strftime("%y%m%d")
         
-        # Safely compute next ticket sequence for the day.
-        # Use a retry loop to handle race conditions where another process inserts
-        # the same ticket_number between selecting the latest and inserting.
         def _fetch_latest_sequence():
-            # NOTE: ticket_number has a global UNIQUE constraint, so we must
-            # check across the whole table (not just this org) to avoid
-            # generating a value that already exists for another org.
             latest_ticket_query = text("""
                 SELECT ticket_number FROM tickets
                 WHERE ticket_number LIKE :prefix_like
@@ -438,7 +705,6 @@ def create_ticket(
             except Exception:
                 return 0
 
-        # Prepare some ticket fields used during insert
         rack_number_val = ticket_data.rack_number
         instructions_val = ticket_data.special_instructions
         paid_amount_val = decimal.Decimal(str(ticket_data.paid_amount))
@@ -446,19 +712,15 @@ def create_ticket(
 
         max_retries = 20
         attempt = 0
-        new_sequence = None
-        ticket_number = None
-        ticket_result = None  # initialize to avoid UnboundLocalError if loop never assigns
+        ticket_result = None
+        
         while attempt < max_retries:
             attempt += 1
             last_seq = _fetch_latest_sequence()
-            print(f"[tickets] attempt={attempt} organization={organization_id} last_seq={last_seq}")
             new_sequence = last_seq + 1
             ticket_number = f"{date_prefix}-{new_sequence:03d}"
 
-            # Try inserting; if unique constraint fails, retry with next sequence
             try:
-                print(f"[tickets] trying insert ticket_number={ticket_number} (attempt {attempt})")
                 ticket_insert_query = text("""
                     INSERT INTO tickets (
                         ticket_number, customer_id, total_amount, rack_number, 
@@ -484,39 +746,24 @@ def create_ticket(
                     "org_id": organization_id
                 }).fetchone()
 
-                # If insert succeeded, break out of retry loop
                 if ticket_result is not None:
                     break
 
             except IntegrityError as ie:
-                # Duplicate ticket_number or other integrity issue; retry sequence
                 db.rollback()
-                print(f"[tickets] IntegrityError on attempt={attempt} ticket_number={ticket_number}: {ie}")
-                # If it's specifically a unique violation on ticket_number, retry
-                # Otherwise re-raise so we don't mask other integrity problems
                 lower = str(ie).lower()
                 if 'unique' in lower and ('ticket_number' in lower or 'tickets_ticket_number' in lower):
-                    # continue to next attempt
                     continue
                 else:
-                    print(f"[tickets] Non-ticket-number IntegrityError, re-raising: {ie}")
                     raise
-            except Exception as e:
-                # Any unexpected exception during insert should be logged and raised
+            except Exception:
                 db.rollback()
-                print(f"[tickets] Unexpected error during insert attempt={attempt} ticket_number={ticket_number}: {e}")
                 raise
 
-        # If after retries we still don't have a ticket_result, error out
         if ticket_result is None:
             db.rollback()
-            raise HTTPException(status_code=500, detail="Failed to generate a unique ticket number after multiple attempts.")
+            raise HTTPException(status_code=500, detail="Failed to generate a unique ticket number.")
         
-        rack_number_val = ticket_data.rack_number
-        instructions_val = ticket_data.special_instructions
-        paid_amount_val = decimal.Decimal(str(ticket_data.paid_amount))
-        pickup_date_val = ticket_data.pickup_date
-
         ticket_id = ticket_result[0]
         created_at = ticket_result[1]
         status_val = ticket_result[2]
@@ -529,12 +776,13 @@ def create_ticket(
                 item["organization_id"] = organization_id
             item_rows.append(item)
 
+        # <--- CHANGED: SQL Query now includes alterations
         item_insert_query = text("""
             INSERT INTO ticket_items (
-                ticket_id, clothing_type_id, quantity, starch_level, crease, plant_price, margin, item_total, organization_id
+                ticket_id, clothing_type_id, quantity, starch_level, crease, alterations, plant_price, margin, item_total, organization_id
             )
             VALUES (
-                :ticket_id, :clothing_type_id, :quantity, :starch_level, :crease, :plant_price, :margin, :item_total, :organization_id
+                :ticket_id, :clothing_type_id, :quantity, :starch_level, :crease, :alterations, :plant_price, :margin, :item_total, :organization_id
             )
             RETURNING id
         """)
@@ -558,11 +806,12 @@ def create_ticket(
                     quantity=item['quantity'],
                     starch_level=item['starch_level'],
                     crease=item['crease'],
+                    alterations=item['alterations'], # <--- CHANGED: Return alterations in response
                     item_total=float(item['item_total']),
                     plant_price=float(item['plant_price']),
                     margin=float(item['margin']),
                     additional_charge=0.0,
-                    pieces=type_prices[clothing_type_id]['pieces']  # <-- ADD THIS LINE
+                    pieces=type_prices[clothing_type_id]['pieces']
                 )
             )
 
@@ -592,6 +841,8 @@ def create_ticket(
         db.rollback()
         print(f"Error during ticket creation: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred during ticket processing.")
+
+
 
 @router.get("/tickets", response_model=List[TicketSummaryResponse], summary="Get all tickets for *your* organization")
 async def get_tickets_for_organization(
