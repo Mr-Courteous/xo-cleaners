@@ -2,7 +2,7 @@ import { Ticket } from '../types';
 
 export function renderPlantReceiptHtml(ticket: Ticket) {
   const items = ticket.items || [];
-  
+
   // --- CALCULATION: Plant Price Sum ---
   const totalPlantPrice = items.reduce((sum, item) => sum + ((item.plant_price || 0) * item.quantity), 0);
 
@@ -15,37 +15,44 @@ export function renderPlantReceiptHtml(ticket: Ticket) {
 
   // --- LOGIC: Check Status for "Picked Up" Badge ---
   const isPickedUp = ticket.status === 'picked_up';
-  const statusDate = isPickedUp 
+  const statusDate = isPickedUp
     ? `${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`
     : new Date(ticket.created_at || Date.now()).toLocaleDateString();
 
   const itemsList = items.map(item => {
     const plantLineTotal = (item.plant_price || 0) * item.quantity;
-    
+
     // --- REQUIREMENT: Show Special Instructions/Details (Starch, Crease, Alterations) ---
     const details = [];
     if (item.starch_level && item.starch_level !== 'none' && item.starch_level !== 'no_starch') {
-        details.push(`Starch: ${item.starch_level}`);
+      details.push(`Starch: ${item.starch_level}`);
     }
     if (item.crease) details.push('Crease: Yes');
 
     // --- ADDED: Alterations ---
     if (item.alterations) {
-        details.push(`<span style="font-weight:900; color:#000; font-style:normal;">Alt: ${item.alterations}</span>`);
+      details.push(`<span style="font-weight:900; color:#000; font-style:normal;">Alt: ${item.alterations}</span>`);
     }
 
-    const detailsHtml = details.length > 0 
-        ? `<div style="font-size:8pt;color:#666;font-style:italic;margin-left:8px;">+ ${details.join(', ')}</div>` 
-        : '';
+    // Standard Instructions
+    if (item.item_instructions) {
+      // details.push(`Note: ${item.item_instructions}`);
+      details.push(`<br><span style="font-weight:900; color:#000; font-style:normal;">Note: ${item.item_instructions}</span>`);
+
+    }
+
+    const detailsHtml = details.length > 0
+      ? `<div style="font-size:8pt;color:#666;font-style:italic;margin-left:8px;">+ ${details.join(', ')}</div>`
+      : '';
 
     return (
       `<div style="margin:4px 0;">` +
-        `<div style="display:flex;justify-content:space-between;font-size:10pt;font-weight: 600;">` +
-            `<div style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.clothing_name}</div>` +
-            `<div style="margin-left:8px;min-width:28px;text-align:right">x${item.quantity}</div>` +
-            `<div style="width:56px;text-align:right;margin-left:8px">$${plantLineTotal.toFixed(2)}</div>` +
-        `</div>` +
-        detailsHtml +
+      `<div style="display:flex;justify-content:space-between;font-size:10pt;font-weight: 600;">` +
+      `<div style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.clothing_name}</div>` +
+      `<div style="margin-left:8px;min-width:28px;text-align:right">x${item.quantity}</div>` +
+      `<div style="width:56px;text-align:right;margin-left:8px">$${plantLineTotal.toFixed(2)}</div>` +
+      `</div>` +
+      detailsHtml +
       `</div>`
     );
   }).join('');

@@ -15,17 +15,24 @@ export function renderReceiptHtml(ticket: Ticket) {
 
   const itemsList = items.map(item => {
     const details = [];
-    
+
     if (item.starch_level && item.starch_level !== 'none' && item.starch_level !== 'no_starch') {
       details.push(`Starch: ${item.starch_level}`);
     }
-    
+
     if (item.crease) details.push('Crease');
 
     // --- UPDATED: BOLD ALTERATIONS ---
     // Uses a span to force bold weight and black color, even inside the grey container
     if (item.alterations) {
       details.push(`<span style="font-weight:900; color:#000; font-style:normal;">Alt: ${item.alterations}</span>`);
+    }
+
+    // Standard Instructions
+    if (item.item_instructions) {
+      // details.push(`Note: ${item.item_instructions}`);
+      details.push(`<br> <span style="font-weight:900; color:#000; font-style:normal;">Note: ${item.item_instructions}</span>`);
+
     }
 
     const detailsHtml = details.length > 0

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, Search, Trash2, User, Phone, Calendar, Grid, List, Shirt, ImageOf, Mail, Printer } from 'lucide-react';
 import axios from "axios";
-import baseURL from "../lib/config"; 
+import baseURL from "../lib/config";
 import { Customer, ClothingType, TicketItem } from '../types';
 import Modal from './Modal';
 import PrintPreviewModal from './PrintPreviewModal';
@@ -25,7 +25,7 @@ const getAuthHeaders = () => {
 };
 
 const RECEIPT_STORAGE_KEY = 'receiptConfig';
-const VIEW_MODE_STORAGE_KEY = 'dropOffViewMode'; 
+const VIEW_MODE_STORAGE_KEY = 'dropOffViewMode';
 
 // --- GRID VIEW COMPONENT ---
 interface ClothingGridProps {
@@ -92,10 +92,10 @@ export default function DropOff() {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [newCustomer, setNewCustomer] = useState({ first_name: '', last_name: '', phone: '', email: '', address: '' });
   const [clothingTypes, setClothingTypes] = useState<ClothingType[]>([]);
-  
+
   // Note: Ensure your TicketItem type in '../types' includes 'alterations?: string'
   const [items, setItems] = useState<TicketItem[]>([]);
-  
+
   const [specialInstructions, setSpecialInstructions] = useState('');
   const [paidAmount, setPaidAmount] = useState<number>(0);
   const [pickupDate, setPickupDate] = useState<string>(new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().substring(0, 16));
@@ -110,7 +110,7 @@ export default function DropOff() {
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [printContent, setPrintContent] = useState('');
   const [plantHtmlState, setPlantHtmlState] = useState('');
-  
+
   const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => {
     if (typeof window !== 'undefined') {
       const savedMode = localStorage.getItem(VIEW_MODE_STORAGE_KEY);
@@ -150,7 +150,7 @@ export default function DropOff() {
       if (response.data && Array.isArray(response.data.clothing_types)) {
         setClothingTypes(response.data.clothing_types);
       } else {
-        setClothingTypes([]); 
+        setClothingTypes([]);
       }
     } catch (error) {
       console.error('Failed to fetch clothing types:', error);
@@ -190,7 +190,7 @@ export default function DropOff() {
         first_name: newCustomer.first_name,
         last_name: newCustomer.last_name,
         address: newCustomer.address,
-        password: "1234567890", 
+        password: "1234567890",
       };
 
       const response = await axios.post(`${baseURL}/api/organizations/register-customer`, payload, {
@@ -210,16 +210,17 @@ export default function DropOff() {
     setItems([...items, {
       clothing_type_id: ct?.id || 1,
       clothing_name: ct?.name || 'Select Item',
-      quantity: 1, 
-      starch_level: 'no_starch', 
-      crease: 'no_crease', 
+      quantity: 1,
+      starch_level: 'no_starch',
+      crease: 'no_crease',
       additional_charge: 0,
       alterations: '', // <--- INIT NEW FIELD
+      item_instructions: '',
       plant_price: ct?.plant_price || 0,
       margin: ct?.margin || 0,
       item_total: (ct?.plant_price || 0) + (ct?.margin || 0),
     }]);
-    saveViewMode('list'); 
+    saveViewMode('list');
   };
 
   const addItemByTypeId = (clothingTypeId: number) => {
@@ -229,11 +230,12 @@ export default function DropOff() {
     setItems([...items, {
       clothing_type_id: ct.id,
       clothing_name: ct.name,
-      quantity: 1, 
-      starch_level: 'no_starch', 
-      crease: 'no_crease', 
+      quantity: 1,
+      starch_level: 'no_starch',
+      crease: 'no_crease',
       additional_charge: 0,
       alterations: '', // <--- INIT NEW FIELD
+      item_instructions: '',
       plant_price: ct.plant_price,
       margin: ct.margin,
       item_total: ct.plant_price + ct.margin,
@@ -246,27 +248,27 @@ export default function DropOff() {
     newItems[index] = { ...oldItem, ...updates };
 
     const clothingType = clothingTypes.find(ct => ct.id === newItems[index].clothing_type_id);
-    
+
     // Recalculate price logic
     if (clothingType) {
-        const basePrice = clothingType.plant_price + clothingType.margin;
-        const quantity = newItems[index].quantity || 0;
-        const additionalCharge = newItems[index].additional_charge || 0;
-        newItems[index].plant_price = clothingType.plant_price;
-        newItems[index].margin = clothingType.margin;
-        newItems[index].item_total = (basePrice * quantity) + additionalCharge;
+      const basePrice = clothingType.plant_price + clothingType.margin;
+      const quantity = newItems[index].quantity || 0;
+      const additionalCharge = newItems[index].additional_charge || 0;
+      newItems[index].plant_price = clothingType.plant_price;
+      newItems[index].margin = clothingType.margin;
+      newItems[index].item_total = (basePrice * quantity) + additionalCharge;
     } else if ('clothing_type_id' in updates) {
-        newItems[index].item_total = 0;
+      newItems[index].item_total = 0;
     }
 
     // Force recalc if qty/charge changes
     if ('quantity' in updates || 'additional_charge' in updates) {
-        if (clothingType) {
-            const basePrice = clothingType.plant_price + clothingType.margin;
-            const quantity = newItems[index].quantity || 0;
-            const additionalCharge = newItems[index].additional_charge || 0;
-            newItems[index].item_total = (basePrice * quantity) + additionalCharge;
-        }
+      if (clothingType) {
+        const basePrice = clothingType.plant_price + clothingType.margin;
+        const quantity = newItems[index].quantity || 0;
+        const additionalCharge = newItems[index].additional_charge || 0;
+        newItems[index].item_total = (basePrice * quantity) + additionalCharge;
+      }
     }
 
     setItems(newItems);
@@ -280,7 +282,7 @@ export default function DropOff() {
     const printFrame = document.createElement('iframe');
     printFrame.style.display = 'none';
     document.body.appendChild(printFrame);
-    
+
     printFrame.contentDocument?.write(`
       <html>
         <head>
@@ -303,17 +305,17 @@ export default function DropOff() {
         <body>${htmlContent}</body>
       </html>
     `);
-    
+
     printFrame.contentDocument?.close();
     printFrame.contentWindow?.focus();
-    
+
     setTimeout(() => {
-        printFrame.contentWindow?.print();
-        setTimeout(() => {
-            if(document.body.contains(printFrame)) {
-                document.body.removeChild(printFrame);
-            }
-        }, 1000);
+      printFrame.contentWindow?.print();
+      setTimeout(() => {
+        if (document.body.contains(printFrame)) {
+          document.body.removeChild(printFrame);
+        }
+      }, 1000);
     }, 100);
   };
 
@@ -351,6 +353,7 @@ export default function DropOff() {
           crease: item.crease === true || item.crease === 'crease',
           additional_charge: Number(item.additional_charge) || 0.0,
           alterations: item.alterations || null, // <--- MAP NEW FIELD HERE
+          item_instructions: item.item_instructions || null,
         })),
         special_instructions: specialInstructions,
         pickup_date: pickupDate ? new Date(pickupDate).toISOString() : null,
@@ -362,8 +365,8 @@ export default function DropOff() {
 
       // 2. Send Request
       const response = await axios.post(
-        `${baseURL}/api/organizations/tickets`, 
-        ticketData,                            
+        `${baseURL}/api/organizations/tickets`,
+        ticketData,
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
@@ -629,13 +632,26 @@ export default function DropOff() {
 
                     {/* --- NEW ALTERATIONS FIELD FOR EACH ITEM --- */}
                     <div className="col-span-1 md:col-span-12 mt-1">
+                      {/* Alterations */}
+                      <div className="col-span-1">
                         <input
-                            type="text"
-                            placeholder="Add Alterations (e.g., Hem 2 inches, Sew button)..."
-                            value={item.alterations || ''} // Default to empty string if undefined
-                            onChange={(e) => updateItem(index, { alterations: e.target.value })}
-                            className="w-full px-3 py-1 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500 placeholder-gray-400 bg-gray-50"
+                          type="text"
+                          placeholder="Add Alterations (e.g., Hem 2 inches, Sew button)..."
+                          value={item.alterations || ''} // Default to empty string if undefined
+                          onChange={(e) => updateItem(index, { alterations: e.target.value })}
+                          className="w-full px-3 py-1 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500 placeholder-gray-400 bg-gray-50"
                         />
+                      </div>
+                      {/* Instructions */}
+                      <div className="col-span-1">
+                        <input
+                          type="text"
+                          placeholder="Special Instructions for this item..."
+                          value={item.item_instructions || ''}
+                          onChange={(e) => updateItem(index, { item_instructions: e.target.value })}
+                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 placeholder-gray-400 bg-blue-50"
+                        />
+                      </div>
                     </div>
                     {/* ------------------------------------------- */}
 
@@ -727,8 +743,8 @@ export default function DropOff() {
                         {item.crease === 'crease' && 'with crease'}
                         {item.additional_charge > 0 && `, Addtl: $${item.additional_charge.toFixed(2)}`}
                         {/* Show Alterations in Review */}
-                        {item.alterations && 
-                            <div className="text-purple-600 italic mt-1">Alterations: {item.alterations}</div>
+                        {item.alterations &&
+                          <div className="text-purple-600 italic mt-1">Alterations: {item.alterations}</div>
                         }
                       </div>
                     </div>
@@ -768,7 +784,7 @@ export default function DropOff() {
         {modal.type === 'success' ? <div dangerouslySetInnerHTML={{ __html: plantHtmlState || modal.message }} /> : <div>{modal.message}</div>}
       </Modal>
 
-      <PrintPreviewModal isOpen={showPrintPreview} onClose={() => setShowPrintPreview(false)} onPrint={() => {}} content={printContent} hideDefaultButton={true} extraActions={(
+      <PrintPreviewModal isOpen={showPrintPreview} onClose={() => setShowPrintPreview(false)} onPrint={() => { }} content={printContent} hideDefaultButton={true} extraActions={(
         <>
           <button onClick={() => { const combinedHtml = `${printContent}<div class="page-break"></div>${plantHtmlState}`; handlePrintJob(combinedHtml); }} className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 flex items-center gap-2"><Printer size={18} /> Print Receipts (All)</button>
           <button onClick={() => { handlePrintJob(plantHtmlState); }} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 flex items-center gap-2"><Printer size={18} /> Print Plant Only</button>

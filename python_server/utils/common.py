@@ -173,6 +173,8 @@ class TicketItemCreate(BaseModel):
     crease: bool = False
     additional_charge: Optional[float] = 0.0
     alterations: Optional[str] = None  # <--- ADD THIS
+    item_instructions: Optional[str] = None  # <--- ADD THIS
+
 
     
     
@@ -191,6 +193,7 @@ class TicketItemResponse(BaseModel):
     additional_charge: float
     pieces: Optional[int] = None  # <-- THIS IS THE FIX
     alterations: Optional[str] = None
+    item_instructions: Optional[str] = None  # <--- ADD THIS
     class Config:
         orm_mode = True
 
@@ -215,6 +218,7 @@ class TicketResponse(BaseModel):
     rack_number: Optional[str]
     special_instructions: Optional[str]
     alterations: Optional[str] = None # <--- ADD THIS
+    item_instructions: Optional[str] = None  # <--- ADD THIS
     
     # 👇 THIS IS THE FIX
     pickup_date: Optional[datetime]
@@ -242,6 +246,7 @@ class TicketItemCreate(BaseModel):
     crease: bool = False
     additional_charge: Optional[float] = 0.0
     alterations: Optional[str] = None  # <--- ADD THIS
+    item_instructions: Optional[str] = None  # <--- ADD THIS
     
     
     

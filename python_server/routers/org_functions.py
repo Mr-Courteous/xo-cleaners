@@ -679,6 +679,7 @@ def create_ticket(
                 "starch_level": item_create.starch_level,
                 "crease": item_create.crease,
                 "alterations": item_create.alterations, # <--- CHANGED: Added Alterations field
+                "item_instructions": item_create.item_instructions, # <--- MAP THIS
                 "plant_price": prices["plant_price"],
                 "margin": prices["margin"],
                 "item_total": item_total_price,
@@ -779,10 +780,10 @@ def create_ticket(
         # <--- CHANGED: SQL Query now includes alterations
         item_insert_query = text("""
             INSERT INTO ticket_items (
-                ticket_id, clothing_type_id, quantity, starch_level, crease, alterations, plant_price, margin, item_total, organization_id
+                ticket_id, clothing_type_id, quantity, starch_level, crease, alterations, item_instructions, plant_price, margin, item_total, organization_id
             )
             VALUES (
-                :ticket_id, :clothing_type_id, :quantity, :starch_level, :crease, :alterations, :plant_price, :margin, :item_total, :organization_id
+                :ticket_id, :clothing_type_id, :quantity, :starch_level, :crease, :alterations, :item_instructions, :plant_price, :margin, :item_total, :organization_id
             )
             RETURNING id
         """)
@@ -807,6 +808,7 @@ def create_ticket(
                     starch_level=item['starch_level'],
                     crease=item['crease'],
                     alterations=item['alterations'], # <--- CHANGED: Return alterations in response
+                    item_instructions=item['item_instructions'], # <--- RETURN IT
                     item_total=float(item['item_total']),
                     plant_price=float(item['plant_price']),
                     margin=float(item['margin']),

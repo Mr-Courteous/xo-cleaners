@@ -665,7 +665,7 @@ async def process_ticket_pickup(
         # --- NEW SECTION: Fetch Items for Receipt ---
         items_query = text("""
             SELECT 
-                ti.quantity, ti.item_total, ti.starch_level, ti.crease, ti.alterations,
+                ti.quantity, ti.item_total, ti.starch_level, ti.crease, ti.alterations, ti.item_instructions,
                 ct.name as clothing_name
             FROM ticket_items ti
             JOIN clothing_types ct ON ti.clothing_type_id = ct.id
@@ -685,6 +685,10 @@ async def process_ticket_pickup(
             # BOLD ALTERATIONS
             if item.alterations:
                 details.append(f'<span style="font-weight:900; color:#000;">Alt: {item.alterations}</span>')
+            
+            # Instructions (Italic/Different style)
+            if item.item_instructions:
+                details.append(f'<span style="font-style:italic; color:#444;">Note: {item.item_instructions}</span>')
             
             details_html = ""
             if details:

@@ -177,25 +177,17 @@ async def get_ticket_details(
     db: Session = Depends(get_db),
     payload: Dict[str, Any] = Depends(get_current_user_payload)
 ):
-    """
-    Retrieve all details for a specific ticket, including customer info,
-    all items (with alterations), and payment status.
-    """
     org_id = payload.get("organization_id")
     if not org_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Organization ID missing from token."
-        )
+        raise HTTPException(status_code=400, detail="Organization ID missing.")
 
     try:
-        # 1. Get main ticket info
+        # 1. Main Ticket Info
         ticket_stmt = text("""
             SELECT 
                 t.id, t.ticket_number, t.customer_id, t.total_amount, 
                 t.paid_amount, t.status, t.rack_number, t.created_at, 
-                t.pickup_date,
-                t.special_instructions,
+                t.pickup_date, t.special_instructions,
                 u.first_name, u.last_name, u.email, u.phone
             FROM tickets t
             JOIN allUsers u ON t.customer_id = u.id
@@ -204,15 +196,14 @@ async def get_ticket_details(
         ticket = db.execute(ticket_stmt, {"ticket_id": ticket_id, "org_id": org_id}).fetchone()
 
         if not ticket:
-            raise HTTPException(status_code=404, detail="Ticket not found in this organization")
+            raise HTTPException(status_code=404, detail="Ticket not found.")
 
-        # 2. Get all items for the ticket (UPDATED to include alterations)
+        # 2. Get Items (Added item_instructions)
         items_stmt = text("""
             SELECT 
                 ti.id, ti.ticket_id, ti.clothing_type_id, ti.quantity, 
-                ti.item_total,
-                ti.plant_price, ti.margin, ti.starch_level, ti.crease,
-                ti.alterations,  -- <--- UPDATED: Select alterations column
+                ti.item_total, ti.plant_price, ti.margin, ti.starch_level, ti.crease,
+                ti.alterations, ti.item_instructions,  -- <--- ADDED
                 ct.name AS clothing_name,
                 ct.image_url AS clothing_image_url,
                 COALESCE(ct.pieces, 1) AS pieces
@@ -223,7 +214,6 @@ async def get_ticket_details(
         
         items_results = db.execute(items_stmt, {"ticket_id": ticket_id}).fetchall()
 
-        # 3. Build Item List
         items_list = [
             TicketItemResponse(
                 id=item_row.id,
@@ -232,44 +222,38 @@ async def get_ticket_details(
                 quantity=item_row.quantity,
                 starch_level=item_row.starch_level,
                 crease=item_row.crease,
-                alterations=item_row.alterations,  # <--- UPDATED: Map to response model
+                alterations=item_row.alterations,
+                item_instructions=item_row.item_instructions, # <--- MAPPED
                 item_total=item_row.item_total,
                 plant_price=item_row.plant_price,
                 margin=item_row.margin,
-                additional_charge=0.0, 
+                additional_charge=0.0,
                 clothing_name=item_row.clothing_name,
                 clothing_image_url=item_row.clothing_image_url,
                 pieces=item_row.pieces
             ) for item_row in items_results
         ]
 
-        # 4. Construct Final Response
-        customer_name = f"{ticket.first_name} {ticket.last_name or ''}".strip()
-        customer_phone = ticket.email 
-
         return TicketResponse(
             id=ticket.id,
             ticket_number=ticket.ticket_number,
             customer_id=ticket.customer_id,
-            customer_name=customer_name,
-            customer_phone=customer_phone,
+            customer_name=f"{ticket.first_name} {ticket.last_name or ''}".strip(),
+            customer_phone=ticket.email,
             total_amount=ticket.total_amount,
             paid_amount=ticket.paid_amount,
             status=ticket.status,
             rack_number=ticket.rack_number,
-            special_instructions=ticket.special_instructions,
             pickup_date=ticket.pickup_date,
             created_at=ticket.created_at,
+            special_instructions=ticket.special_instructions,
             items=items_list,
             organization_id=org_id 
         )
 
-    except HTTPException:
-        raise
     except Exception as e:
-        print(f"[ERROR] Getting ticket {ticket_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Error retrieving ticket: {e}")
-
+        print(f"Error: {e}")
+        raise HTTPException(status_code=500, detail="Error retrieving ticket.")
 
 # --- END OF get_ticket_details FUNCTION ---
 

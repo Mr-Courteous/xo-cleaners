@@ -1,46 +1,52 @@
 import { Ticket } from '../types';
 
 export function renderPickupReceiptHtml(ticket: Ticket) {
-  const items = ticket.items || [];
-  
-  const subtotal = ticket.total_amount || 0;
-  const paid = ticket.paid_amount || 0;
-  
-  const envCharge = subtotal * 0.047; 
-  const tax = subtotal * 0.0825; 
-  const finalTotal = subtotal + envCharge + tax;
-  const balance = finalTotal - paid;
+    const items = ticket.items || [];
 
-  const totalPieces = items.reduce((sum, item) => sum + (item.quantity * (item.pieces || 1)), 0);
-  const pickedUpDate = new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const subtotal = ticket.total_amount || 0;
+    const paid = ticket.paid_amount || 0;
 
-  const itemsList = items.map(item => {
-    const details = [];
-    if (item.starch_level && item.starch_level !== 'none' && item.starch_level !== 'no_starch') details.push(item.starch_level);
-    if (item.crease) details.push('Crease');
+    const envCharge = subtotal * 0.047;
+    const tax = subtotal * 0.0825;
+    const finalTotal = subtotal + envCharge + tax;
+    const balance = finalTotal - paid;
 
-    // --- UPDATED: BOLD ALTERATIONS ---
-    if (item.alterations) {
-        details.push(`<span style="font-weight:900; color:#000; font-style:normal;">Alt: ${item.alterations}</span>`);
-    }
+    const totalPieces = items.reduce((sum, item) => sum + (item.quantity * (item.pieces || 1)), 0);
+    const pickedUpDate = new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-    const detailsHtml = details.length > 0 
-        ? `<div style="font-size:8pt;color:#666;margin-left:8px;">+ ${details.join(', ')}</div>` 
-        : '';
+    const itemsList = items.map(item => {
+        const details = [];
+        if (item.starch_level && item.starch_level !== 'none' && item.starch_level !== 'no_starch') details.push(item.starch_level);
+        if (item.crease) details.push('Crease');
 
-    return (
-      `<div style="margin:4px 0;">` +
-        `<div style="display:flex;justify-content:space-between;font-size:10pt;font-weight: 600;">` +
+        // --- UPDATED: BOLD ALTERATIONS ---
+        if (item.alterations) {
+            details.push(`<span style="font-weight:900; color:#000; font-style:normal;">Alt: ${item.alterations}</span>`);
+        }
+        // Standard Instructions
+        if (item.item_instructions) {
+            // details.push(`Note: ${item.item_instructions}`);
+            details.push(`<br><span style="font-weight:900; color:#000; font-style:normal;">Note: ${item.item_instructions}</span>`);
+
+        }
+
+        const detailsHtml = details.length > 0
+            ? `<div style="font-size:8pt;color:#666;margin-left:8px;">+ ${details.join(', ')}</div>`
+            : '';
+
+        return (
+            `<div style="margin:4px 0;">` +
+            `<div style="display:flex;justify-content:space-between;font-size:10pt;font-weight: 600;">` +
             `<div style="flex:1;">${item.clothing_name}</div>` +
             `<div style="margin-left:8px;">x${item.quantity}</div>` +
             `<div style="width:56px;text-align:right;">$${item.item_total.toFixed(2)}</div>` +
-        `</div>` +
-        detailsHtml +
-      `</div>`
-    );
-  }).join('');
+            `</div>` +
+            detailsHtml +
+            `</div>`
+        );
+    }).join('');
 
-  return `
+    return `
     <div style="width:55mm;margin:0 auto;font-family: Arial, sans-serif;color:#111;padding:8px;">
       
       <div style="text-align:center;">
