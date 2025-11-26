@@ -120,6 +120,33 @@ export default function DropOff() {
   });
 
   const [additionalChargeInputIndex, setAdditionalChargeInputIndex] = useState<number | null>(null);
+  const INSTRUCTION_OPTIONS = [
+    { value: '', label: 'No Special Instructions' }, // Default empty option
+    { value: 'Check Pockets', label: 'Check Pockets' },
+    { value: 'Stain: Collar', label: 'Stain: Collar' },
+    { value: 'Stain: Front', label: 'Stain: Front' },
+    { value: 'Missing Button', label: 'Missing Button' },
+    { value: 'Delicate / Hand Wash', label: 'Delicate / Hand Wash' },
+    { value: 'Repair Needed', label: 'Repair Needed' },
+    { value: 'Press Only', label: 'Press Only' },
+    { value: 'Do Not Crease', label: 'Do Not Crease' },
+
+  ];
+
+  const ALTERATION_OPTIONS = [
+    { value: '', label: 'No Alteration' },
+    { value: 'Hem Pants', label: 'Hem Pants' },
+    { value: 'Hem Skirt/Dress', label: 'Hem Skirt/Dress' },
+    { value: 'Taper Legs', label: 'Taper Legs' },
+    { value: 'Take In Waist', label: 'Take In Waist' },
+    { value: 'Let Out Waist', label: 'Let Out Waist' },
+    { value: 'Shorten Sleeves', label: 'Shorten Sleeves' },
+    { value: 'Lengthen Sleeves', label: 'Lengthen Sleeves' },
+    { value: 'Replace Zipper', label: 'Replace Zipper' },
+    { value: 'Sew Button', label: 'Sew Button' },
+    { value: 'Patch Repair', label: 'Patch Repair' },
+    { value: 'See Special Note', label: 'See Special Note' },
+  ];
 
   useEffect(() => {
     fetchClothingTypes();
@@ -633,24 +660,82 @@ export default function DropOff() {
                     {/* --- NEW ALTERATIONS FIELD FOR EACH ITEM --- */}
                     <div className="col-span-1 md:col-span-12 mt-1">
                       {/* Alterations */}
-                      <div className="col-span-1">
-                        <input
-                          type="text"
-                          placeholder="Add Alterations (e.g., Hem 2 inches, Sew button)..."
-                          value={item.alterations || ''} // Default to empty string if undefined
-                          onChange={(e) => updateItem(index, { alterations: e.target.value })}
-                          className="w-full px-3 py-1 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500 placeholder-gray-400 bg-gray-50"
-                        />
+                      <div className="col-span-1 md:col-span-12 mt-2 bg-gray-50 p-2 rounded border border-gray-200 grid grid-cols-1 md:grid-cols-2 gap-3">
+
+                        {/* LEFT: Behavior Toggles (2 Buttons Only) */}
+                        <div className="flex items-center space-x-1">
+                          <button
+                            /* Standard Wash: Sets behavior to 'none'. Does NOT clear 'alterations' text (allows Wash + Alt). */
+                            onClick={() => updateItem(index, { alteration_behavior: 'none' })}
+                            className={`flex-1 py-1.5 text-xs font-bold rounded border transition-colors ${item.alteration_behavior === 'none' || !item.alteration_behavior
+                                ? 'bg-gray-600 text-white border-gray-600'
+                                : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-100'
+                              }`}
+                          >
+                            Standard Wash
+                          </button>
+
+                          <button
+                            /* Alt Only: Sets behavior to 'alteration_only'. Zeroes out base price in calculation. */
+                            onClick={() => updateItem(index, { alteration_behavior: 'alteration_only' })}
+                            className={`flex-1 py-1.5 text-xs font-bold rounded border transition-colors ${item.alteration_behavior === 'alteration_only'
+                                ? 'bg-pink-600 text-white border-pink-600'
+                                : 'bg-white text-pink-700 border-pink-200 hover:bg-pink-50'
+                              }`}
+                          >
+                            Alt Only
+                          </button>
+                        </div>
+
+                        {/* RIGHT: Dropdown (Always Visible) */}
+                        <div className="relative">
+                          <select
+                            value={item.alterations || ''}
+                            onChange={(e) => updateItem(index, { alterations: e.target.value })}
+                            className={`
+                w-full pl-3 pr-8 py-1.5 text-sm border rounded appearance-none font-medium transition-colors
+                focus:ring-1 focus:ring-purple-500 focus:outline-none
+                ${item.alterations
+                                ? 'bg-purple-50 border-purple-300 text-purple-900'
+                                : 'bg-white border-gray-300 text-gray-500'
+                              }
+            `}
+                          >
+                            <option value="">No Alteration...</option>
+                            {ALTERATION_OPTIONS.map((opt) => (
+                              <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                          </select>
+
+                          {/* Arrow Icon */}
+                          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-500">
+                            <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                              <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
+                            </svg>
+                          </div>
+                        </div>
                       </div>
                       {/* Instructions */}
-                      <div className="col-span-1">
-                        <input
-                          type="text"
-                          placeholder="Special Instructions for this item..."
-                          value={item.item_instructions || ''}
-                          onChange={(e) => updateItem(index, { item_instructions: e.target.value })}
-                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 placeholder-gray-400 bg-blue-50"
-                        />
+                      <div>
+                        <div className="relative">
+                          <select
+                            value={item.item_instructions || ''}
+                            onChange={(e) => updateItem(index, { item_instructions: e.target.value })}
+                            className={`w-full px-3 py-2 text-sm border rounded-md focus:ring-1 focus:ring-blue-500 appearance-none cursor-pointer
+                    ${item.item_instructions ? 'bg-blue-100 border-blue-300 text-blue-800 font-medium' : 'bg-white border-gray-300 text-gray-500'}
+                `}
+                          >
+                            {INSTRUCTION_OPTIONS.map((opt) => (
+                              <option key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                          {/* Custom Arrow Icon for better UI */}
+                          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-500">
+                            <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" /></svg>
+                          </div>
+                        </div>
                       </div>
                     </div>
                     {/* ------------------------------------------- */}
