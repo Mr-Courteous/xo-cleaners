@@ -5,9 +5,11 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from pydantic import BaseModel, EmailStr, Field
 import decimal # ADDED: Import for handling DECIMAL types
-from datetime import datetime, timedelta
-from datetime import timezone
+from datetime import timedelta, datetime, timezone
 from sqlalchemy.exc import IntegrityError
+from dateutil.relativedelta import relativedelta
+
+
 
 
 from utils.common import (
@@ -25,8 +27,44 @@ from utils.common import (
     TicketSummaryResponse,
     RackAssignmentRequest,
     GeneralTicketUpdateRequest,
-    TicketValidationResponse
+    TicketValidationResponse,
+    CustomerResponse
 )
+
+
+
+# --- HELPER FUNCTION: Calculate Loyalty Tenure ---
+def calculate_tenure(joined_at: datetime) -> str:
+    """
+    Returns a human-readable string like '1 Year, 2 Months' 
+    based on the time difference between now and joined_at.
+    Returns 'Prospect' if joined_at is None.
+    """
+    if not joined_at:
+        return "Prospect"
+    
+    # Ensure joined_at is timezone-aware for comparison (assuming UTC)
+    if joined_at.tzinfo is None:
+        joined_at = joined_at.replace(tzinfo=timezone.utc)
+        
+    now = datetime.now(timezone.utc)
+    diff = relativedelta(now, joined_at)
+    
+    parts = []
+    if diff.years > 0:
+        parts.append(f"{diff.years} Year{'s' if diff.years > 1 else ''}")
+    if diff.months > 0:
+        parts.append(f"{diff.months} Month{'s' if diff.months > 1 else ''}")
+        
+    # If less than a month, show days
+    if diff.years == 0 and diff.months == 0:
+        days = diff.days
+        if days == 0:
+            return "Joined Today"
+        parts.append(f"{days} Day{'s' if days > 1 else ''}")
+        
+    return ", ".join(parts[:2]) # Return max 2 units (e.g. "1 Year, 2 Months")
+
 
  
 class NewCustomerRequest(BaseModel):
@@ -177,72 +215,73 @@ async def get_clothing_types_for_organization(
         raise HTTPException(status_code=500, detail=str(e))
         
 
-@router.get("/customers", response_model=List[Dict[str, Any]])
-async def get_customers_by_organization(
-    search: Optional[str] = Query(None, description="Search customers by first or last name"),
+@router.get("/customers", response_model=List[CustomerResponse], summary="Get all customers for organization")
+def get_customers(
+    search: Optional[str] = None,
     db: Session = Depends(get_db),
     payload: Dict[str, Any] = Depends(get_current_user_payload)
 ):
     """
-    Get all customers for the logged-in staff member's organization.
-    Access is restricted to staff roles (cashier, admin, owner).
+    Retrieves all customers for the logged-in user's organization.
+    Includes 'joined_at' date and calculated 'tenure'.
     """
-    try:
-        # 1. Get user's role and their org_id from the TRUSTED token payload
-        user_role = payload.get("role")
-        organization_id = payload.get("organization_id") # <-- From the token
+    org_id = payload.get("organization_id")
+    
+    if not org_id:
+        raise HTTPException(status_code=400, detail="Organization ID missing.")
 
-        # 2. Authorization: Check if user is allowed to view customers
-        allowed_roles = ["cashier", "store_admin", "org_owner", "STORE_OWNER"]
-        if user_role not in allowed_roles:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You do not have permission to view customers."
+    # Base query
+    query_str = """
+        SELECT id, first_name, last_name, email, phone, address, role, organization_id, joined_at 
+        FROM allUsers 
+        WHERE organization_id = :org_id AND role = 'customer'
+    """
+    
+    params = {"org_id": org_id}
+
+    # Add search filter if provided
+    if search:
+        search_term = f"%{search}%"
+        query_str += """
+            AND (
+                LOWER(first_name) LIKE LOWER(:search) OR 
+                LOWER(last_name) LIKE LOWER(:search) OR 
+                LOWER(email) LIKE LOWER(:search) OR 
+                phone LIKE :search
             )
-
-        # 3. Validation: Check if the staff member's token has an organization
-        if not organization_id:
-            raise HTTPException(
-                status_code=400,
-                detail="Organization ID missing from token payload."
-            )
-
-        # 4. Base query for customers only
-        base_query = """
-            SELECT id, first_name, last_name, email, role, address
-            FROM allUsers
-            WHERE organization_id = :org_id
-              AND role = 'customer'
         """
+        params["search"] = search_term
+        
+    query_str += " ORDER BY first_name ASC"
 
-        # 5. Use the secure organization_id from the token
-        params = {"org_id": organization_id}
-
-        # 6. Add search filtering if provided
-        if search:
-            base_query += " AND (LOWER(first_name) LIKE :search OR LOWER(last_name) LIKE :search)"
-            params["search"] = f"%{search.lower()}%"
-
-        # 7. Order results
-        base_query += " ORDER BY first_name ASC, last_name ASC"
-
-        result = db.execute(text(base_query), params).mappings().all()
-
-        return [dict(row) for row in result]
+    try:
+        results = db.execute(text(query_str), params).fetchall()
+        
+        response = []
+        for row in results:
+            # --- CALCULATE TENURE HERE ---
+            tenure_str = calculate_tenure(row.joined_at)
+            
+            response.append(CustomerResponse(
+                id=row.id,
+                first_name=row.first_name,
+                last_name=row.last_name,
+                email=row.email,
+                phone=row.phone or "",
+                address=row.address,
+                role=row.role,
+                organization_id=row.organization_id,
+                
+                # --- NEW FIELDS MAPPED ---
+                joined_at=row.joined_at, 
+                tenure=tenure_str
+            ))
+            
+        return response
 
     except Exception as e:
-        # Don't print the error if it's an HTTPException we raised
-        if not isinstance(e, HTTPException):
-            print("Error fetching customers:", e)
-        
-        # Re-raise the exception (either ours or the new 500)
-        if isinstance(e, HTTPException):
-            raise e
-        else:
-            raise HTTPException(
-                status_code=500,
-                detail="An error occurred while fetching customers."
-            )
+        print(f"Error fetching customers: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch customers.")
         
         
 # ✅ CHANGED to @router.post to match the frontend
@@ -596,13 +635,261 @@ async def register_customer(
 
 
 
+# @router.post("/tickets", response_model=TicketResponse, status_code=status.HTTP_201_CREATED, tags=["Tickets"])
+# def create_ticket(
+#     ticket_data: TicketCreate,
+#     db: Session = Depends(get_db),
+#     payload: Dict[str, Any] = Depends(get_current_user_payload) 
+# ):
+#     """Creates a new ticket, saving all item details (including alterations) and financial data."""
+    
+#     try:
+#         # 3. GET SECURE DATA FROM TOKEN:
+#         organization_id = payload.get("organization_id")
+#         user_email = payload.get("sub")
+        
+#         if not organization_id:
+#             raise HTTPException(
+#                 status_code=status.HTTP_401_UNAUTHORIZED,
+#                 detail="Invalid token: Organization ID missing."
+#             )
+            
+#         print(f"User {user_email} (Org: {organization_id}) is creating a new ticket.")
+        
+#         # 1. Check customer existence (NOW FILTERED BY ORG)
+#         customer_query = text("""
+#             SELECT id, first_name, last_name, email  
+#             FROM allUsers 
+#             WHERE id = :id AND organization_id = :org_id AND role = 'customer'
+#         """)
+#         customer = db.execute(customer_query, {
+#             "id": ticket_data.customer_id, 
+#             "org_id": organization_id
+#         }).fetchone()
+        
+#         if not customer:
+#             raise HTTPException(status_code=404, detail=f"Customer not found in your organization.")
+
+#         # 2. Fetch prices (NOW FILTERED BY ORG)
+#         total_amount = decimal.Decimal('0.00')
+#         ticket_items_to_insert = []
+#         type_ids = [item.clothing_type_id for item in ticket_data.items]
+        
+#         if not type_ids:
+#                 raise HTTPException(status_code=400, detail="No items provided for the ticket.")
+        
+#         types_query = text("""
+#             SELECT id, name, plant_price, margin, total_price, pieces 
+#             FROM clothing_types 
+#             WHERE id IN :ids AND organization_id = :org_id
+#         """)
+#         types_result = db.execute(types_query, {
+#             "ids": tuple(type_ids),
+#             "org_id": organization_id
+#         }).fetchall()
+
+#         type_prices = {
+#             row[0]: {
+#                 "name": row[1], 
+#                 "plant_price": decimal.Decimal(str(row[2])),
+#                 "margin": decimal.Decimal(str(row[3])),
+#                 "total_price": decimal.Decimal(str(row[4])),
+#                 "pieces": row[5]
+#             } for row in types_result
+#         }
+        
+#         # 3. Calculate total_amount and prepare items
+#         for item_create in ticket_data.items:
+#             prices = type_prices.get(item_create.clothing_type_id)
+            
+#             if prices is None:
+#                 raise HTTPException(
+#                     status_code=400, 
+#                     detail=f"Invalid item: Clothing type ID {item_create.clothing_type_id} not found in your organization."
+#                 )
+
+#             item_total_price = prices["total_price"] * item_create.quantity
+#             total_amount += item_total_price
+
+#             # Prepare the item dictionary for batch insert
+#             ticket_items_to_insert.append({
+#                 "clothing_type_id": item_create.clothing_type_id,
+#                 "quantity": item_create.quantity,
+#                 "starch_level": item_create.starch_level,
+#                 "crease": item_create.crease,
+#                 "alterations": item_create.alterations, # <--- CHANGED: Added Alterations field
+#                 "item_instructions": item_create.item_instructions, # <--- MAP THIS
+#                 "plant_price": prices["plant_price"],
+#                 "margin": prices["margin"],
+#                 "item_total": item_total_price,
+#                 "organization_id": organization_id
+#             })
+
+#         # 4. DYNAMIC TICKET NUMBER (WITH 'FOR UPDATE' LOCK)
+#         date_prefix = datetime.now().strftime("%y%m%d")
+        
+#         def _fetch_latest_sequence():
+#             latest_ticket_query = text("""
+#                 SELECT ticket_number FROM tickets
+#                 WHERE ticket_number LIKE :prefix_like
+#                 ORDER BY ticket_number DESC
+#                 LIMIT 1
+#             """)
+#             row = db.execute(latest_ticket_query, {
+#                 "prefix_like": f"{date_prefix}-%",
+#             }).fetchone()
+#             if not row:
+#                 return 0
+#             try:
+#                 return int(row[0].split('-')[-1])
+#             except Exception:
+#                 return 0
+
+#         rack_number_val = ticket_data.rack_number
+#         instructions_val = ticket_data.special_instructions
+#         paid_amount_val = decimal.Decimal(str(ticket_data.paid_amount))
+#         pickup_date_val = ticket_data.pickup_date
+
+#         max_retries = 20
+#         attempt = 0
+#         ticket_result = None
+        
+#         while attempt < max_retries:
+#             attempt += 1
+#             last_seq = _fetch_latest_sequence()
+#             new_sequence = last_seq + 1
+#             ticket_number = f"{date_prefix}-{new_sequence:03d}"
+
+#             try:
+#                 ticket_insert_query = text("""
+#                     INSERT INTO tickets (
+#                         ticket_number, customer_id, total_amount, rack_number, 
+#                         special_instructions, paid_amount, pickup_date, 
+#                         organization_id
+#                     )
+#                     VALUES (
+#                         :ticket_number, :customer_id, :total_amount, :rack_number, 
+#                         :special_instructions, :paid_amount, :pickup_date, 
+#                         :org_id
+#                     )
+#                     RETURNING id, created_at, status
+#                 """)
+
+#                 ticket_result = db.execute(ticket_insert_query, {
+#                     "ticket_number": ticket_number,
+#                     "customer_id": ticket_data.customer_id,
+#                     "total_amount": total_amount,
+#                     "rack_number": rack_number_val,
+#                     "special_instructions": instructions_val,
+#                     "paid_amount": paid_amount_val,
+#                     "pickup_date": pickup_date_val,
+#                     "org_id": organization_id
+#                 }).fetchone()
+
+#                 if ticket_result is not None:
+#                     break
+
+#             except IntegrityError as ie:
+#                 db.rollback()
+#                 lower = str(ie).lower()
+#                 if 'unique' in lower and ('ticket_number' in lower or 'tickets_ticket_number' in lower):
+#                     continue
+#                 else:
+#                     raise
+#             except Exception:
+#                 db.rollback()
+#                 raise
+
+#         if ticket_result is None:
+#             db.rollback()
+#             raise HTTPException(status_code=500, detail="Failed to generate a unique ticket number.")
+        
+#         ticket_id = ticket_result[0]
+#         created_at = ticket_result[1]
+#         status_val = ticket_result[2]
+
+#         # 6. Insert Ticket Items (Batch insertion)
+#         item_rows = []
+#         for item in ticket_items_to_insert:
+#             item["ticket_id"] = ticket_id
+#             if "organization_id" not in item:
+#                 item["organization_id"] = organization_id
+#             item_rows.append(item)
+
+#         # <--- CHANGED: SQL Query now includes alterations
+#         item_insert_query = text("""
+#             INSERT INTO ticket_items (
+#                 ticket_id, clothing_type_id, quantity, starch_level, crease, alterations, item_instructions, plant_price, margin, item_total, organization_id
+#             )
+#             VALUES (
+#                 :ticket_id, :clothing_type_id, :quantity, :starch_level, :crease, :alterations, :item_instructions, :plant_price, :margin, :item_total, :organization_id
+#             )
+#             RETURNING id
+#         """)
+#         db.execute(item_insert_query, item_rows)
+        
+#         # 7. Commit transaction
+#         db.commit()
+
+#         # 8. Build the complete response object
+#         response_items = []
+#         for i, item in enumerate(ticket_items_to_insert, 1):
+#             clothing_type_id = item['clothing_type_id']
+#             clothing_name = type_prices[clothing_type_id]['name']
+
+#             response_items.append(
+#                 TicketItemResponse(
+#                     id=i, 
+#                     ticket_id=ticket_id,
+#                     clothing_type_id=clothing_type_id,
+#                     clothing_name=clothing_name,
+#                     quantity=item['quantity'],
+#                     starch_level=item['starch_level'],
+#                     crease=item['crease'],
+#                     alterations=item['alterations'], # <--- CHANGED: Return alterations in response
+#                     item_instructions=item['item_instructions'], # <--- RETURN IT
+#                     item_total=float(item['item_total']),
+#                     plant_price=float(item['plant_price']),
+#                     margin=float(item['margin']),
+#                     additional_charge=0.0,
+#                     pieces=type_prices[clothing_type_id]['pieces']
+#                 )
+#             )
+
+#         customer_name = f"{customer.first_name} {customer.last_name}"
+
+#         return TicketResponse(
+#             id=ticket_id,
+#             ticket_number=ticket_number,
+#             customer_id=ticket_data.customer_id,
+#             customer_name=customer_name,
+#             customer_phone=customer.email, 
+#             total_amount=float(total_amount),
+#             paid_amount=float(paid_amount_val), 
+#             status=status_val,
+#             rack_number=rack_number_val,
+#             special_instructions=instructions_val,
+#             pickup_date=pickup_date_val,
+#             created_at=created_at,
+#             items=response_items,
+#             organization_id=organization_id 
+#         )
+
+#     except HTTPException:
+#         db.rollback()
+#         raise
+#     except Exception as e:
+#         db.rollback()
+#         print(f"Error during ticket creation: {e}")
+#         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred during ticket processing.")
+
 @router.post("/tickets", response_model=TicketResponse, status_code=status.HTTP_201_CREATED, tags=["Tickets"])
 def create_ticket(
     ticket_data: TicketCreate,
     db: Session = Depends(get_db),
     payload: Dict[str, Any] = Depends(get_current_user_payload) 
 ):
-    """Creates a new ticket, saving all item details (including alterations) and financial data."""
+    """Creates a new ticket, saving all item details and activating loyalty if needed."""
     
     try:
         # 3. GET SECURE DATA FROM TOKEN:
@@ -617,9 +904,9 @@ def create_ticket(
             
         print(f"User {user_email} (Org: {organization_id}) is creating a new ticket.")
         
-        # 1. Check customer existence (NOW FILTERED BY ORG)
+        # 1. Check customer existence AND fetch joined_at status
         customer_query = text("""
-            SELECT id, first_name, last_name, email  
+            SELECT id, first_name, last_name, email, joined_at  -- <--- UPDATED: Added joined_at
             FROM allUsers 
             WHERE id = :id AND organization_id = :org_id AND role = 'customer'
         """)
@@ -630,6 +917,17 @@ def create_ticket(
         
         if not customer:
             raise HTTPException(status_code=404, detail=f"Customer not found in your organization.")
+
+        # --- LOYALTY TRIGGER: Activate Customer on First Ticket ---
+        if customer.joined_at is None:
+            # They are currently a "Prospect". This ticket makes them a "Member".
+            activate_query = text("UPDATE allUsers SET joined_at = :now WHERE id = :id")
+            db.execute(activate_query, {
+                "now": datetime.now(timezone.utc), # <--- Sets the "Member Since" date
+                "id": ticket_data.customer_id
+            })
+            # This update will be committed automatically at the end of this function (db.commit)
+        # ----------------------------------------------------------
 
         # 2. Fetch prices (NOW FILTERED BY ORG)
         total_amount = decimal.Decimal('0.00')
@@ -669,7 +967,22 @@ def create_ticket(
                     detail=f"Invalid item: Clothing type ID {item_create.clothing_type_id} not found in your organization."
                 )
 
-            item_total_price = prices["total_price"] * item_create.quantity
+            # --- CALCULATE ITEM PRICE BASED ON ALTERATION BEHAVIOR ---
+            # (Assuming you implemented the alteration logic discussed previously)
+            base_wash_price = prices["total_price"]
+            quantity = decimal.Decimal(str(item_create.quantity))
+            extra_charge = decimal.Decimal(str(item_create.additional_charge or 0.0))
+            
+            # Logic: If 'alteration_only', price is just the extra charge. Otherwise base + extra.
+            behavior = getattr(item_create, 'alteration_behavior', 'none') # Safe getter
+            
+            if behavior == 'alteration_only':
+                item_total_price = extra_charge
+            elif behavior == 'wash_and_alteration':
+                item_total_price = (base_wash_price * quantity) + extra_charge
+            else:
+                item_total_price = (base_wash_price * quantity) + extra_charge
+            
             total_amount += item_total_price
 
             # Prepare the item dictionary for batch insert
@@ -678,15 +991,20 @@ def create_ticket(
                 "quantity": item_create.quantity,
                 "starch_level": item_create.starch_level,
                 "crease": item_create.crease,
-                "alterations": item_create.alterations, # <--- CHANGED: Added Alterations field
-                "item_instructions": item_create.item_instructions, # <--- MAP THIS
+                "alterations": item_create.alterations,
+                "item_instructions": item_create.item_instructions,
+                
+                # Ensure we save the behavior
+                "alteration_behavior": behavior, 
+                "additional_charge": float(extra_charge), # Make sure to save the price!
+
                 "plant_price": prices["plant_price"],
                 "margin": prices["margin"],
                 "item_total": item_total_price,
                 "organization_id": organization_id
             })
 
-        # 4. DYNAMIC TICKET NUMBER (WITH 'FOR UPDATE' LOCK)
+        # 4. DYNAMIC TICKET NUMBER
         date_prefix = datetime.now().strftime("%y%m%d")
         
         def _fetch_latest_sequence():
@@ -777,19 +1095,22 @@ def create_ticket(
                 item["organization_id"] = organization_id
             item_rows.append(item)
 
-        # <--- CHANGED: SQL Query now includes alterations
         item_insert_query = text("""
             INSERT INTO ticket_items (
-                ticket_id, clothing_type_id, quantity, starch_level, crease, alterations, item_instructions, plant_price, margin, item_total, organization_id
+                ticket_id, clothing_type_id, quantity, starch_level, crease, 
+                alterations, item_instructions, alteration_behavior, additional_charge, -- <--- Columns
+                plant_price, margin, item_total, organization_id
             )
             VALUES (
-                :ticket_id, :clothing_type_id, :quantity, :starch_level, :crease, :alterations, :item_instructions, :plant_price, :margin, :item_total, :organization_id
+                :ticket_id, :clothing_type_id, :quantity, :starch_level, :crease, 
+                :alterations, :item_instructions, :alteration_behavior, :additional_charge, -- <--- Values
+                :plant_price, :margin, :item_total, :organization_id
             )
             RETURNING id
         """)
         db.execute(item_insert_query, item_rows)
         
-        # 7. Commit transaction
+        # 7. Commit transaction (This saves the ticket AND the new joined_at date if triggered)
         db.commit()
 
         # 8. Build the complete response object
@@ -807,12 +1128,13 @@ def create_ticket(
                     quantity=item['quantity'],
                     starch_level=item['starch_level'],
                     crease=item['crease'],
-                    alterations=item['alterations'], # <--- CHANGED: Return alterations in response
-                    item_instructions=item['item_instructions'], # <--- RETURN IT
+                    alterations=item['alterations'],
+                    item_instructions=item['item_instructions'],
+                    alteration_behavior=item['alteration_behavior'], # <--- Returned
                     item_total=float(item['item_total']),
                     plant_price=float(item['plant_price']),
                     margin=float(item['margin']),
-                    additional_charge=0.0,
+                    additional_charge=item['additional_charge'],
                     pieces=type_prices[clothing_type_id]['pieces']
                 )
             )

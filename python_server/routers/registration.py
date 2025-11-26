@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError # <-- FIX 1A: IMPORT IntegrityError
 from psycopg2.errorcodes import UNIQUE_VIOLATION, FOREIGN_KEY_VIOLATION # Optional for better error handling
+from datetime import timedelta, datetime, timezone
 
 # Import shared utilities and constants from your utility file
 from utils.common import (
@@ -392,14 +393,20 @@ async def register_staff_user(
     try:
         hashed_pw = hash_password(data.password)
 
-        # --- MODIFIED: Added 'phone' column ---
+        # --- MODIFIED: Added 'joined_at' column ---
         insert_stmt = text("""
-            INSERT INTO allUsers (organization_id, email, password_hash, first_name, last_name, role, phone)
-            VALUES (:org_id, :email, :password_hash, :first_name, :last_name, :role, :phone)
+            INSERT INTO allUsers (
+                organization_id, email, password_hash, first_name, last_name, role, phone, 
+                joined_at  -- <--- ADDED COLUMN
+            )
+            VALUES (
+                :org_id, :email, :password_hash, :first_name, :last_name, :role, :phone, 
+                :joined_at -- <--- ADDED VALUE PLACEHOLDER
+            )
             RETURNING id
         """)
 
-        # --- MODIFIED: Added 'phone' parameter ---
+        # --- MODIFIED: Added 'joined_at' parameter (Staff join immediately) ---
         result = db.execute(insert_stmt, {
             "org_id": org_id_for_db,
             "email": data.email.strip().lower(),
@@ -407,7 +414,8 @@ async def register_staff_user(
             "first_name": data.first_name,
             "last_name": data.last_name,
             "role": data.role or "staff",
-            "phone": data.phone.strip() if data.phone else None, # <-- ADDED
+            "phone": data.phone.strip() if data.phone else None,
+            "joined_at": datetime.now(timezone.utc) # <--- Sets start date to NOW
         }).fetchone()
 
         db.commit()
@@ -423,17 +431,14 @@ async def register_staff_user(
         db.rollback()
 
         if "duplicate key value violates unique constraint" in str(e):
-            if "allusers_email_key" in str(e): # Be more specific if you know the constraint name
+            if "allusers_email_key" in str(e): 
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"User with email '{data.email}' already exists."
                 )
-            # You could add another check here for a unique phone constraint
         
         print("Error during staff registration:", e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred while registering staff."
         )
-        
-        

@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react'; // Added useCallback
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { 
   Package, Clock, CheckCircle, MapPin, Users, CreditCard, FileText, RefreshCw, Tag, 
   Mail, User, DollarSign, AlertCircle, X, 
-  Search 
+  Search, BookUser // <--- BookUser for Directory
 } from 'lucide-react';
 import Header from './Header';
 import baseURL from '../lib/config';
@@ -12,17 +12,15 @@ import PickUp from './PickUp';
 import RackManagement from './RackManagement'; 
 import ClothingManagement from './ClothingManagement';
 
-// --- Import the new components ---
+// --- Import components ---
 import StatusManagement from './StatusManagement';
 import CustomerManagement from './CustomerManagement';
-// import UsersManagement from './UsersManagement'; // --- REMOVED ---
-import TicketManagement from './TicketManagement'; // --- NEW ---
-import TagManagement from './Tag'; // <-- ADDED THIS IMPORT
+import TicketManagement from './TicketManagement';
+import TagManagement from './Tag';
+import CustomerDirectory from './CustomerDirectory'; // <--- IMPORT DIRECTORY
 
-
-// --- (Existing) Type for the summary list ---
+// --- Types ---
 interface TicketSummary {
-// ... (interface unchanged)
   id: number;
   ticket_number: string;
   customer_name: string;
@@ -36,9 +34,7 @@ interface TicketSummary {
   organization_id: number;
 }
 
-// --- (Existing) Type for an item *within* the full ticket response
 interface TicketItemDetail {
-// ... (interface unchanged)
   id: number;
   ticket_id: number;
   clothing_type_id: number;
@@ -52,9 +48,7 @@ interface TicketItemDetail {
   additional_charge: number;
 }
 
-// --- (Existing) Type for the full ticket response
 interface TicketResponse {
-// ... (interface unchanged)
   id: number;
   ticket_number: string;
   customer_id: number;
@@ -67,18 +61,19 @@ interface TicketResponse {
   special_instructions: string | null;
   pickup_date: string | null;
   created_at: string;
-  items: TicketItemDetail[]; // The full item list
+  items: TicketItemDetail[];
   organization_id: number;
 }
 
-
 export default function CashierDashboard() {
-  const [currentView, setCurrentView] = useState<string>('overview');
-  const [loading, setLoading] = useState<boolean>(true); // For initial page load
+  // Navigation State (Sidebar)
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'drop-off' | 'pick-up' | 'racks' | 'clothing' | 'status' | 'customers' | 'directory' | 'tickets' | 'tags'>('dashboard');
+  
+  const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
+  // --- Dashboard Stats State ---
   const [stats, setStats] = useState({
-// ... (state unchanged)
     total_tickets: 0,
     pending_pickup: 0,
     in_process: 0,
@@ -88,25 +83,24 @@ export default function CashierDashboard() {
 
   const [tickets, setTickets] = useState<TicketSummary[]>([]);
 
-  // --- (Existing) STATE FOR TICKET DETAIL MODAL ---
+  // --- Modal State ---
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [selectedTicketDetails, setSelectedTicketDetails] = useState<TicketResponse | null>(null);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
 
-  // --- (Existing) STATE FOR FILTERING TICKETS ---
+  // --- Filter State ---
   const [ticketFilter, setTicketFilter] = useState("");
   const [filteredTickets, setFilteredTickets] = useState<TicketSummary[]>([]);
 
-  // --- NEW: State for refreshing ---
+  // --- Refresh State ---
   const [refreshKey, setRefreshKey] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-
-  // --- REFACTORED: Data Fetching moved to useCallback ---
+  // --- Data Fetching ---
   const fetchDashboardData = useCallback(async () => {
     try {
-      setIsRefreshing(true); // Show refresh state
+      setIsRefreshing(true);
       setError(null);
 
       const token = localStorage.getItem("accessToken");
@@ -114,28 +108,25 @@ export default function CashierDashboard() {
 
       const headers = { Authorization: `Bearer ${token}` };
 
+      // Fetch Racks and Tickets in parallel
       const [racksResponse, ticketsResponse] = await Promise.all([
         axios.get(`${baseURL}/api/organizations/racks`, { headers }),
         axios.get(`${baseURL}/api/organizations/tickets`, { headers })
       ]);
 
-      // --- Process Racks ---
+      // Process Racks
       const racks = racksResponse.data?.racks || [];
-      console.log(racks)
       const occupied = racks.filter((r: any) => r.is_occupied).length;
       const available = racks.length - occupied;
 
-      // --- Process Tickets ---
+      // Process Tickets
       const ticketsData: TicketSummary[] = ticketsResponse.data || [];
       setTickets(ticketsData); 
 
       const total_tickets = ticketsData.length;
-      const pending_pickup = ticketsData.filter(
-        (t) => t.status === 'ready_for_pickup' // <-- Adjust this status string if needed
-      ).length;
-      const in_process = ticketsData.filter(
-        (t) => t.status === 'processing' // <-- Adjust this status string if needed
-      ).length;
+      // Adjust status strings as per your backend logic
+      const pending_pickup = ticketsData.filter(t => t.status === 'ready_for_pickup' || t.status === 'ready').length;
+      const in_process = ticketsData.filter(t => t.status === 'processing' || t.status === 'at_plant').length;
       
       setStats({
         total_tickets,
@@ -149,26 +140,22 @@ export default function CashierDashboard() {
       console.error("Error fetching dashboard data:", err);
       setError(err.response?.data?.detail || err.message);
     } finally {
-      setLoading(false); // Hide initial load spinner
-      setIsRefreshing(false); // Hide refresh button spinner
+      setLoading(false);
+      setIsRefreshing(false);
     }
-  }, []); // Empty dependency array means this function is stable
+  }, []);
 
-  // --- (Modified) Data Fetching Effect ---
   useEffect(() => {
-    setLoading(true); // Set initial loading
+    setLoading(true);
     fetchDashboardData();
-  }, [fetchDashboardData]); // Runs on mount (and if fetchDashboardData ever changed, which it won't)
+  }, [fetchDashboardData]);
 
-  // --- NEW: Refresh Handler ---
   const handleRefresh = () => {
-    // 1. Call the main fetch function to refresh stats and tickets
     fetchDashboardData();
-    // 2. Increment key to force-remount child components (DropOff, PickUp, etc.)
     setRefreshKey(prevKey => prevKey + 1);
   };
 
-  // --- (Existing) EFFECT FOR FILTERING TICKETS ---
+  // --- Filtering Logic ---
   useEffect(() => {
     const lowerCaseFilter = ticketFilter.toLowerCase();
     const filtered = tickets.filter(
@@ -177,11 +164,10 @@ export default function CashierDashboard() {
         ticket.customer_name.toLowerCase().includes(lowerCaseFilter)
     );
     setFilteredTickets(filtered);
-  }, [ticketFilter, tickets]); // Re-run when filter or tickets change
+  }, [ticketFilter, tickets]);
 
-  // --- (Existing) Function to fetch and display single ticket details
+  // --- Ticket Detail Handler ---
   const handleTicketClick = async (ticketId: number) => {
-// ... (function unchanged)
     setIsDetailModalOpen(true);
     setIsDetailLoading(true);
     setDetailError(null);
@@ -189,15 +175,11 @@ export default function CashierDashboard() {
 
     try {
       const token = localStorage.getItem("accessToken");
-      if (!token) throw new Error("Access token missing");
-
       const response = await axios.get(
         `${baseURL}/api/organizations/tickets/${ticketId}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      
       setSelectedTicketDetails(response.data);
-
     } catch (err: any) { 
       console.error("Error fetching ticket details:", err);
       setDetailError(err.response?.data?.detail || "Failed to load ticket details.");
@@ -206,9 +188,8 @@ export default function CashierDashboard() {
     }
   };
 
-
+  // --- STAT CARDS CONFIG ---
   const statCards = [
-// ... (array unchanged)
     { title: 'Total Tickets', value: stats.total_tickets, icon: Package, color: 'text-blue-600', bgColor: 'bg-blue-50' },
     { title: 'Ready for Pickup', value: stats.pending_pickup, icon: CheckCircle, color: 'text-green-600', bgColor: 'bg-green-50' },
     { title: 'In Process', value: stats.in_process, icon: Clock, color: 'text-amber-600', bgColor: 'bg-amber-50' },
@@ -216,364 +197,355 @@ export default function CashierDashboard() {
     { title: 'Available Racks', value: stats.available_racks, icon: Users, color: 'text-gray-600', bgColor: 'bg-gray-50' },
   ];
 
-  const features = [
-// ... (array unchanged)
-    { id: 'new-customer', title: 'Create Customer Profile', icon: User },
-    { id: 'collect-payment', title: 'Collect/Process Payment', icon: CreditCard },
-    { id: 'void-ticket', title: 'Void Ticket', icon: RefreshCw },
-    { id: 'refund', title: 'Process Refund', icon: DollarSign },
-    { id: 'apply-promo', title: 'Apply Promo/Discount', icon: Tag },
-    { id: 'order-history', title: 'Search/View Order History', icon: FileText },
-    { id: 'reprint-receipt', title: 'Reprint/Email Receipt', icon: Mail },
-    { id: 'update-contact', title: 'Update Customer Details', icon: User },
-    { id: 'transfer-ticket', title: 'Transfer Ticket to Another Store', icon: MapPin },
-    { id: 'missed-pickups', title: 'Manage Missed Pickups/Reschedules', icon: Clock },
-    { id: 'complaints', title: 'Log Complaints/Resolutions', icon: AlertCircle },
-    { id: 'notifications', title: 'Send Notifications/Reminders', icon: Mail },
-    { id: 'petty-cash', title: 'Manage Petty Cash/End-of-Day', icon: DollarSign },
-  ];
+  // --- DASHBOARD HOME VIEW (Stats + Table) ---
+  const DashboardHome = () => (
+    <div className="p-6 space-y-6">
+      
+      {/* 1. Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+        {statCards.map((card) => {
+          const Icon = card.icon;
+          return (
+            <div key={card.title} className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+              <div className="flex items-center">
+                <div className={`${card.bgColor} p-3 rounded-lg`}>
+                  <Icon className={`h-6 w-6 ${card.color}`} />
+                </div>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-600">{card.title}</p>
+                  <p className="text-2xl font-bold text-gray-900">{card.value}</p>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* 2. Recent Tickets Table */}
+      <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-semibold text-gray-900">Recent Tickets</h2>
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Filter by ticket # or name..."
+              value={ticketFilter}
+              onChange={(e) => setTicketFilter(e.target.value)}
+              className="pl-10 pr-4 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+          </div>
+        </div>
+
+        <div className="overflow-x-auto overflow-y-auto max-h-96 relative">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50 sticky top-0">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ticket #</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pickup By</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {filteredTickets.length > 0 ? (
+                filteredTickets.slice(0, 10).map((ticket) => ( 
+                  <tr 
+                    key={ticket.id} 
+                    onClick={() => handleTicketClick(ticket.id)}
+                    className="cursor-pointer hover:bg-gray-50"
+                  >
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600">{ticket.ticket_number}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{ticket.customer_name}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                        ticket.status === 'ready_for_pickup' || ticket.status === 'ready' ? 'bg-green-100 text-green-800' :
+                        ticket.status === 'processing' ? 'bg-amber-100 text-amber-800' :
+                        'bg-gray-100 text-gray-800'
+                      }`}>
+                        {ticket.status.replace('_', ' ')}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${ticket.total_amount.toFixed(2)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {ticket.pickup_date ? new Date(ticket.pickup_date).toLocaleDateString() : 'N_A'}
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={5} className="px-6 py-4 text-center text-sm text-gray-500">
+                    {ticketFilter ? "No tickets match your filter." : "No tickets found."}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Header />
-
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-        
-        {/* --- NEW: Title and Refresh Button --- */}
-        <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold text-gray-800">Cashier Dashboard</h1>
-          <button
-            onClick={handleRefresh}
-            disabled={isRefreshing}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg shadow hover:bg-blue-700 transition-colors disabled:opacity-50"
-          >
-            <RefreshCw className={`w-5 h-5 ${isRefreshing ? 'animate-spin' : ''}`} />
-            {isRefreshing ? 'Refreshing...' : 'Refresh'}
-          </button>
+    <div className="flex h-screen bg-gray-50 font-sans">
+      
+      {/* --- FIXED SIDEBAR --- */}
+      <div className="w-64 bg-white border-r border-gray-200 flex flex-col flex-shrink-0 z-20">
+        <div className="p-6 border-b border-gray-200">
+          {/* <h1 className="text-xl font-bold text-gray-900 flex items-center">
+            <Package className="w-6 h-6 mr-2 text-blue-600" />
+            CleanPOS
+          </h1> */}
+          <p className="text-xs text-gray-500 mt-1 ml-8">Cashier / Store Admin</p>
         </div>
 
-        {/* --- View Buttons --- */}
-        {/* --- CHANGED --- Swapped 'users' for 'tickets' */}
-        <div className="flex flex-wrap gap-4 mb-4">
-          {[
-            'overview', 'dropoff', 'pickup', 'clothing', 'assign rack', 
-            'status', 'customers', 'tickets', 'tag' // <-- ADDED 'tag'
-          ].map((view) => (
+        <nav className="mt-6 px-4 space-y-2 overflow-y-auto flex-1">
+          {/* Dashboard */}
+          <button
+            onClick={() => setActiveTab('dashboard')}
+            className={`w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+              activeTab === 'dashboard' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            <FileText className="w-5 h-5 mr-3" />
+            Dashboard
+          </button>
+
+          {/* Drop Off */}
+          <button
+            onClick={() => setActiveTab('drop-off')}
+            className={`w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+              activeTab === 'drop-off' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            <Package className="w-5 h-5 mr-3" />
+            Drop Off
+          </button>
+
+          {/* Pick Up */}
+          <button
+            onClick={() => setActiveTab('pick-up')}
+            className={`w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+              activeTab === 'pick-up' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            <CheckCircle className="w-5 h-5 mr-3" />
+            Pick Up
+          </button>
+
+          {/* Tickets */}
+          <button
+            onClick={() => setActiveTab('tickets')}
+            className={`w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+              activeTab === 'tickets' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            <FileText className="w-5 h-5 mr-3" />
+            Tickets
+          </button>
+
+          {/* --- NEW DIRECTORY BUTTON --- */}
+          <button
+            onClick={() => setActiveTab('directory')}
+            className={`w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+              activeTab === 'directory' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            <BookUser className="w-5 h-5 mr-3" />
+            Directory
+          </button>
+          {/* ---------------------------- */}
+
+          {/* Existing Customers Management */}
+          <button
+            onClick={() => setActiveTab('customers')}
+            className={`w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+              activeTab === 'customers' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            <Users className="w-5 h-5 mr-3" />
+            Customers (Edit)
+          </button>
+
+          <div className="pt-4 mt-4 border-t border-gray-200">
+            <p className="px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+              Management
+            </p>
+            
             <button
-              key={view}
-              onClick={() => setCurrentView(view)}
-              className={`px-4 py-2 rounded-md font-medium capitalize ${ 
-                currentView === view
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-100 text-gray-700'
+              onClick={() => setActiveTab('racks')}
+              className={`w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+                activeTab === 'racks' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'
               }`}
             >
-              {view}
+              <RefreshCw className="w-5 h-5 mr-3" />
+              Rack Management
             </button>
-          ))}
-        </div>
 
-        {/* --- Loading & Error States --- */}
-        {loading && <p className="text-gray-500">Loading dashboard data...</p>}
-        {error && <p className="text-red-600">{error}</p>}
+            <button
+              onClick={() => setActiveTab('clothing')}
+              className={`w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+                activeTab === 'clothing' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              <Tag className="w-5 h-5 mr-3" />
+              Clothing Types
+            </button>
 
-        {/* --- Overview --- */}
-        {!loading && currentView === 'overview' && (
-          <>
-            {/* --- Stat Cards --- */}
-            {/* ... (unchanged) ... */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-6">
-              {statCards.map((card) => {
-                const Icon = card.icon;
-                return (
-                  <div key={card.title} className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-                    <div className="flex items-center">
-                      <div className={`${card.bgColor} p-3 rounded-lg`}>
-                        <Icon className={`h-6 w-6 ${card.color}`} />
-                      </div>
-                      <div className="ml-4">
-                        <p className="text-sm font-medium text-gray-600">{card.title}</p>
-                        <p className="text-2xl font-bold text-gray-900">{card.value}</p>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+            <button
+              onClick={() => setActiveTab('tags')}
+              className={`w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+                activeTab === 'tags' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              <Tag className="w-5 h-5 mr-3" />
+              Tag Management
+            </button>
+
+            <button
+              onClick={() => setActiveTab('status')}
+              className={`w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+                activeTab === 'status' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              <Clock className="w-5 h-5 mr-3" />
+              Ticket Status
+            </button>
+          </div>
+        </nav>
+      </div>
+
+      {/* --- MAIN CONTENT AREA --- */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <Header /> 
+
+        <main className="flex-1 overflow-x-hidden overflow-y-auto bg-gray-50">
+          {/* Error/Loading for Dashboard Data */}
+          {loading && activeTab === 'dashboard' && <p className="p-6 text-gray-500">Loading dashboard data...</p>}
+          {error && <p className="p-6 text-red-600">{error}</p>}
+
+          {/* --- Views --- */}
+          {activeTab === 'dashboard' && !loading && <DashboardHome />}
+          {activeTab === 'drop-off' && <div className="p-6"><DropOff key={refreshKey} /></div>}
+          {activeTab === 'pick-up' && <div className="p-6"><PickUp key={refreshKey} /></div>}
+          {activeTab === 'racks' && <div className="p-6"><RackManagement key={refreshKey} /></div>}
+          {activeTab === 'clothing' && <div className="p-6"><ClothingManagement key={refreshKey} /></div>}
+          {activeTab === 'status' && <div className="p-6"><StatusManagement key={refreshKey} /></div>}
+          {activeTab === 'customers' && <div className="p-6"><CustomerManagement key={refreshKey} /></div>}
+          {activeTab === 'tickets' && <div className="p-6"><TicketManagement key={refreshKey} /></div>}
+          {activeTab === 'tags' && <div className="p-6"><TagManagement key={refreshKey} /></div>}
+          
+          {/* --- DIRECTORY --- */}
+          {activeTab === 'directory' && <div className="p-6"><CustomerDirectory key={refreshKey} /></div>}
+        </main>
+      </div>
+
+      {/* --- TICKET DETAIL MODAL (Global) --- */}
+      {isDetailModalOpen && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+            <div className="fixed inset-0 transition-opacity" aria-hidden="true">
+              <div className="absolute inset-0 bg-gray-500 opacity-75" onClick={() => setIsDetailModalOpen(false)}></div>
             </div>
 
-            {/* --- Features --- */}
-            {/* ... (unchanged) ... */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {features.map((feature) => {
-                const Icon = feature.icon;
-                return (
-                  <div
-                    key={feature.id}
-                    onClick={() => setCurrentView(feature.id)}
-                    className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer flex items-center space-x-3"
-                  >
-                    <Icon className="h-6 w-6 text-blue-600" />
-                    <span className="font-medium text-gray-900">{feature.title}</span>
-                  </div>
-                );
-              })}
-            </div>
+            <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
 
-            {/* --- Recent Tickets --- */}
-            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 mt-8">
-              {/* --- (Existing) flex container for title and search */}
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-semibold text-gray-900">Recent Tickets</h2>
-                {/* --- (Existing) search bar */}
-                <div className="relative">
-                  <input
-                    type="text"
-                    placeholder="Filter by ticket # or name..."
-                    value={ticketFilter}
-                    onChange={(e) => setTicketFilter(e.target.value)}
-                    className="pl-10 pr-4 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+            <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg w-full">
+              {/* Modal Header */}
+              <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4 border-b border-gray-100">
+                <div className="flex justify-between items-center">
+                  <h3 className="text-lg leading-6 font-medium text-gray-900" id="modal-title">
+                    Ticket Details
+                  </h3>
+                  <button onClick={() => setIsDetailModalOpen(false)} className="text-gray-400 hover:text-gray-500">
+                    <X className="h-6 w-6" />
+                  </button>
                 </div>
               </div>
 
-              {/* --- (Existing) max-h-96 and overflow-y-auto for scrolling */}
-              <div className="overflow-x-auto overflow-y-auto max-h-96 relative">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50 sticky top-0">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ticket #</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pickup By</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {/* --- (Existing) Use filteredTickets.length */}
-                    {filteredTickets.length > 0 ? (
-                      // --- (Existing) Map over filteredTickets
-                      filteredTickets.slice(0, 10).map((ticket) => ( 
-                        <tr 
-                          key={ticket.id} 
-                          onClick={() => handleTicketClick(ticket.id)}
-                          className="cursor-pointer hover:bg-gray-50"
-                        >
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600">{ticket.ticket_number}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{ticket.customer_name}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                              ticket.status === 'ready_for_pickup' ? 'bg-green-100 text-green-800' :
-                              ticket.status === 'processing' ? 'bg-amber-100 text-amber-800' :
-                              'bg-gray-100 text-gray-800'
-                            }`}>
-                              {ticket.status}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${ticket.total_amount.toFixed(2)}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {ticket.pickup_date ? new Date(ticket.pickup_date).toLocaleDateString() : 'N_A'}
-                          </td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={5} className="px-6 py-4 text-center text-sm text-gray-500">
-                          {/* --- (Existing) Show dynamic message */}
-                          {ticketFilter ? "No tickets match your filter." : "No tickets found."}
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* --- Drop-off --- */}
-        {/* --- MODIFIED: Added key --- */}
-        {currentView === 'dropoff' && (
-          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-            <DropOff key={refreshKey} />
-          </div>
-        )}
-
-        {/* --- Pick-up --- */}
-        {/* --- MODIFIED: Added key --- */}
-        {currentView === 'pickup' && (
-          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-            <PickUp key={refreshKey} />
-          </div>
-        )}
-
-        {/* --- (Existing) Render RackManagement component --- */}
-        {/* --- MODIFIED: Added key --- */}
-        {currentView === 'assign rack' && (
-          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-            <RackManagement key={refreshKey} />
-          </div>
-        )}
-
-        {/* --- (Existing) Clothing Management (Cashier add/edit) --- */}
-        {/* --- MODIFIED: Added key --- */}
-        {currentView === 'clothing' && (
-          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-            <ClothingManagement key={refreshKey} />
-          </div>
-        )}
-
-        {/* --- Render StatusManagement component --- */}
-        {/* --- MODIFIED: Added key --- */}
-        {currentView === 'status' && (
-          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-            <StatusManagement key={refreshKey} />
-          </div>
-        )}
-
-        {/* --- Render CustomerManagement component --- */}
-        {/* --- MODIFIED: Added key --- */}
-        {currentView === 'customers' && (
-          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-            <CustomerManagement key={refreshKey} />
-          </div>
-        )}
-
-        {/* --- REMOVED --- UsersManagement component
-        {currentView === 'users' && (
-          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-            <UsersManagement />
-          </div>
-        )}
-        */}
-
-        {/* --- NEW --- Render TicketManagement component */}
-        {/* --- MODIFIED: Added key --- */}
-        {currentView === 'tickets' && (
-          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-            <TicketManagement key={refreshKey} />
-          </div>
-        )}
-
-        {/* --- NEW --- Render TagManagement component */}
-        {/* --- MODIFIED: Added key --- */}
-        {currentView === 'tag' && (
-          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-            <TagManagement key={refreshKey} />
-          </div>
-        )}
-
-      </div>
-
-      {/* --- Ticket Detail Modal --- */}
-      {/* ... (modal JSX is unchanged) ... */}
-      {isDetailModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60 transition-opacity">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4">
-            <div className="p-6">
-              
-              {/* Modal Header */}
-              <div className="flex justify-between items-center pb-4 border-b">
-                <h2 className="text-2xl font-semibold text-gray-900">
-                  Ticket Details
-                </h2>
-                <button 
-                  onClick={() => setIsDetailModalOpen(false)} 
-                  className="text-gray-400 hover:text-gray-600"
-                  aria-label="Close"
-                >
-                  <X size={24} />
-                </button>
-              </div>
-
-              {/* Modal Content */}
-              <div className="pt-6">
-                {isDetailLoading && <p className="text-gray-600 text-center">Loading details...</p>}
-                
-                {detailError && <p className="text-red-600 text-center">{detailError}</p>}
-
-                {selectedTicketDetails && (
-                  <div className="space-y-6">
-                    
-                    {/* Customer & Ticket Info */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Modal Body */}
+              <div className="bg-white px-4 pt-5 pb-4 sm:p-6">
+                {isDetailLoading ? (
+                  <div className="flex justify-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                  </div>
+                ) : !selectedTicketDetails ? (
+                  <div className="text-center text-red-500">Failed to load details.</div>
+                ) : (
+                  <div className="space-y-4">
+                    {/* Header Info */}
+                    <div className="grid grid-cols-2 gap-4 text-sm">
                       <div>
-                        <p className="text-sm font-medium text-gray-500">Ticket #</p>
-                        <p className="text-lg font-semibold text-blue-600">{selectedTicketDetails.ticket_number}</p>
+                        <span className="text-gray-500">Ticket #:</span>
+                        <span className="ml-2 font-medium">{selectedTicketDetails.ticket_number}</span>
                       </div>
                       <div>
-                        <p className="text-sm font-medium text-gray-500">Customer</p>
-                        <p className="text-lg font-semibold text-gray-900">{selectedTicketDetails.customer_name}</p>
-                        <p className="text-sm text-gray-600">{selectedTicketDetails.customer_phone}</p>
+                        <span className="text-gray-500">Date:</span>
+                        <span className="ml-2 font-medium">{new Date(selectedTicketDetails.created_at).toLocaleDateString()}</span>
                       </div>
-                    </div>
-
-                    {/* Status & Dates */}
-                    <div className="grid grid-cols-3 gap-4">
                       <div>
-                        <p className="text-sm font-medium text-gray-500">Status</p>
-                        <span className={`px-2 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                          selectedTicketDetails.status === 'ready_for_pickup' ? 'bg-green-100 text-green-800' :
-                          selectedTicketDetails.status === 'processing' ? 'bg-amber-100 text-amber-800' :
-                          'bg-gray-100 text-gray-800'
-                        }`}>
-                          {selectedTicketDetails.status}
+                        <span className="text-gray-500">Customer:</span>
+                        <span className="ml-2 font-medium">{selectedTicketDetails.customer_name}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">Phone:</span>
+                        <span className="ml-2 font-medium">{selectedTicketDetails.customer_phone || 'N/A'}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">Status:</span>
+                        <span className={`ml-2 px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
+                          ${selectedTicketDetails.status === 'ready_for_pickup' || selectedTicketDetails.status === 'ready' ? 'bg-green-100 text-green-800' : 
+                            selectedTicketDetails.status === 'picked_up' ? 'bg-gray-100 text-gray-800' : 'bg-amber-100 text-amber-800'}`}>
+                          {selectedTicketDetails.status.replace('_', ' ')}
                         </span>
                       </div>
                       <div>
-                        <p className="text-sm font-medium text-gray-500">Rack</p>
-                        <p className="text-gray-900">{selectedTicketDetails.rack_number || 'N/A'}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-500">Pickup By</p>
-                        <p className="text-gray-900">{selectedTicketDetails.pickup_date ? new Date(selectedTicketDetails.pickup_date).toLocaleString() : 'N/A'}</p>
-                      </div>
-                    </div>
-                    
-                    {/* Items Table */}
-                    <div className="border-t pt-4">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-2">Items</h3>
-                      <div className="overflow-x-auto border rounded-lg">
-                        <table className="min-w-full divide-y divide-gray-200">
-                          <thead className="bg-gray-50">
-                            <tr>
-                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Item</th>
-                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Qty</th>
-                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Details</th>
-                              <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Total</th>
-                            </tr>
-                          </thead>
-                          <tbody className="bg-white divide-y divide-gray-200">
-                            {selectedTicketDetails.items.map(item => (
-                              <tr key={item.id}>
-                                <td className="px-4 py-3 text-sm text-gray-900">{item.clothing_name}</td>
-                                <td className="px-4 py-3 text-sm text-gray-500">{item.quantity}</td>
-                                <td className="px-4 py-3 text-sm text-gray-500">
-                                  {item.starch_level && item.starch_level !== 'none' ? `Starch: ${item.starch_level}` : ''}
-                                  {item.crease ? ' (Crease)' : ''}
-                                TAMBAHAN KETERANGAN
-                                </td>
-                                <td className="px-4 py-3 text-sm text-gray-900 text-right">${item.item_total.toFixed(2)}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                        <span className="text-gray-500">Rack:</span>
+                        <span className="ml-2 font-medium">{selectedTicketDetails.rack_number || 'Unassigned'}</span>
                       </div>
                     </div>
 
-                    {/* Financials & Instructions */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 border-t pt-4">
-                      <div>
-                        {selectedTicketDetails.special_instructions && (
-                          <>
-                            <p className="text-sm font-medium text-gray-500">Special Instructions</p>
-                            <p className="text-sm text-gray-800 p-3 bg-gray-50 rounded-md mt-1">{selectedTicketDetails.special_instructions}</p>
-                          </>
-                        )}
+                    {/* Items Table */}
+                    <div className="mt-4 border rounded-lg overflow-hidden">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Item</th>
+                            <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Qty</th>
+                            <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Total</th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {selectedTicketDetails.items.map((item) => (
+                            <tr key={item.id}>
+                              <td className="px-3 py-2 text-sm text-gray-900">
+                                <div>{item.clothing_name}</div>
+                                <div className="text-xs text-gray-500">
+                                  {item.starch_level && item.starch_level !== 'none' && `${item.starch_level}, `}
+                                  {item.crease ? 'Crease' : ''}
+                                </div>
+                              </td>
+                              <td className="px-3 py-2 text-sm text-gray-900 text-center">{item.quantity}</td>
+                              <td className="px-3 py-2 text-sm text-gray-900 text-right">${item.item_total.toFixed(2)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Special Instructions */}
+                    {selectedTicketDetails.special_instructions && (
+                      <div className="bg-yellow-50 p-3 rounded text-sm text-yellow-800">
+                        <strong>Note:</strong> {selectedTicketDetails.special_instructions}
                       </div>
-                      <div className="space-y-2">
+                    )}
+
+                    {/* Financials */}
+                    <div className="border-t pt-3 mt-4">
+                      <div className="flex flex-col space-y-1 text-right">
                         <div className="flex justify-between">
-                          <p className="text-sm font-medium text-gray-500">Subtotal</p>
+                          <p className="text-sm font-medium text-gray-500">Total Amount</p>
                           <p className="text-sm font-medium text-gray-900">${selectedTicketDetails.total_amount.toFixed(2)}</p>
                         </div>
                         <div className="flex justify-between">

@@ -34,6 +34,7 @@ import WorkersLogin from "./components/WorkersLogin";
 import CashierAssociate from "./components/CashierAssociate";
 import Cashier from "./components/Cashier";
 
+import CustomerDirectory from "./components/customerDirectory";
 // ----------------------
 // Protected Route Wrapper (REMOVED)
 // ----------------------
@@ -115,6 +116,7 @@ function AppContent() {
       <Route path="/add-worker" element={<AddWorker />} />
       <Route path="/workers-login" element={<WorkersLogin />} />
       <Route path="/cashier" element={<Cashier />} />
+      <Route path="/customer" element={<CustomerDirectory />} />
 
 
 

@@ -5,7 +5,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from pydantic import BaseModel, EmailStr, Field
 import decimal # ADDED: Import for handling DECIMAL types
-from datetime import datetime, timedelta
+from datetime import timedelta, datetime, timezone
+from dateutil.relativedelta import relativedelta
 
 
 
@@ -25,8 +26,36 @@ from utils.common import (
     TicketSummaryResponse,
     RackAssignmentRequest,
     GeneralTicketUpdateRequest,
-    TicketValidationResponse
+    TicketValidationResponse,
+    CustomerResponse
 )
+
+
+# --- HELPER: Loyalty Tenure Calculation ---
+def calculate_tenure(joined_at: datetime) -> str:
+    if not joined_at:
+        return "Prospect"
+    
+    # Handle timezone awareness
+    if joined_at.tzinfo is None:
+        joined_at = joined_at.replace(tzinfo=timezone.utc)
+        
+    now = datetime.now(timezone.utc)
+    diff = relativedelta(now, joined_at)
+    
+    parts = []
+    if diff.years > 0:
+        parts.append(f"{diff.years} Year{'s' if diff.years > 1 else ''}")
+    if diff.months > 0:
+        parts.append(f"{diff.months} Month{'s' if diff.months > 1 else ''}")
+        
+    if diff.years == 0 and diff.months == 0:
+        days = diff.days
+        if days == 0:
+            return "Joined Today"
+        parts.append(f"{days} Day{'s' if days > 1 else ''}")
+        
+    return ", ".join(parts[:2])
 
 
 class NewCustomerRequest(BaseModel):
@@ -410,6 +439,150 @@ async def search_customers(
         print(f"Error during customer search: {e}")
         raise HTTPException(status_code=500, detail=f"An error occurred while searching for customers: {e}")
     
+    
+# ==========================================
+# GET: All Customers (Secured)
+# ==========================================
+@router.get("/customers", response_model=List[CustomerResponse], summary="Get all customers for organization")
+def get_customers(
+    search: Optional[str] = None,
+    db: Session = Depends(get_db),
+    payload: Dict[str, Any] = Depends(get_current_user_payload)
+):
+    """
+    Retrieves customers. 
+    SECURITY: Restricted to Staff/Admins. Customers cannot view the full list.
+    """
+    org_id = payload.get("organization_id")
+    user_role = payload.get("role")
+    
+    if not org_id:
+        raise HTTPException(status_code=400, detail="Organization ID missing.")
+
+    # 1. SECURITY: Role-Based Access Control
+    # Allowed roles based on your other files (org_functions2.py, etc.)
+    allowed_roles = ["cashier", "manager", "staff", "store_admin", "org_owner", "STORE_OWNER"]
+    
+    if user_role not in allowed_roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. You do not have permission to view the customer list."
+        )
+
+    # 2. Query Logic
+    query_str = """
+        SELECT id, first_name, last_name, email, phone, address, role, organization_id, joined_at 
+        FROM allUsers 
+        WHERE organization_id = :org_id AND role = 'customer'
+    """
+    
+    params = {"org_id": org_id}
+
+    if search:
+        search_term = f"%{search}%"
+        query_str += """
+            AND (
+                LOWER(first_name) LIKE LOWER(:search) OR 
+                LOWER(last_name) LIKE LOWER(:search) OR 
+                LOWER(email) LIKE LOWER(:search) OR 
+                phone LIKE :search
+            )
+        """
+        params["search"] = search_term
+        
+    query_str += " ORDER BY first_name ASC"
+
+    try:
+        results = db.execute(text(query_str), params).fetchall()
+        
+        response = []
+        for row in results:
+            response.append(CustomerResponse(
+                id=row.id,
+                first_name=row.first_name,
+                last_name=row.last_name,
+                email=row.email,
+                phone=row.phone or "",
+                address=row.address,
+                role=row.role,
+                organization_id=row.organization_id,
+                joined_at=row.joined_at, 
+                tenure=calculate_tenure(row.joined_at) # <--- Tenure Calculation
+            ))
+            
+        return response
+
+    except Exception as e:
+        print(f"Error fetching customers: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch customers.")
+
+
+# ==========================================
+# GET: Single Customer Details (Secured)
+# ==========================================
+@router.get("/customers/{customer_id}", response_model=CustomerResponse, summary="Get single customer details")
+def get_customer_details(
+    customer_id: int,
+    db: Session = Depends(get_db),
+    payload: Dict[str, Any] = Depends(get_current_user_payload)
+):
+    """
+    Get customer details.
+    SECURITY: Staff can view anyone. Customers can ONLY view themselves.
+    """
+    org_id = payload.get("organization_id")
+    user_role = payload.get("role")
+    user_email = payload.get("sub") # Assuming 'sub' contains the email
+    
+    # 1. SECURITY: Check if user is authorized to view this specific ID
+    staff_roles = ["cashier", "manager", "staff", "store_admin", "org_owner", "STORE_OWNER"]
+    
+    if user_role not in staff_roles:
+        # If not staff, they MUST be the customer requesting their own profile.
+        # We need to verify their ID matches the requested customer_id.
+        
+        # Look up the ID of the requester using their email from the token
+        requester_stmt = text("SELECT id FROM allUsers WHERE email = :email AND organization_id = :org_id")
+        requester = db.execute(requester_stmt, {"email": user_email, "org_id": org_id}).fetchone()
+        
+        if not requester or requester.id != customer_id:
+             raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied. You can only view your own profile."
+            )
+
+    # 2. Fetch Customer Data
+    query = text("""
+        SELECT id, first_name, last_name, email, phone, address, role, organization_id, joined_at
+        FROM allUsers
+        WHERE id = :id AND organization_id = :org_id AND role = 'customer'
+    """)
+    
+    try:
+        row = db.execute(query, {"id": customer_id, "org_id": org_id}).fetchone()
+        
+        if not row:
+            raise HTTPException(status_code=404, detail="Customer not found.")
+
+        return CustomerResponse(
+            id=row.id,
+            first_name=row.first_name,
+            last_name=row.last_name,
+            email=row.email,
+            phone=row.phone or "",
+            address=row.address,
+            role=row.role,
+            organization_id=row.organization_id,
+            joined_at=row.joined_at,
+            tenure=calculate_tenure(row.joined_at) # <--- Tenure Calculation
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error fetching customer {customer_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch customer details.")
+
     
     
 @router.put(

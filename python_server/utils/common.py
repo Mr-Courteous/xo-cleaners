@@ -14,7 +14,7 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 from datetime import datetime, date
 import decimal
 
@@ -318,3 +318,14 @@ class TicketPickupResponse(BaseModel):
     receipt_html: Optional[str] = None
     
     
+class CustomerResponse(BaseModel):
+    id: int
+    first_name: str
+    last_name: Optional[str] = None
+    email: EmailStr
+    phone: str
+    address: Optional[str] = None
+    role: str
+    organization_id: int
+    joined_at: Optional[datetime] = None
+    tenure: Optional[str] = "Prospect"
