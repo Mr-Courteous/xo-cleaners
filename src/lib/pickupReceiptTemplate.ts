@@ -4,9 +4,7 @@ export function renderPickupReceiptHtml(ticket: Ticket) {
     const items = ticket.items || [];
 
     // --- CALCULATE SUBTOTAL ---
-    // We sum up the item_total from each line item. 
-    // The backend's 'item_total' already includes (Price * Qty) + Additional Charges.
-    // We use Number() to ensure strictly numerical addition (handling floats).
+    // Summing item_total which includes (price * qty) + additional charges
     const subtotal = items.reduce((sum, item) => sum + (Number(item.item_total) || 0), 0);
     
     const paid = Number(ticket.paid_amount) || 0;
@@ -31,30 +29,22 @@ export function renderPickupReceiptHtml(ticket: Ticket) {
 
         const details = [];
         
-        // Starch & Crease
         if (item.starch_level && item.starch_level !== 'none' && item.starch_level !== 'no_starch') {
             details.push(item.starch_level);
         }
         if (item.crease) {
             details.push('Crease');
         }
-
-        // Alterations (Bold)
         if (item.alterations) {
             details.push(`<span style="font-weight:900; color:#000; font-style:normal;">Alt: ${item.alterations}</span>`);
         }
-
-        // Additional Charge (Bold)
         if (additional > 0) {
             details.push(`<span style="font-weight:900; color:#000; font-style:normal;">Add'l: $${additional.toFixed(2)}</span>`);
         }
-
-        // Instructions (Note)
         if (item.item_instructions) {
             details.push(`<br><span style="font-weight:900; color:#000; font-style:normal;">Note: ${item.item_instructions}</span>`);
         }
 
-        // Render Details Section
         const detailsHtml = details.length > 0
             ? `<div style="font-size:8pt;color:#666;margin-left:8px;">+ ${details.join(', ')}</div>`
             : '';
@@ -71,7 +61,6 @@ export function renderPickupReceiptHtml(ticket: Ticket) {
         );
     }).join('');
 
-    // --- RETURN FINAL HTML ---
     return `
     <div style="width:55mm;margin:0 auto;font-family: Arial, sans-serif;color:#111;padding:8px;">
       

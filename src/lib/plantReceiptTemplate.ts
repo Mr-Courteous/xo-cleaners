@@ -3,51 +3,47 @@ import { Ticket } from '../types';
 export function renderPlantReceiptHtml(ticket: Ticket) {
   const items = ticket.items || [];
 
-  // --- CALCULATION: Plant Price Sum (Updated to include additional_charge) ---
+  // --- CALCULATION: Plant Price Sum ---
+  // Formula: (Plant Price * Qty) + Additional Charge
   const totalPlantPrice = items.reduce((sum, item) => {
-    const linePlantPrice = (item.plant_price || 0) * item.quantity;
-    const additional = item.additional_charge || 0;
-    return sum + linePlantPrice + additional;
+    const quantity = Number(item.quantity) || 0;
+    const plantPrice = Number(item.plant_price) || 0;
+    const additional = Number(item.additional_charge) || 0;
+    
+    return sum + (plantPrice * quantity) + additional;
   }, 0);
 
-  // --- CALCULATION: Plant Tax & Env (Requirement: Plant Price + Tax + Env) ---
+  // --- TAX & FEES ---
   const envCharge = totalPlantPrice * 0.047;
   const tax = totalPlantPrice * 0.0825;
   const finalPlantTotal = totalPlantPrice + envCharge + tax;
 
-  const totalPieces = items.reduce((sum, item) => sum + (item.quantity * (item.pieces || 1)), 0);
+  const totalPieces = items.reduce((sum, item) => sum + (Number(item.quantity) * (Number(item.pieces) || 1)), 0);
 
-  // --- LOGIC: Check Status for "Picked Up" Badge ---
   const isPickedUp = ticket.status === 'picked_up';
   const statusDate = isPickedUp
     ? `${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`
     : new Date(ticket.created_at || Date.now()).toLocaleDateString();
 
   const itemsList = items.map(item => {
-    // --- UPDATED: Line Total Calculation ---
-    // Now includes plant_price * quantity + additional_charge
-    const basePlantTotal = (item.plant_price || 0) * item.quantity;
-    const additional = item.additional_charge || 0;
-    const plantLineTotal = basePlantTotal + additional;
+    const quantity = Number(item.quantity) || 0;
+    const plantPrice = Number(item.plant_price) || 0;
+    const additional = Number(item.additional_charge) || 0;
 
-    // --- REQUIREMENT: Show Special Instructions/Details (Starch, Crease, Alterations) ---
+    // Line Total: (Price * Qty) + Extra Charge
+    const plantLineTotal = (plantPrice * quantity) + additional;
+
     const details = [];
     if (item.starch_level && item.starch_level !== 'none' && item.starch_level !== 'no_starch') {
       details.push(`Starch: ${item.starch_level}`);
     }
     if (item.crease) details.push('Crease: Yes');
-
-    // --- ADDED: Alterations ---
     if (item.alterations) {
       details.push(`<span style="font-weight:900; color:#000; font-style:normal;">Alt: ${item.alterations}</span>`);
     }
-
-    // --- NEW: ADDITIONAL CHARGE DISPLAY ---
-    if (item.additional_charge && item.additional_charge > 0) {
-        details.push(`<span style="font-weight:900; color:#000; font-style:normal;">Add'l: $${Number(item.additional_charge).toFixed(2)}</span>`);
+    if (additional > 0) {
+        details.push(`<span style="font-weight:900; color:#000; font-style:normal;">Add'l: $${additional.toFixed(2)}</span>`);
     }
-
-    // Standard Instructions
     if (item.item_instructions) {
       details.push(`<br><span style="font-weight:900; color:#000; font-style:normal;">Note: ${item.item_instructions}</span>`);
     }
@@ -60,8 +56,7 @@ export function renderPlantReceiptHtml(ticket: Ticket) {
       `<div style="margin:4px 0;">` +
       `<div style="display:flex;justify-content:space-between;font-size:10pt;font-weight: 600;">` +
       `<div style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.clothing_name}</div>` +
-      `<div style="margin-left:8px;min-width:28px;text-align:right">x${item.quantity}</div>` +
-      // Display the updated line total
+      `<div style="margin-left:8px;min-width:28px;text-align:right">x${quantity}</div>` +
       `<div style="width:56px;text-align:right;margin-left:8px">$${plantLineTotal.toFixed(2)}</div>` +
       `</div>` +
       detailsHtml +
@@ -71,7 +66,6 @@ export function renderPlantReceiptHtml(ticket: Ticket) {
 
   return `
     <div style="width:55mm;margin:0 auto;font-family: Arial, sans-serif;color:#111;padding:8px;">
-      
       <div style="text-align:center;">
         <div style="font-size:20px;font-weight:900;">PLANT COPY</div>
         <div style="font-size:9pt;">INTERNAL RECORD</div>

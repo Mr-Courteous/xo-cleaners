@@ -3,24 +3,24 @@ import { Ticket } from '../types';
 export function renderReceiptHtml(ticket: Ticket) {
   const items = ticket.items || [];
 
-  // --- FIXED: Ensure numerical addition ---
+  // --- CALCULATE SUBTOTAL ---
   const subtotal = items.reduce((sum, item) => sum + (Number(item.item_total) || 0), 0);
   
   const paid = Number(ticket.paid_amount) || 0;
 
-  const envCharge = subtotal * 0.047; // 4.7%
-  const tax = subtotal * 0.0825; // 8.25%
+  const envCharge = subtotal * 0.047; 
+  const tax = subtotal * 0.0825; 
   const finalTotal = subtotal + envCharge + tax;
   const balance = finalTotal - paid;
 
   const totalPieces = items.reduce((sum, item) => sum + (Number(item.quantity) * (Number(item.pieces) || 1)), 0);
 
   const itemsList = items.map(item => {
-    const details = [];
     const quantity = Number(item.quantity) || 0;
     const itemTotal = Number(item.item_total) || 0;
     const additional = Number(item.additional_charge) || 0;
 
+    const details = [];
     if (item.starch_level && item.starch_level !== 'none' && item.starch_level !== 'no_starch') {
       details.push(`Starch: ${item.starch_level}`);
     }
@@ -53,7 +53,6 @@ export function renderReceiptHtml(ticket: Ticket) {
 
   return `
     <div style="width:55mm;margin:0 auto;font-family: Arial, sans-serif;color:#111;padding:8px;">
-      
       <div style="text-align:center;">
         <div style="font-size:20px;font-weight:900;">Airport Cleaners</div>
         <div style="font-size:9pt;">12300 Fondren Road</div>
@@ -101,7 +100,6 @@ export function renderReceiptHtml(ticket: Ticket) {
       <div style="margin-top:12px;text-align:center;font-weight:800;font-size:11pt;border:1px solid #000;padding:4px;">
         ${totalPieces} PIECES
       </div>
-
       <div style="margin-top:12px;text-align:center;font-size:9pt;">
         <div style="font-weight:bold;">Pickup: ${ticket.pickup_date ? new Date(ticket.pickup_date).toLocaleDateString() : 'See Counter'}</div>
         <div style="margin-top:4px;">Thank you for your business!</div>
