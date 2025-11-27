@@ -1130,7 +1130,7 @@ def create_ticket(
                     crease=item['crease'],
                     alterations=item['alterations'],
                     item_instructions=item['item_instructions'],
-                    alteration_behavior=item['alteration_behavior'], # <--- Returned
+                    alteration_behavior=item['alteration_behavior'], # <--- Returned ,,
                     item_total=float(item['item_total']),
                     plant_price=float(item['plant_price']),
                     margin=float(item['margin']),
