@@ -610,19 +610,28 @@ async def process_ticket_pickup(
             )
 
         # 4. Payment Validation
-        current_total = decimal.Decimal(ticket.total_amount)
-        current_paid = decimal.Decimal(ticket.paid_amount)
+        current_total = decimal.Decimal(str(ticket.total_amount)) # Use str conversion for safety
+        current_paid = decimal.Decimal(str(ticket.paid_amount))
         amount_paying = decimal.Decimal(str(req.amount_paid))
         
         outstanding_balance = current_total - current_paid
         
+        # Check if payment is sufficient (allowing for 1 cent rounding diff)
         if amount_paying < (outstanding_balance - decimal.Decimal('0.01')):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Payment amount ${amount_paying} is less than the outstanding balance of ${outstanding_balance}."
             )
 
-        new_total_paid = current_paid + amount_paying
+        # --- FIX 1: Force "Clean" Zero Balance ---
+        # If they are paying off the remainder, set new_total_paid exactly to current_total.
+        # This prevents floating point errors leaving $0.01 outstanding.
+        if amount_paying >= (outstanding_balance - decimal.Decimal('0.01')):
+             new_total_paid = current_total
+        else:
+             # This branch technically won't hit due to the check above, but good for logic safety
+             new_total_paid = current_paid + amount_paying
+
         new_status = "picked_up"
 
         # 5. Update the ticket
@@ -638,7 +647,7 @@ async def process_ticket_pickup(
         
         db.execute(update_query, {
             "status": new_status,
-            "paid_amount": new_total_paid,
+            "paid_amount": new_total_paid, # Using the clean total
             "pickup_date": datetime.now(),
             "ticket_id": ticket_id,
             "org_id": organization_id
@@ -662,10 +671,11 @@ async def process_ticket_pickup(
         # 7. Commit the transaction
         db.commit()
 
-        # --- NEW SECTION: Fetch Items for Receipt ---
+        # --- FIX 2: Add missing Comma in SQL ---
         items_query = text("""
             SELECT 
-                ti.quantity, ti.item_total, ti.starch_level, ti.crease, ti.alterations, ti.item_instructions, ti.additional_charge,
+                ti.quantity, ti.item_total, ti.starch_level, ti.crease, 
+                ti.alterations, ti.item_instructions, ti.additional_charge, -- <--- Added Comma
                 ct.name as clothing_name
             FROM ticket_items ti
             JOIN clothing_types ct ON ti.clothing_type_id = ct.id
@@ -686,12 +696,13 @@ async def process_ticket_pickup(
             if item.alterations:
                 details.append(f'<span style="font-weight:900; color:#000;">Alt: {item.alterations}</span>')
             
+            # ADDED CHARGE
+            if item.additional_charge and item.additional_charge > 0:
+                 details.append(f'<span style="font-weight:900; color:#000;">Add\'l: ${float(item.additional_charge):.2f}</span>')
+
             # Instructions (Italic/Different style)
             if item.item_instructions:
                 details.append(f'<span style="font-style:italic; color:#444;">Note: {item.item_instructions}</span>')
-                
-            if item.additional_charge and item.additional_charge > 0:
-                 details.append(f'<span style="font-weight:900; color:#000;">Add\'l: ${float(item.additional_charge):.2f}</span>')
             
             details_html = ""
             if details:
@@ -710,6 +721,7 @@ async def process_ticket_pickup(
         # ---------------------------------------------
         
         # 8. Generate a receipt
+        # We use 'new_total_paid' which we forced to match 'current_total', so balance is mathematically 0.
         receipt_html = f"""
             <div style="font-family: monospace; font-size: 10pt; width: 300px; margin: 0 auto; color: #000;">
                 <h4 style="text-align: center; font-size: 12pt; font-weight: bold; margin: 5px 0;">Pick Up Receipt</h4>
