@@ -42,6 +42,8 @@ interface TicketItemDetail {
   quantity: number;
   starch_level: string | null;
   crease: boolean | null;
+  alterations: string | null;       // <--- ADDED
+  item_instructions: string | null; // <--- ADDED
   item_total: number;
   plant_price: number;
   margin: number;
@@ -126,7 +128,7 @@ export default function CashierDashboard() {
       const total_tickets = ticketsData.length;
       // Adjust status strings as per your backend logic
       const pending_pickup = ticketsData.filter(t => t.status === 'ready_for_pickup' || t.status === 'ready').length;
-      const in_process = ticketsData.filter(t => t.status === 'processing' || t.status === 'at_plant').length;
+      const in_process = ticketsData.filter(t => t.status === 'processing' || t.status === 'received').length;
       
       setStats({
         total_tickets,
@@ -201,6 +203,19 @@ export default function CashierDashboard() {
   const DashboardHome = () => (
     <div className="p-6 space-y-6">
       
+      {/* --- ADDED: Header with Refresh Button --- */}
+      <div className="flex justify-between items-center">
+          <h1 className="text-3xl font-bold text-gray-800">Cashier Dashboard</h1>
+          <button
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg shadow hover:bg-blue-700 transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-5 h-5 ${isRefreshing ? 'animate-spin' : ''}`} />
+            {isRefreshing ? 'Refreshing...' : 'Refresh'}
+          </button>
+      </div>
+
       {/* 1. Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
         {statCards.map((card) => {
@@ -293,10 +308,6 @@ export default function CashierDashboard() {
       {/* --- FIXED SIDEBAR --- */}
       <div className="w-64 bg-white border-r border-gray-200 flex flex-col flex-shrink-0 z-20">
         <div className="p-6 border-b border-gray-200">
-          {/* <h1 className="text-xl font-bold text-gray-900 flex items-center">
-            <Package className="w-6 h-6 mr-2 text-blue-600" />
-            CleanPOS
-          </h1> */}
           <p className="text-xs text-gray-500 mt-1 ml-8">Cashier / Store Admin</p>
         </div>
 
@@ -522,8 +533,22 @@ export default function CashierDashboard() {
                               <td className="px-3 py-2 text-sm text-gray-900">
                                 <div>{item.clothing_name}</div>
                                 <div className="text-xs text-gray-500">
-                                  {item.starch_level && item.starch_level !== 'none' && `${item.starch_level}, `}
-                                  {item.crease ? 'Crease' : ''}
+                                  {/* --- RE-INTEGRATED DETAILS DISPLAY --- */}
+                                  {item.starch_level && item.starch_level !== 'none' && (
+                                      <div className="text-xs">Starch: {item.starch_level}</div>
+                                  )}
+                                  {item.crease && (
+                                      <div className="text-xs">Crease: Yes</div>
+                                  )}
+                                  {item.alterations && (
+                                      <div className="text-xs font-bold text-black">Alt: {item.alterations}</div>
+                                  )}
+                                  {item.additional_charge > 0 && (
+                                      <div className="text-xs font-bold text-black">Add'l: ${Number(item.additional_charge).toFixed(2)}</div>
+                                  )}
+                                  {item.item_instructions && (
+                                      <div className="text-xs italic text-gray-500">Note: {item.item_instructions}</div>
+                                  )}
                                 </div>
                               </td>
                               <td className="px-3 py-2 text-sm text-gray-900 text-center">{item.quantity}</td>

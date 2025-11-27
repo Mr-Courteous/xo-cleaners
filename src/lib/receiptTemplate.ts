@@ -3,7 +3,9 @@ import { Ticket } from '../types';
 export function renderReceiptHtml(ticket: Ticket) {
   const items = ticket.items || [];
 
-  const subtotal = ticket.total_amount || 0;
+  // --- UPDATED: Calculate Subtotal from Items ---
+  const subtotal = items.reduce((sum, item) => sum + (item.item_total || 0), 0);
+  
   const paid = ticket.paid_amount || 0;
 
   const envCharge = subtotal * 0.047; // 4.7%
@@ -22,22 +24,19 @@ export function renderReceiptHtml(ticket: Ticket) {
 
     if (item.crease) details.push('Crease');
 
-    // --- UPDATED: BOLD ALTERATIONS ---
-    // Uses a span to force bold weight and black color, even inside the grey container
+    // --- BOLD ALTERATIONS ---
     if (item.alterations) {
       details.push(`<span style="font-weight:900; color:#000; font-style:normal;">Alt: ${item.alterations}</span>`);
     }
 
-    // --- NEW: ADDITIONAL CHARGE DISPLAY ---
+    // --- ADDITIONAL CHARGE DISPLAY ---
     if (item.additional_charge && item.additional_charge > 0) {
         details.push(`<span style="font-weight:900; color:#000; font-style:normal;">Add'l: $${Number(item.additional_charge).toFixed(2)}</span>`);
     }
 
     // Standard Instructions
     if (item.item_instructions) {
-      // details.push(`Note: ${item.item_instructions}`);
       details.push(`<br> <span style="font-weight:900; color:#000; font-style:normal;">Note: ${item.item_instructions}</span>`);
-
     }
 
     const detailsHtml = details.length > 0

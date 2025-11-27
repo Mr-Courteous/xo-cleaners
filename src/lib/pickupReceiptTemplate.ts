@@ -3,7 +3,10 @@ import { Ticket } from '../types';
 export function renderPickupReceiptHtml(ticket: Ticket) {
     const items = ticket.items || [];
 
-    const subtotal = ticket.total_amount || 0;
+    // --- UPDATED: Calculate Subtotal from Items ---
+    // This ensures the total matches the sum of line items, including any additional charges baked into item_total
+    const subtotal = items.reduce((sum, item) => sum + (item.item_total || 0), 0);
+    
     const paid = ticket.paid_amount || 0;
 
     const envCharge = subtotal * 0.047;
@@ -19,21 +22,19 @@ export function renderPickupReceiptHtml(ticket: Ticket) {
         if (item.starch_level && item.starch_level !== 'none' && item.starch_level !== 'no_starch') details.push(item.starch_level);
         if (item.crease) details.push('Crease');
 
-        // --- UPDATED: BOLD ALTERATIONS ---
+        // --- BOLD ALTERATIONS ---
         if (item.alterations) {
             details.push(`<span style="font-weight:900; color:#000; font-style:normal;">Alt: ${item.alterations}</span>`);
         }
 
-        // --- NEW: ADDITIONAL CHARGE DISPLAY ---
+        // --- ADDITIONAL CHARGE DISPLAY ---
         if (item.additional_charge && item.additional_charge > 0) {
             details.push(`<span style="font-weight:900; color:#000; font-style:normal;">Add'l: $${Number(item.additional_charge).toFixed(2)}</span>`);
         }
 
         // Standard Instructions
         if (item.item_instructions) {
-            // details.push(`Note: ${item.item_instructions}`);
             details.push(`<br><span style="font-weight:900; color:#000; font-style:normal;">Note: ${item.item_instructions}</span>`);
-
         }
 
         const detailsHtml = details.length > 0

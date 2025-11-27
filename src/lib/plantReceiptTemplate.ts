@@ -3,8 +3,12 @@ import { Ticket } from '../types';
 export function renderPlantReceiptHtml(ticket: Ticket) {
   const items = ticket.items || [];
 
-  // --- CALCULATION: Plant Price Sum ---
-  const totalPlantPrice = items.reduce((sum, item) => sum + ((item.plant_price || 0) * item.quantity), 0);
+  // --- CALCULATION: Plant Price Sum (Updated to include additional_charge) ---
+  const totalPlantPrice = items.reduce((sum, item) => {
+    const linePlantPrice = (item.plant_price || 0) * item.quantity;
+    const additional = item.additional_charge || 0;
+    return sum + linePlantPrice + additional;
+  }, 0);
 
   // --- CALCULATION: Plant Tax & Env (Requirement: Plant Price + Tax + Env) ---
   const envCharge = totalPlantPrice * 0.047;
@@ -20,7 +24,11 @@ export function renderPlantReceiptHtml(ticket: Ticket) {
     : new Date(ticket.created_at || Date.now()).toLocaleDateString();
 
   const itemsList = items.map(item => {
-    const plantLineTotal = (item.plant_price || 0) * item.quantity;
+    // --- UPDATED: Line Total Calculation ---
+    // Now includes plant_price * quantity + additional_charge
+    const basePlantTotal = (item.plant_price || 0) * item.quantity;
+    const additional = item.additional_charge || 0;
+    const plantLineTotal = basePlantTotal + additional;
 
     // --- REQUIREMENT: Show Special Instructions/Details (Starch, Crease, Alterations) ---
     const details = [];
@@ -41,9 +49,7 @@ export function renderPlantReceiptHtml(ticket: Ticket) {
 
     // Standard Instructions
     if (item.item_instructions) {
-      // details.push(`Note: ${item.item_instructions}`);
       details.push(`<br><span style="font-weight:900; color:#000; font-style:normal;">Note: ${item.item_instructions}</span>`);
-
     }
 
     const detailsHtml = details.length > 0
@@ -55,6 +61,7 @@ export function renderPlantReceiptHtml(ticket: Ticket) {
       `<div style="display:flex;justify-content:space-between;font-size:10pt;font-weight: 600;">` +
       `<div style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.clothing_name}</div>` +
       `<div style="margin-left:8px;min-width:28px;text-align:right">x${item.quantity}</div>` +
+      // Display the updated line total
       `<div style="width:56px;text-align:right;margin-left:8px">$${plantLineTotal.toFixed(2)}</div>` +
       `</div>` +
       detailsHtml +
