@@ -1098,12 +1098,12 @@ def create_ticket(
         item_insert_query = text("""
             INSERT INTO ticket_items (
                 ticket_id, clothing_type_id, quantity, starch_level, crease, 
-                alterations, item_instructions, alteration_behavior, additional_charge, -- <--- Columns
+                alterations, item_instructions, additional_charge, -- <--- Columns
                 plant_price, margin, item_total, organization_id
             )
             VALUES (
                 :ticket_id, :clothing_type_id, :quantity, :starch_level, :crease, 
-                :alterations, :item_instructions, :alteration_behavior, :additional_charge, -- <--- Values
+                :alterations, :item_instructions, :additional_charge, -- <--- Values
                 :plant_price, :margin, :item_total, :organization_id
             )
             RETURNING id
