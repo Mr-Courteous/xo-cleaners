@@ -1,14 +1,11 @@
 import React, { useState } from 'react';
-import { Search, Package, MapPin, Calendar, User, Phone, DollarSign, Printer } from 'lucide-react';
+import { Search, Package, MapPin, Calendar, User, Phone, DollarSign, Printer, CreditCard, CheckCircle, AlertCircle } from 'lucide-react';
 import { Ticket } from '../types';
-import { formatDateTime } from '../utils/date';
-import Modal from './Modal';
 import axios from 'axios';
 import baseURL from '../lib/config';
 import PrintPreviewModal from './PrintPreviewModal';
-import renderReceiptHtml from '../lib/receiptTemplate';
+import renderPickupReceiptHtml from '../lib/pickupReceiptTemplate';
 import renderPlantReceiptHtml from '../lib/plantReceiptTemplate';
-import renderPickupReceiptHtml  from '../lib/pickupReceiptTemplate';
 
 type Step = 'search' | 'details' | 'payment';
 
@@ -18,503 +15,401 @@ export default function PickUp() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [loading, setLoading] = useState(false);
-  const [balancePaid, setBalancePaid] = useState<number>(0);
+  
+  // Payment State
+  const [amountPaid, setAmountPaid] = useState<string>(''); // Using string for better input handling
+  
   const [modal, setModal] = useState({ isOpen: false, title: '', message: '', type: 'success' as 'error' | 'success' });
 
   // Printing State
   const [showPrintPreview, setShowPrintPreview] = useState(false);
-  const [printContent, setPrintContent] = useState('');      // Customer Receipt
-  const [plantPrintContent, setPlantPrintContent] = useState(''); // Plant Receipt
+  const [printContent, setPrintContent] = useState('');
+  const [plantPrintContent, setPlantPrintContent] = useState('');
 
-  // --- Printing Helper (Consistent with DropOff/TicketManagement) ---
-  const handlePrintJob = (htmlContent: string) => {
-    const printFrame = document.createElement('iframe');
-    printFrame.style.display = 'none';
-    document.body.appendChild(printFrame);
-
-    printFrame.contentDocument?.write(`
-      <html>
-        <head>
-          <title>Print</title>
-          <style>
-            @page { size: 55mm auto; margin: 0; }
-            @media print {
-              html, body { margin: 0; padding: 0; }
-              .page-break { 
-                page-break-before: always; 
-                break-before: page;
-                display: block; 
-                height: 0; 
-                overflow: hidden;
-              }
-            }
-            body { font-family: sans-serif; }
-          </style>
-        </head>
-        <body>${htmlContent}</body>
-      </html>
-    `);
-
-    printFrame.contentDocument?.close();
-    printFrame.contentWindow?.focus();
-
-    setTimeout(() => {
-      printFrame.contentWindow?.print();
-      setTimeout(() => {
-        if (document.body.contains(printFrame)) {
-          document.body.removeChild(printFrame);
-        }
-      }, 1000);
-    }, 100);
-  };
-
-  const searchTickets = async () => {
+  // --- 1. Search Tickets ---
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
     if (!searchQuery.trim()) return;
 
     setLoading(true);
     try {
-      const token = localStorage.getItem("accessToken");
-      if (!token) throw new Error("Access token missing");
-
-      const response = await axios.get(
-        `${baseURL}/api/organizations/single-ticket/search?query=${encodeURIComponent(searchQuery)}`,
-        {
-          headers: { 'Authorization': `Bearer ${token}` }
-        }
-      );
-
-      const results: Ticket[] = response.data || [];
-      // Filter out tickets that are already picked up to avoid confusion
-      setTickets(results.filter((ticket: Ticket) => ticket.status !== 'picked_up'));
-      setStep('search');
-
-    } catch (error: any) {
-      console.error('Failed to search tickets:', error);
-      setModal({
-        isOpen: true,
-        title: 'Error',
-        message: error.response?.data?.detail || 'Failed to search tickets.',
-        type: 'error'
+      const token = localStorage.getItem('accessToken');
+      // Note: Ensure your backend has a search endpoint or logic to filter
+      const response = await axios.get(`${baseURL}/api/organizations/tickets`, {
+        headers: { Authorization: `Bearer ${token}` }
       });
+      
+      // Client-side filtering for demo (ideally backend does this)
+      const allTickets: Ticket[] = response.data;
+      const filtered = allTickets.filter(t => 
+        t.ticket_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        t.customer_name.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+      
+      // Only show tickets that are NOT picked up yet
+      const activeTickets = filtered.filter(t => t.status !== 'picked_up');
+      
+      setTickets(activeTickets);
+      if (activeTickets.length === 0) {
+          setModal({ isOpen: true, title: 'No Tickets', message: 'No active tickets found matching that query.', type: 'error' });
+      }
+    } catch (err) {
+      console.error(err);
+      setModal({ isOpen: true, title: 'Error', message: 'Failed to search tickets.', type: 'error' });
     } finally {
       setLoading(false);
     }
   };
 
-  const loadTicketDetails = async (ticketId: number) => {
-    try {
-      const token = localStorage.getItem("accessToken");
-      if (!token) throw new Error("Access token missing");
-
-      const response = await axios.get(
-        `${baseURL}/api/organizations/tickets/${ticketId}`,
-        {
-          headers: { 'Authorization': `Bearer ${token}` }
+  // --- 2. Select Ticket ---
+  const handleSelectTicket = (ticket: Ticket) => {
+    // Re-fetch full details to ensure we have items for the receipt
+    const fetchDetails = async () => {
+        setLoading(true);
+        try {
+            const token = localStorage.getItem('accessToken');
+            const res = await axios.get(`${baseURL}/api/organizations/tickets/${ticket.id}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setSelectedTicket(res.data);
+            setStep('details');
+        } catch (err) {
+            setModal({ isOpen: true, title: 'Error', message: 'Could not load ticket details.', type: 'error' });
+        } finally {
+            setLoading(false);
         }
-      );
-
-      const ticket: Ticket = response.data;
-      setSelectedTicket(ticket);
-      setBalancePaid(Math.max(0, ticket.total_amount - ticket.paid_amount));
-      setStep('details');
-    } catch (error: any) {
-      console.error('Failed to load ticket details:', error);
-      setModal({
-        isOpen: true,
-        title: 'Error',
-        message: error.response?.data?.detail || 'Failed to load ticket details.',
-        type: 'error'
-      });
-    }
+    };
+    fetchDetails();
   };
 
-  const completePickup = async () => {
- if (!selectedTicket) return;
+  // --- 3. Proceed to Payment ---
+  const handleProceedToPayment = () => {
+    if (!selectedTicket) return;
+    
+    const balanceDue = selectedTicket.total_amount - selectedTicket.paid_amount;
+    
+    // Auto-fill the exact balance
+    setAmountPaid(balanceDue.toFixed(2));
+    setStep('payment');
+  };
 
-    const outstandingBalance = selectedTicket.total_amount - selectedTicket.paid_amount;
+  // --- 4. Process Pickup ---
+  const handleProcessPickup = async () => {
+    if (!selectedTicket) return;
 
-    // Frontend validation
-    if (balancePaid < outstandingBalance - 0.001) { 
-        setModal({
-            isOpen: true,
-            title: 'Payment Required',
-            message: `The required balance of $${outstandingBalance.toFixed(2)} must be paid. Please adjust the payment amount.`,
-            type: 'error'
-        });
-        return;
-    }
-
+    setLoading(true);
     try {
-        setLoading(true); 
+      const token = localStorage.getItem('accessToken');
+      
+      // Send the payment amount to backend
+      const response = await axios.put(
+        `${baseURL}/api/organizations/tickets/${selectedTicket.id}/pickup`,
+        { amount_paid: parseFloat(amountPaid) }, 
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      if (response.data.success) {
+        // Update local state with the returned (updated) ticket data
+        // We merge the response data to ensure receipt templates have latest info
+        const updatedTicket = { ...selectedTicket, ...response.data, status: 'picked_up' };
         
-        // --- FIXED ---
-        // 1. Get token
-        const token = localStorage.getItem("accessToken");
-        if (!token) throw new Error("Access token missing");
+        // Generate Receipt HTML
+        const receiptHtml = renderPickupReceiptHtml(updatedTicket);
+        const plantHtml = renderPlantReceiptHtml(updatedTicket);
 
-        const payload = {
-            amount_paid: balancePaid,
-        };
+        setPrintContent(receiptHtml);
+        setPlantPrintContent(plantHtml);
         
-        // 2. Call the correct, full URL with axios, payload, and auth headers
-        const response = await axios.put(
-          `${baseURL}/api/organizations/tickets/${selectedTicket.id}/pickup`,
-          payload, // axios sends this as the body
-          {
-            headers: { 'Authorization': `Bearer ${token}` }
-          }
-        );
-
-        // 3. Get data from response.data
-        const pickupResult = response.data;
+        // Open Print Preview
+        setShowPrintPreview(true);
         
-      const updatedTicketForReceipt: Ticket = {
-        ...selectedTicket,
-        status: 'picked_up',
-        paid_amount: selectedTicket.paid_amount + balancePaid,
-      };
+        // Reset flow in background
+        setStep('search');
+        setTickets([]);
+        setSearchQuery('');
+      }
 
-      // USE THE NEW TEMPLATE HERE
-      const customerHtml = renderPickupReceiptHtml(updatedTicketForReceipt); // <--- Changed
-      const plantHtml = renderPlantReceiptHtml(updatedTicketForReceipt);
-
-      setPrintContent(customerHtml);
-      setPlantPrintContent(plantHtml);
-      setShowPrintPreview(true);
-
-      setModal({
-        isOpen: true,
-        title: 'Success',
-        message: `Pickup processed successfully! Ticket #${selectedTicket.ticket_number} is now marked as picked up.`,
-        type: 'success'
-      });
-
-      // Reset state after successful pickup (in background behind modal)
-      setSelectedTicket(null);
-      setTickets([]);
-      setSearchQuery('');
-      setStep('search');
-      setBalancePaid(0);
-
-    } catch (error: any) {
-      console.error('Failed to process pickup:', error);
-      const errorMessage = error.response?.data?.detail || 'Failed to process pickup. Please try again.';
-      setModal({
-        isOpen: true,
-        title: 'Error',
-        message: errorMessage,
-        type: 'error'
-      });
+    } catch (err: any) {
+      console.error(err);
+      const msg = err.response?.data?.detail || 'Failed to process pickup.';
+      setModal({ isOpen: true, title: 'Error', message: msg, type: 'error' });
     } finally {
       setLoading(false);
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'dropped_off': return 'bg-amber-100 text-amber-800';
-      case 'in_process': return 'bg-blue-100 text-blue-800';
-      case 'ready': return 'bg-green-100 text-green-800';
-      case 'ready_for_pickup': return 'bg-green-100 text-green-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
+  // --- Helper: Print Job ---
+  const handlePrintJob = (content: string) => {
+    const printFrame = document.createElement('iframe');
+    printFrame.style.display = 'none';
+    document.body.appendChild(printFrame);
+    printFrame.contentDocument?.write(`
+      <html>
+        <head>
+          <style>
+            @page { size: 55mm auto; margin: 0; }
+            body { margin: 0; font-family: monospace; }
+            .page-break { page-break-before: always; }
+          </style>
+        </head>
+        <body>${content}</body>
+      </html>
+    `);
+    printFrame.contentDocument?.close();
+    printFrame.contentWindow?.focus();
+    printFrame.contentWindow?.print();
+    setTimeout(() => document.body.removeChild(printFrame), 1000);
   };
-
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'dropped_off': return 'Dropped Off';
-      case 'in_process': return 'In Process';
-      case 'ready': return 'Ready for Pickup';
-      case 'ready_for_pickup': return 'Ready for Pickup';
-      case 'picked_up': return 'Picked Up';
-      default: return status;
-    }
-  };
-
-  const outstandingBalance = selectedTicket ? selectedTicket.total_amount - selectedTicket.paid_amount : 0;
-
-  // 1. Search Bar
-  const renderSearchBar = () => (
-    <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 mb-6">
-      <div className="flex space-x-4">
-        <div className="flex-1 relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-          <input
-            type="text"
-            placeholder="Enter customer name, phone, or ticket number..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && searchTickets()}
-            className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
-        </div>
-        <button
-          onClick={searchTickets}
-          disabled={loading || !searchQuery.trim()}
-          className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
-          {loading ? 'Searching...' : 'Search'}
-        </button>
-      </div>
-    </div>
-  );
-
-  // 2. Search Results
-  const renderSearchResults = () => (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
-      <div className="p-6 border-b border-gray-200">
-        <h3 className="text-lg font-semibold">Search Results</h3>
-      </div>
-      <div className="divide-y divide-gray-200">
-        {tickets.map((ticket) => (
-          <div
-            key={ticket.id}
-            onClick={() => loadTicketDetails(ticket.id)}
-            className="p-6 hover:bg-gray-50 cursor-pointer transition-colors"
-          >
-            <div className="flex justify-between items-start">
-              <div className="flex-1">
-                <div className="flex items-center space-x-4 mb-2">
-                  <span className="font-medium text-lg">#{ticket.ticket_number}</span>
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(ticket.status)}`}>
-                    {getStatusText(ticket.status)}
-                  </span>
-                </div>
-                <div className="flex items-center space-x-6 text-sm text-gray-600">
-                  <div className="flex items-center">
-                    <User className="h-4 w-4 mr-1" />
-                    {ticket.customer_name}
-                  </div>
-                  <div className="flex items-center">
-                    <Phone className="h-4 w-4 mr-1" />
-                    {ticket.customer_phone}
-                  </div>
-                  <div className="flex items-center">
-                    <Calendar className="h-4 w-4 mr-1" />
-                    {formatDateTime(ticket.drop_off_date || ticket.created_at)}
-                  </div>
-                  {ticket.rack_number && (
-                    <div className="flex items-center">
-                      <MapPin className="h-4 w-4 mr-1" />
-                      Rack #{ticket.rack_number}
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className="text-right flex flex-col items-end">
-                <div className="text-lg font-bold text-gray-900 mb-2">${ticket.total_amount.toFixed(2)}</div>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    loadTicketDetails(ticket.id);
-                  }}
-                  className="bg-gray-100 text-gray-700 px-4 py-2 rounded hover:bg-gray-200 transition-colors text-sm font-medium"
-                >
-                  View Details
-                </button>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-
-  // 3. Ticket Details
-  const renderTicketDetails = () => (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-      <div className="p-6 border-b border-gray-200">
-        <div className="flex justify-between items-center">
-          <h3 className="text-lg font-semibold">Ticket Details</h3>
-          <button
-            onClick={() => { setSelectedTicket(null); setStep('search'); setTickets([]); }}
-            className="text-gray-500 hover:text-gray-700"
-          >
-            ✕
-          </button>
-        </div>
-      </div>
-
-      <div className="p-6">
-        {selectedTicket?.items && selectedTicket.items.length > 0 && (
-          <div className="mb-6">
-            <h4 className="font-medium mb-3">Items</h4>
-            <div className="space-y-2">
-              {selectedTicket.items.map((item, index) => (
-                <div key={index} className="flex justify-between items-center p-3 border border-gray-200 rounded-lg">
-                  <div>
-                    <span className="font-medium">{item.clothing_name}</span>
-                    <span className="text-gray-600 ml-2">×{item.quantity}</span>
-                    <div className="text-sm text-gray-500">
-                      {item.starch_level !== 'no_starch' && `${item.starch_level} starch`}
-                      {item.starch_level !== 'no_starch' && item.crease === 'crease' && ', '}
-                      {item.crease === 'crease' && 'with crease'}
-                    </div>
-                  </div>
-                  <span className="font-medium">${item.item_total.toFixed(2)}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {selectedTicket?.special_instructions && (
-          <div className="mb-6 p-4 bg-amber-50 rounded-lg">
-            <h4 className="font-medium mb-2">Special Instructions</h4>
-            <p className="text-gray-700">{selectedTicket.special_instructions}</p>
-          </div>
-        )}
-
-        <div className="flex justify-between items-center pt-4 border-t border-gray-200">
-          <div>
-            <div className="text-xl font-bold text-gray-900">Total: ${selectedTicket?.total_amount.toFixed(2)}</div>
-            <div className={`text-lg font-bold ${outstandingBalance > 0 ? 'text-red-600' : 'text-green-600'}`}>
-              Balance Due: ${outstandingBalance.toFixed(2)}
-            </div>
-          </div>
-
-          {(selectedTicket?.status === 'ready' || selectedTicket?.status === 'ready_for_pickup') && (
-            <button
-              onClick={() => setStep('payment')}
-              className="bg-green-600 text-white py-3 px-8 rounded-lg hover:bg-green-700 transition-colors font-medium"
-            >
-              {outstandingBalance > 0 ? 'Go to Payment' : 'Process Pickup'}
-            </button>
-          )}
-          {(selectedTicket?.status !== 'ready' && selectedTicket?.status !== 'ready_for_pickup') && (
-            <div className="text-amber-600 font-medium">
-              {getStatusText(selectedTicket.status)} - Cannot pick up yet.
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-
-  // 4. Payment Form
-  const renderPaymentForm = () => {
-    if (!selectedTicket) return null;
-
-    return (
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-        <div className="p-6 border-b border-gray-200">
-          <div className="flex justify-between items-center">
-            <h3 className="text-xl font-semibold">Complete Payment for Ticket #{selectedTicket.ticket_number}</h3>
-            <button
-              onClick={() => setStep('details')}
-              className="text-gray-500 hover:text-gray-700"
-            >
-              Back to Details
-            </button>
-          </div>
-        </div>
-
-        <div className="p-6">
-          <div className="grid grid-cols-2 gap-4 text-lg mb-6 p-4 bg-gray-50 rounded-lg">
-            <div>Total Ticket Amount:</div>
-            <div className="font-bold text-right">${selectedTicket.total_amount.toFixed(2)}</div>
-            <div>Amount Already Paid:</div>
-            <div className="text-right">${selectedTicket.paid_amount.toFixed(2)}</div>
-            <div className="font-bold text-red-600">Outstanding Balance:</div>
-            <div className="font-bold text-red-600 text-right">${outstandingBalance.toFixed(2)}</div>
-          </div>
-
-          <div className="mb-6">
-            <label htmlFor="balancePaid" className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
-              <DollarSign className="h-4 w-4 mr-1" />
-              Amount Customer is Paying Now
-            </label>
-            <input
-              id="balancePaid"
-              type="number"
-              min="0"
-              step="0.01"
-              value={balancePaid.toFixed(2)}
-              onChange={(e) => setBalancePaid(parseFloat(e.target.value) || 0)}
-              className="w-full text-xl p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-            />
-            <p className="mt-2 text-sm text-gray-500">Enter the amount the customer is paying to settle the balance.</p>
-          </div>
-
-          <div className="flex justify-between items-center pt-4 border-t border-gray-200">
-            <div className="text-xl font-bold">
-              New Total Paid: <span className="text-green-600">${(selectedTicket.paid_amount + balancePaid).toFixed(2)}</span>
-            </div>
-
-            <button
-              onClick={completePickup}
-              disabled={balancePaid < outstandingBalance - 0.001 || loading}
-              className="bg-blue-600 text-white py-3 px-8 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors font-medium"
-            >
-              {loading ? 'Processing...' : 'Confirm Payment & Pickup'}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // =========================================================================
-  // MAIN RENDER
-  // =========================================================================
 
   return (
-    <div className="max-w-6xl mx-auto">
-      <div className="mb-8">
-        <h2 className="text-2xl font-bold text-gray-900">Pick Up Clothes</h2>
-        <p className="text-gray-600">Search by customer name, phone number, or ticket number</p>
-      </div>
+    <div className="max-w-4xl mx-auto">
+      <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center">
+        <CheckCircle className="w-8 h-8 mr-3 text-blue-600" />
+        Ticket Pickup
+      </h2>
 
-      {step === 'search' && renderSearchBar()}
-      {step === 'search' && tickets.length > 0 && renderSearchResults()}
-      {step === 'details' && selectedTicket && renderTicketDetails()}
-      {step === 'payment' && selectedTicket && renderPaymentForm()}
+      {/* --- STEP 1: SEARCH --- */}
+      {step === 'search' && (
+        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+          <form onSubmit={handleSearch} className="mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Find Ticket</label>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Enter Ticket # (e.g., 241105-001) or Customer Name"
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+              </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              >
+                {loading ? 'Searching...' : 'Search'}
+              </button>
+            </div>
+          </form>
 
-      <Modal
-        isOpen={modal.isOpen}
-        onClose={() => setModal({ ...modal, isOpen: false })}
-        title={modal.title}
-        message={modal.message}
-      />
+          {tickets.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ticket #</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Balance</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {tickets.map((ticket) => (
+                    <tr key={ticket.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600">
+                        {ticket.ticket_number}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {ticket.customer_name}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                          {ticket.status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600 font-medium">
+                        ${(ticket.total_amount - ticket.paid_amount).toFixed(2)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <button
+                          onClick={() => handleSelectTicket(ticket)}
+                          className="text-blue-600 hover:text-blue-900 font-bold"
+                        >
+                          Process
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
-      {/* --- UPDATED: Consistent Print Preview Modal --- */}
+      {/* --- STEP 2: DETAILS CONFIRMATION --- */}
+      {step === 'details' && selectedTicket && (
+        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+          <div className="flex justify-between items-start mb-6">
+            <h3 className="text-lg font-semibold text-gray-900">Confirm Pickup Details</h3>
+            <button onClick={() => setStep('search')} className="text-gray-500 hover:text-gray-700">
+                Cancel
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <div className="bg-gray-50 p-4 rounded-lg">
+                <h4 className="font-medium text-gray-700 mb-2">Customer Info</h4>
+                <p className="text-lg font-bold">{selectedTicket.customer_name}</p>
+                <p className="text-gray-600">{selectedTicket.customer_phone}</p>
+            </div>
+            <div className="bg-blue-50 p-4 rounded-lg">
+                <h4 className="font-medium text-blue-800 mb-2">Rack Location</h4>
+                <div className="flex items-center">
+                    <MapPin className="w-5 h-5 text-blue-600 mr-2" />
+                    <span className="text-2xl font-bold text-blue-900">
+                        {selectedTicket.rack_number || 'Unassigned'}
+                    </span>
+                </div>
+            </div>
+          </div>
+
+          <div className="border-t pt-4">
+             <div className="flex justify-between items-center mb-4">
+                <span className="text-gray-600">Total Ticket Amount:</span>
+                <span className="text-xl font-bold">${selectedTicket.total_amount.toFixed(2)}</span>
+             </div>
+             <div className="flex justify-between items-center mb-4">
+                <span className="text-gray-600">Already Paid:</span>
+                <span className="text-xl font-bold text-green-600">-${selectedTicket.paid_amount.toFixed(2)}</span>
+             </div>
+             <div className="flex justify-between items-center pt-4 border-t">
+                <span className="text-lg font-bold text-gray-900">Balance Due:</span>
+                <span className="text-2xl font-bold text-red-600">
+                    ${(selectedTicket.total_amount - selectedTicket.paid_amount).toFixed(2)}
+                </span>
+             </div>
+          </div>
+
+          <div className="mt-8 flex justify-end gap-3">
+             <button 
+                onClick={() => setStep('search')}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+             >
+                Back
+             </button>
+             <button
+                onClick={handleProceedToPayment}
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium flex items-center"
+             >
+                <CreditCard className="w-4 h-4 mr-2" />
+                Proceed to Payment
+             </button>
+          </div>
+        </div>
+      )}
+
+      {/* --- STEP 3: PAYMENT --- */}
+      {step === 'payment' && selectedTicket && (
+        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 max-w-md mx-auto">
+            <h3 className="text-xl font-bold text-gray-900 mb-6 text-center">Collect Payment</h3>
+            
+            <div className="mb-6 text-center">
+                <p className="text-gray-500 mb-1">Outstanding Balance</p>
+                <p className="text-4xl font-bold text-blue-600">
+                    ${(selectedTicket.total_amount - selectedTicket.paid_amount).toFixed(2)}
+                </p>
+            </div>
+
+            <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Amount Being Paid Now</label>
+                <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <span className="text-gray-500 sm:text-sm">$</span>
+                    </div>
+                    <input
+                        type="number"
+                        step="0.01"
+                        value={amountPaid}
+                        onChange={(e) => setAmountPaid(e.target.value)}
+                        className="block w-full pl-7 pr-12 py-3 text-lg border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                    />
+                </div>
+                {/* Quick Actions */}
+                <div className="mt-2 flex gap-2 justify-center">
+                    <button 
+                        type="button"
+                        onClick={() => setAmountPaid((selectedTicket.total_amount - selectedTicket.paid_amount).toFixed(2))}
+                        className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded border border-blue-100 hover:bg-blue-100"
+                    >
+                        Full Balance
+                    </button>
+                </div>
+            </div>
+
+            <button
+                onClick={handleProcessPickup}
+                disabled={loading || parseFloat(amountPaid) <= 0}
+                className="w-full bg-green-600 text-white py-3 rounded-lg font-bold text-lg hover:bg-green-700 disabled:opacity-50 flex justify-center items-center"
+            >
+                {loading ? 'Processing...' : 'Confirm Payment & Pickup'}
+            </button>
+            
+            <button 
+                onClick={() => setStep('details')}
+                className="w-full mt-3 py-2 text-gray-500 hover:text-gray-700 text-sm"
+            >
+                Cancel
+            </button>
+        </div>
+      )}
+
+      {/* --- MODALS --- */}
+      
+      {/* Success/Error Modal */}
+      {modal.isOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full mx-4">
+                <div className={`flex items-center mb-4 ${modal.type === 'error' ? 'text-red-600' : 'text-green-600'}`}>
+                    {modal.type === 'error' ? <AlertCircle className="w-6 h-6 mr-2" /> : <CheckCircle className="w-6 h-6 mr-2" />}
+                    <h3 className="text-lg font-bold">{modal.title}</h3>
+                </div>
+                <p className="text-gray-600 mb-6">{modal.message}</p>
+                <button
+                    onClick={() => setModal({ ...modal, isOpen: false })}
+                    className="w-full py-2 bg-gray-100 text-gray-800 rounded hover:bg-gray-200 font-medium"
+                >
+                    Close
+                </button>
+            </div>
+        </div>
+      )}
+
+      {/* Print Preview Modal */}
       <PrintPreviewModal
         isOpen={showPrintPreview}
         onClose={() => setShowPrintPreview(false)}
-        onPrint={() => { }} // No-op, hiding default button
-        content={printContent} // Customer receipt for preview
-        hideDefaultButton={true} // Hides standard print button
-        extraActions={(
-          <>
-            {/* Button 1: Print Receipts (All) */}
-            <button
-              onClick={() => {
-                const combinedHtml = `
-                    ${printContent}
-                    <div class="page-break"></div>
-                    ${plantPrintContent}
-                `;
-                handlePrintJob(combinedHtml);
-              }}
-              className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 flex items-center gap-2"
-            >
-              <Printer size={18} />
-              Print Receipts (All)
-            </button>
-
-            {/* Button 2: Print Plant Only */}
-            <button
-              onClick={() => {
-                handlePrintJob(plantPrintContent);
-              }}
-              className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 flex items-center gap-2"
-            >
-              <Printer size={18} />
-              Print Plant Only
-            </button>
-          </>
-        )}
+        onPrint={() => {}}
+        content={printContent}
+        hideDefaultButton={true}
+        extraActions={
+            <>
+                <button
+                    onClick={() => {
+                        // Combine receipts for "Print All"
+                        const combined = `${printContent}<div style="page-break-before: always;"></div>${plantPrintContent}`;
+                        handlePrintJob(combined);
+                    }}
+                    className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center gap-2"
+                >
+                    <Printer size={18} />
+                    Print All (Cust + Plant)
+                </button>
+                <button
+                    onClick={() => handlePrintJob(printContent)}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+                >
+                    <Printer size={18} />
+                    Print Customer Copy
+                </button>
+            </>
+        }
+        note="Pickup processed successfully! Please print the receipt below."
       />
+
     </div>
   );
 }
