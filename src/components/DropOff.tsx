@@ -399,6 +399,8 @@ export default function DropOff() {
 
       const newTicket = response.data;
 
+      console.log('Ticket created successfully:', newTicket);
+
       // 3. Generate Receipts
       const customerHtml = renderReceiptHtml(newTicket as any);
       const plantHtml = renderPlantReceiptHtml(newTicket as any);

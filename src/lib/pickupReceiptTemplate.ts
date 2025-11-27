@@ -3,56 +3,75 @@ import { Ticket } from '../types';
 export function renderPickupReceiptHtml(ticket: Ticket) {
     const items = ticket.items || [];
 
-    // --- UPDATED: Calculate Subtotal from Items ---
-    // This ensures the total matches the sum of line items, including any additional charges baked into item_total
-    const subtotal = items.reduce((sum, item) => sum + (item.item_total || 0), 0);
+    // --- CALCULATE SUBTOTAL ---
+    // We sum up the item_total from each line item. 
+    // The backend's 'item_total' already includes (Price * Qty) + Additional Charges.
+    // We use Number() to ensure strictly numerical addition (handling floats).
+    const subtotal = items.reduce((sum, item) => sum + (Number(item.item_total) || 0), 0);
     
-    const paid = ticket.paid_amount || 0;
+    const paid = Number(ticket.paid_amount) || 0;
 
-    const envCharge = subtotal * 0.047;
-    const tax = subtotal * 0.0825;
+    // --- TAX & FEES ---
+    const envCharge = subtotal * 0.047;  // 4.7%
+    const tax = subtotal * 0.0825;       // 8.25%
     const finalTotal = subtotal + envCharge + tax;
     const balance = finalTotal - paid;
 
-    const totalPieces = items.reduce((sum, item) => sum + (item.quantity * (item.pieces || 1)), 0);
+    // --- PIECE COUNT ---
+    const totalPieces = items.reduce((sum, item) => sum + (Number(item.quantity) * (Number(item.pieces) || 1)), 0);
+    
+    // --- DATE FORMATTING ---
     const pickedUpDate = new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
+    // --- BUILD ITEM LIST HTML ---
     const itemsList = items.map(item => {
-        const details = [];
-        if (item.starch_level && item.starch_level !== 'none' && item.starch_level !== 'no_starch') details.push(item.starch_level);
-        if (item.crease) details.push('Crease');
+        const quantity = Number(item.quantity) || 0;
+        const itemTotal = Number(item.item_total) || 0;
+        const additional = Number(item.additional_charge) || 0;
 
-        // --- BOLD ALTERATIONS ---
+        const details = [];
+        
+        // Starch & Crease
+        if (item.starch_level && item.starch_level !== 'none' && item.starch_level !== 'no_starch') {
+            details.push(item.starch_level);
+        }
+        if (item.crease) {
+            details.push('Crease');
+        }
+
+        // Alterations (Bold)
         if (item.alterations) {
             details.push(`<span style="font-weight:900; color:#000; font-style:normal;">Alt: ${item.alterations}</span>`);
         }
 
-        // --- ADDITIONAL CHARGE DISPLAY ---
-        if (item.additional_charge && item.additional_charge > 0) {
-            details.push(`<span style="font-weight:900; color:#000; font-style:normal;">Add'l: $${Number(item.additional_charge).toFixed(2)}</span>`);
+        // Additional Charge (Bold)
+        if (additional > 0) {
+            details.push(`<span style="font-weight:900; color:#000; font-style:normal;">Add'l: $${additional.toFixed(2)}</span>`);
         }
 
-        // Standard Instructions
+        // Instructions (Note)
         if (item.item_instructions) {
             details.push(`<br><span style="font-weight:900; color:#000; font-style:normal;">Note: ${item.item_instructions}</span>`);
         }
 
+        // Render Details Section
         const detailsHtml = details.length > 0
             ? `<div style="font-size:8pt;color:#666;margin-left:8px;">+ ${details.join(', ')}</div>`
             : '';
 
         return (
             `<div style="margin:4px 0;">` +
-            `<div style="display:flex;justify-content:space-between;font-size:10pt;font-weight: 600;">` +
-            `<div style="flex:1;">${item.clothing_name}</div>` +
-            `<div style="margin-left:8px;">x${item.quantity}</div>` +
-            `<div style="width:56px;text-align:right;">$${item.item_total.toFixed(2)}</div>` +
-            `</div>` +
-            detailsHtml +
+                `<div style="display:flex;justify-content:space-between;font-size:10pt;font-weight: 600;">` +
+                    `<div style="flex:1;">${item.clothing_name}</div>` +
+                    `<div style="margin-left:8px;">x${quantity}</div>` +
+                    `<div style="width:56px;text-align:right;">$${itemTotal.toFixed(2)}</div>` +
+                `</div>` +
+                detailsHtml +
             `</div>`
         );
     }).join('');
 
+    // --- RETURN FINAL HTML ---
     return `
     <div style="width:55mm;margin:0 auto;font-family: Arial, sans-serif;color:#111;padding:8px;">
       

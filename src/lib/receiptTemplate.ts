@@ -3,38 +3,34 @@ import { Ticket } from '../types';
 export function renderReceiptHtml(ticket: Ticket) {
   const items = ticket.items || [];
 
-  // --- UPDATED: Calculate Subtotal from Items ---
-  const subtotal = items.reduce((sum, item) => sum + (item.item_total || 0), 0);
+  // --- FIXED: Ensure numerical addition ---
+  const subtotal = items.reduce((sum, item) => sum + (Number(item.item_total) || 0), 0);
   
-  const paid = ticket.paid_amount || 0;
+  const paid = Number(ticket.paid_amount) || 0;
 
   const envCharge = subtotal * 0.047; // 4.7%
   const tax = subtotal * 0.0825; // 8.25%
   const finalTotal = subtotal + envCharge + tax;
   const balance = finalTotal - paid;
 
-  const totalPieces = items.reduce((sum, item) => sum + (item.quantity * (item.pieces || 1)), 0);
+  const totalPieces = items.reduce((sum, item) => sum + (Number(item.quantity) * (Number(item.pieces) || 1)), 0);
 
   const itemsList = items.map(item => {
     const details = [];
+    const quantity = Number(item.quantity) || 0;
+    const itemTotal = Number(item.item_total) || 0;
+    const additional = Number(item.additional_charge) || 0;
 
     if (item.starch_level && item.starch_level !== 'none' && item.starch_level !== 'no_starch') {
       details.push(`Starch: ${item.starch_level}`);
     }
-
     if (item.crease) details.push('Crease');
-
-    // --- BOLD ALTERATIONS ---
     if (item.alterations) {
       details.push(`<span style="font-weight:900; color:#000; font-style:normal;">Alt: ${item.alterations}</span>`);
     }
-
-    // --- ADDITIONAL CHARGE DISPLAY ---
-    if (item.additional_charge && item.additional_charge > 0) {
-        details.push(`<span style="font-weight:900; color:#000; font-style:normal;">Add'l: $${Number(item.additional_charge).toFixed(2)}</span>`);
+    if (additional > 0) {
+        details.push(`<span style="font-weight:900; color:#000; font-style:normal;">Add'l: $${additional.toFixed(2)}</span>`);
     }
-
-    // Standard Instructions
     if (item.item_instructions) {
       details.push(`<br> <span style="font-weight:900; color:#000; font-style:normal;">Note: ${item.item_instructions}</span>`);
     }
@@ -47,8 +43,8 @@ export function renderReceiptHtml(ticket: Ticket) {
       `<div style="margin:4px 0;">` +
       `<div style="display:flex;justify-content:space-between;font-size:10pt;font-weight: 600;">` +
       `<div style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.clothing_name}</div>` +
-      `<div style="margin-left:8px;min-width:28px;text-align:right">x${item.quantity}</div>` +
-      `<div style="width:56px;text-align:right;margin-left:8px">$${item.item_total.toFixed(2)}</div>` +
+      `<div style="margin-left:8px;min-width:28px;text-align:right">x${quantity}</div>` +
+      `<div style="width:56px;text-align:right;margin-left:8px">$${itemTotal.toFixed(2)}</div>` +
       `</div>` +
       detailsHtml +
       `</div>`
@@ -67,7 +63,6 @@ export function renderReceiptHtml(ticket: Ticket) {
       
       <div style="text-align:center;margin-top:10px;border-top:1px dashed #444;padding-top:5px;">
         <div style="font-size:12pt;font-weight:900;">CUSTOMER'S COPY</div>
-
         <div style="font-size:24px;font-weight:800;">${ticket.ticket_number}</div>
         <div style="font-size:9pt;">${new Date(ticket.created_at || Date.now()).toLocaleDateString()}</div>
       </div>
