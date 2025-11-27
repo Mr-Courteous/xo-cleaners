@@ -66,13 +66,8 @@ export function renderPlantReceiptHtml(ticket: Ticket) {
 
   return `
     <div style="width:55mm;margin:0 auto;font-family: Arial, sans-serif;color:#111;padding:8px;">
-      <div style="text-align:center;">
-        <div style="font-size:20px;font-weight:900;">PLANT COPY</div>
-        <div style="font-size:9pt;">INTERNAL RECORD</div>
-        <div style="font-size:9pt;">DO NOT DISTRIBUTE</div>
-      </div>
       
-      <div style="text-align:center;margin-top:10px;border-top:1px dashed #444;padding-top:5px;">
+      <div style="text-align:center;margin-top:10px;padding-top:5px;">
         <div style="font-size:24px;font-weight:800;">${ticket.ticket_number}</div>
         ${isPickedUp ? `<div style="font-size:12pt;font-weight:900;margin-top:2px;">PICKED UP</div>` : ''}
         <div style="font-size:9pt;">${statusDate}</div>
