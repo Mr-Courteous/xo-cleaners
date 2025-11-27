@@ -232,7 +232,7 @@ async def get_ticket_details(
             SELECT 
                 ti.id, ti.ticket_id, ti.clothing_type_id, ti.quantity, 
                 ti.item_total, ti.plant_price, ti.margin, ti.starch_level, ti.crease,
-                ti.alterations, ti.item_instructions,  -- <--- ADDED
+                ti.alterations, ti.item_instructions, ti.additional_charge  -- <--- ADDED
                 ct.name AS clothing_name,
                 ct.image_url AS clothing_image_url,
                 COALESCE(ct.pieces, 1) AS pieces
@@ -256,7 +256,7 @@ async def get_ticket_details(
                 item_total=item_row.item_total,
                 plant_price=item_row.plant_price,
                 margin=item_row.margin,
-                additional_charge=0.0,
+                additional_charge=item_row.additional_charge or 0.0,
                 clothing_name=item_row.clothing_name,
                 clothing_image_url=item_row.clothing_image_url,
                 pieces=item_row.pieces

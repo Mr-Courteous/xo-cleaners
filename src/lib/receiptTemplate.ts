@@ -28,6 +28,11 @@ export function renderReceiptHtml(ticket: Ticket) {
       details.push(`<span style="font-weight:900; color:#000; font-style:normal;">Alt: ${item.alterations}</span>`);
     }
 
+    // --- NEW: ADDITIONAL CHARGE DISPLAY ---
+    if (item.additional_charge && item.additional_charge > 0) {
+        details.push(`<span style="font-weight:900; color:#000; font-style:normal;">Add'l: $${Number(item.additional_charge).toFixed(2)}</span>`);
+    }
+
     // Standard Instructions
     if (item.item_instructions) {
       // details.push(`Note: ${item.item_instructions}`);

@@ -1262,7 +1262,7 @@ async def get_tickets_for_organization(
         )        
         
 # @router.get(
-#     "/tickets/{ticket_id}", 
+#     "/ticketskets", 
 #     response_model=TicketResponse, 
 #     summary="Get full details for a single ticket"
 # )
