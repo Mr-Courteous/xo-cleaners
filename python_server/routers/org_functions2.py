@@ -665,7 +665,7 @@ async def process_ticket_pickup(
         # --- NEW SECTION: Fetch Items for Receipt ---
         items_query = text("""
             SELECT 
-                ti.quantity, ti.item_total, ti.starch_level, ti.crease, ti.alterations, ti.item_instructions, ti.additional_charge
+                ti.quantity, ti.item_total, ti.starch_level, ti.crease, ti.alterations, ti.item_instructions, ti.additional_charge,
                 ct.name as clothing_name
             FROM ticket_items ti
             JOIN clothing_types ct ON ti.clothing_type_id = ct.id
