@@ -27,7 +27,8 @@ from utils.common import (
     RackAssignmentRequest,
     GeneralTicketUpdateRequest,
     TicketValidationResponse,
-    CustomerResponse
+    CustomerResponse,
+    CustomerUpdate
 )
 
 
@@ -691,3 +692,92 @@ async def edit_ticket_items(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
             detail=f"An error occurred while editing the ticket: {str(e)}"
         )
+        
+@router.put("/customers/{customer_id}", response_model=CustomerResponse, summary="Update an existing customer")
+def update_customer(
+    customer_id: int,
+    data: CustomerUpdate,
+    db: Session = Depends(get_db),
+    payload: Dict[str, Any] = Depends(get_current_user_payload)
+):
+    """
+    Updates an existing customer's details.
+    Only allows updates if the customer belongs to the logged-in user's organization.
+    """
+    
+    # 1. Get secure info from token
+    organization_id = payload.get("organization_id")
+    user_role = payload.get("role")
+
+    # 2. Authorization Check
+    allowed_roles = ["cashier", "store_admin", "org_owner", "STORE_OWNER"]
+    if user_role not in allowed_roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to update customers."
+        )
+
+    if not organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token: Organization ID missing."
+        )
+
+    # 3. Check if customer exists in this organization
+    # We explicitly check 'role' to ensure we aren't accidentally editing an admin/staff member
+    check_query = text("""
+        SELECT id FROM allUsers 
+        WHERE id = :id AND organization_id = :org_id AND role = 'customer'
+    """)
+    customer = db.execute(check_query, {"id": customer_id, "org_id": organization_id}).fetchone()
+
+    if not customer:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Customer not found in your organization."
+        )
+
+    try:
+        # 4. Perform the Update
+        # We sanitize the phone number here as well to be safe
+        clean_phone = ''.join(filter(str.isdigit, data.phone))
+
+        update_query = text("""
+            UPDATE allUsers
+            SET 
+                first_name = :first_name,
+                last_name = :last_name,
+                email = :email,
+                phone = :phone,
+                address = :address
+            WHERE id = :id AND organization_id = :org_id
+            RETURNING id, first_name, last_name, email, phone, address, role, organization_id, joined_at
+        """)
+
+        updated_customer = db.execute(update_query, {
+            "first_name": data.first_name,
+            "last_name": data.last_name,
+            "email": data.email.lower(),
+            "phone": clean_phone,
+            "address": data.address,
+            "id": customer_id,
+            "org_id": organization_id
+        }).fetchone()
+
+        db.commit()
+
+        return dict(updated_customer._mapping)
+
+    except IntegrityError as e:
+        db.rollback()
+        # Handle duplicate email or phone errors
+        if "unique" in str(e).lower() and "email" in str(e).lower():
+            raise HTTPException(status_code=409, detail="This email is already in use by another customer.")
+        if "unique" in str(e).lower() and "phone" in str(e).lower():
+            raise HTTPException(status_code=409, detail="This phone number is already in use.")
+        raise HTTPException(status_code=500, detail="Database error during update.")
+        
+    except Exception as e:
+        db.rollback()
+        print(f"Error updating customer: {e}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred.")

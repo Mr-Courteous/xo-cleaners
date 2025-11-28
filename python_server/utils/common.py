@@ -329,3 +329,10 @@ class CustomerResponse(BaseModel):
     organization_id: int
     joined_at: Optional[datetime] = None
     tenure: Optional[str] = "Prospect"
+    
+class CustomerUpdate(BaseModel):
+    first_name: str
+    last_name: str
+    email: EmailStr
+    phone: str
+    address: Optional[str] = None

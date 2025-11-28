@@ -1,231 +1,488 @@
-import React, { useState } from 'react';
-import { Search, User, Phone, Mail, MapPin, Plus, Calendar } from 'lucide-react';
-// import { apiCall } from '../hooks/useApi'; // --- REMOVED ---
-import axios from 'axios'; // --- NEW ---
-import baseURL from '../lib/config'; // --- NEW ---
-import { Customer } from '../types';
+import React, { useState, useEffect } from 'react';
+import { 
+  Search, User, Phone, Mail, MapPin, Plus, 
+  ChevronRight, X, Save, ArrowLeft, Edit2, 
+  Trash2, CheckCircle, AlertCircle, Calendar
+} from 'lucide-react';
+import axios from 'axios';
+import baseURL from '../lib/config';
+
+// --- TYPES ---
+interface Customer {
+  id: number;
+  first_name?: string;
+  last_name?: string;
+  name?: string; // Fallback for some APIs
+  email: string;
+  phone: string;
+  address?: string;
+  tenure?: string;
+  joined_at?: string;
+}
 
 export default function CustomerManagement() {
-  const [searchQuery, setSearchQuery] = useState('');
+  // --- STATE ---
+  // View Modes: 'list' | 'create' | 'details' | 'edit'
+  const [viewMode, setViewMode] = useState<'list' | 'create' | 'details' | 'edit'>('list');
+  
+  // Data State
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [showNewForm, setShowNewForm] = useState(false);
-  const [newCustomer, setNewCustomer] = useState({ name: '', phone: '', email: '', address: '' });
-  const [loading, setLoading] = useState(false);
-  const [formLoading, setFormLoading] = useState(false); // For new customer form
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  // Form State (Reused for Create & Edit)
+  const [formData, setFormData] = useState({
+    first_name: '',
+    last_name: '',
+    phone: '',
+    email: '',
+    address: ''
+  });
 
-  // --- UPDATED: searchCustomers function ---
-  const searchCustomers = async () => {
-    if (!searchQuery.trim()) return;
-    
+  // UI Status
+  const [loading, setLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [notification, setNotification] = useState<{type: 'success'|'error', message: string} | null>(null);
+
+  // --- 1. FETCH / SEARCH CUSTOMERS ---
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      if (viewMode === 'list') {
+        fetchCustomers();
+      }
+    }, 300);
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchQuery, viewMode]);
+
+  const fetchCustomers = async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem("accessToken");
-      if (!token) throw new Error("Access token not found");
+      const token = localStorage.getItem('accessToken');
+      const url = searchQuery 
+        ? `${baseURL}/api/organizations/customers/search?query=${encodeURIComponent(searchQuery)}`
+        : `${baseURL}/api/organizations/customers`;
 
-      const headers = { 'Authorization': `Bearer ${token}` };
-
-      // Use the full, secured API path
-      const response = await axios.get(
-        `${baseURL}/api/organizations/customers/search?query=${encodeURIComponent(searchQuery)}`,
-        { headers }
-      );
-      
+      const response = await axios.get(url, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       setCustomers(response.data);
     } catch (error) {
-      console.error('Failed to search customers:', error);
-      alert('Failed to search customers.');
+      console.error("Error fetching customers:", error);
     } finally {
       setLoading(false);
     }
   };
 
-  // --- UPDATED: createCustomer function ---
-  const createCustomer = async () => {
-    if (!newCustomer.name || !newCustomer.phone) {
-      alert("Full Name and Phone are required.");
-      return;
-    }
-    
-    setFormLoading(true);
+  // --- 2. CREATE NEW CUSTOMER (Updated to match Python Backend) ---
+  const handleCreateSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setActionLoading(true);
     try {
       const token = localStorage.getItem("accessToken");
-      if (!token) throw new Error("Access token not found");
+      
+      // Prepare payload to match 'NewCustomerRequest' schema
+      // Note: Backend requires a password to hash. We default to the phone number.
+      const payload = {
+        first_name: formData.first_name,
+        last_name: formData.last_name,
+        email: formData.email,
+        address: formData.address,
+        phone: formData.phone, 
+        password: formData.phone || "123456" // Default password is required by backend hashing
+      };
 
-      const headers = { 'Authorization': `Bearer ${token}` };
-
-      // Assume the creation path is also under /api/organizations
-      // The backend needs to handle the "name" field and split it
-      // into first_name/last_name if necessary.
-      const response = await axios.post(
-        `${baseURL}/api/organizations/register-customer`,
-        newCustomer, // Send the newCustomer object as data
-        { headers }
+      await axios.post(
+        `${baseURL}/api/organizations/register-customer`, 
+        payload, 
+        { headers: { Authorization: `Bearer ${token}` } }
       );
-
-      const customer = response.data; // Get customer from response
       
-      setCustomers([customer, ...customers]);
-      setNewCustomer({ name: '', phone: '', email: '', address: '' });
-      setShowNewForm(false);
-      alert('Customer created successfully!');
-      
+      showNotification('success', 'Customer created successfully!');
+      resetForm();
+      setViewMode('list');
+      fetchCustomers(); // Refresh list to show new user
     } catch (error: any) {
-      console.error('Failed to create customer:', error);
-      alert(`Failed to create customer: ${error.response?.data?.detail || error.message}`);
+      const msg = error.response?.data?.detail || "Failed to create customer.";
+      showNotification('error', msg);
     } finally {
-      setFormLoading(false);
+      setActionLoading(false);
     }
   };
 
-  // --- (Existing) Form change handler ---
-  const handleFormChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setNewCustomer({
-      ...newCustomer,
-      [e.target.name]: e.target.value,
-    });
+  // --- 3. UPDATE CUSTOMER ---
+  const handleUpdateSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCustomer) return;
+    
+    setActionLoading(true);
+    try {
+      const token = localStorage.getItem("accessToken");
+      // Assuming PUT endpoint exists for updates
+      const response = await axios.put(
+        `${baseURL}/api/organizations/customers/${selectedCustomer.id}`, 
+        formData, 
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      // Update local state immediately
+      setSelectedCustomer(response.data);
+      showNotification('success', 'Customer updated successfully!');
+      setViewMode('details'); // Go back to read-only details
+    } catch (error: any) {
+      console.error("Update failed", error);
+      const msg = error.response?.data?.detail || "Failed to update customer.";
+      showNotification('error', msg);
+    } finally {
+      setActionLoading(false);
+    }
   };
 
-  return (
-    <div className="p-4">
-      {/* Search Bar & New Button */}
-      <div className="flex justify-between items-center mb-6">
-        <div className="flex items-center space-x-2 flex-grow">
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && searchCustomers()}
-            placeholder="Search by Name, Phone, or Email..."
-            className="flex-grow p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <button
-            onClick={searchCustomers}
-            disabled={loading}
-            className="px-6 py-3 bg-blue-600 text-white rounded-lg shadow-sm hover:bg-blue-700 disabled:bg-gray-400"
-          >
-            <Search className="h-5 w-5" />
-          </button>
+  // --- HELPER FUNCTIONS ---
+  const showNotification = (type: 'success'|'error', message: string) => {
+    setNotification({ type, message });
+    setTimeout(() => setNotification(null), 3000);
+  };
+
+  const resetForm = () => {
+    setFormData({ first_name: '', last_name: '', phone: '', email: '', address: '' });
+  };
+
+  const handleSelectCustomer = (customer: Customer) => {
+    setSelectedCustomer(customer);
+    setViewMode('details');
+  };
+
+  const initEditMode = () => {
+    if (!selectedCustomer) return;
+    // Pre-fill form with current data
+    setFormData({
+      first_name: selectedCustomer.first_name || selectedCustomer.name?.split(' ')[0] || '',
+      last_name: selectedCustomer.last_name || selectedCustomer.name?.split(' ').slice(1).join(' ') || '',
+      phone: selectedCustomer.phone || '',
+      email: selectedCustomer.email || '',
+      address: selectedCustomer.address || ''
+    });
+    setViewMode('edit');
+  };
+
+  // --- RENDERERS ---
+
+  // 1. LIST VIEW
+  const renderList = () => (
+    <div className="space-y-6 animate-in fade-in duration-300">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Customer Directory</h1>
+          <p className="text-sm text-gray-500">Manage and search your customer base</p>
         </div>
         <button
-          onClick={() => setShowNewForm(!showNewForm)}
-          className="ml-4 px-4 py-3 bg-green-600 text-white rounded-lg shadow-sm hover:bg-green-700 flex items-center"
+          onClick={() => { resetForm(); setViewMode('create'); }}
+          className="flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm w-full sm:w-auto"
         >
-          <Plus className="h-5 w-5 mr-1" />
-          New Customer
+          <Plus className="h-5 w-5 mr-2" />
+          Add Customer
         </button>
       </div>
 
-      {/* New Customer Form */}
-      {showNewForm && (
-        <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200 mb-6">
-          <h3 className="text-xl font-semibold mb-4">Create New Customer</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <input
-              type="text"
-              name="name"
-              placeholder="Full Name (Required)"
-              value={newCustomer.name}
-              onChange={handleFormChange}
-              className="p-3 border border-gray-300 rounded-lg"
-            />
-            <input
-              type="text"
-              name="phone"
-              placeholder="Phone (Required)"
-              value={newCustomer.phone}
-              onChange={handleFormChange}
-              className="p-3 border border-gray-300 rounded-lg"
-            />
-            <input
-              type="email"
-              name="email"
-              placeholder="Email"
-              value={newCustomer.email}
-              onChange={handleFormChange}
-              className="p-3 border border-gray-300 rounded-lg"
-            />
-            <input
-              type="text"
-              name="address"
-              placeholder="Address"
-              value={newCustomer.address}
-              onChange={handleFormChange}
-              className="p-3 border border-gray-300 rounded-lg"
-            />
+      <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+        <div className="relative">
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <Search className="h-5 w-5 text-gray-400" />
           </div>
-          <div className="mt-4 flex justify-end">
-            <button
-              onClick={() => setShowNewForm(false)}
-              className="px-4 py-2 text-gray-700 mr-2"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={createCustomer}
-              disabled={formLoading}
-              className="px-6 py-2 bg-blue-600 text-white rounded-lg shadow-sm hover:bg-blue-700 disabled:bg-gray-400"
-            >
-              {formLoading ? 'Saving...' : 'Save Customer'}
-            </button>
+          <input
+            type="text"
+            className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm"
+            placeholder="Search by name, email, or phone..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+      </div>
+
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden min-h-[300px]">
+        {loading ? (
+          <div className="flex justify-center items-center h-64">
+             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
           </div>
-        </div>
-      )}
-
-      {/* Loading & Results */}
-      {loading && (
-        <div className="text-center p-6 text-gray-500">
-          <p>Loading customers...</p>
-        </div>
-      )}
-
-      {!loading && customers.length === 0 && (
-        <div className="text-center p-6 text-gray-500">
-          <User className="h-12 w-12 mx-auto mb-2 text-gray-300" />
-          <p>No customers found. Try a search or create a new one.</p>
-        </div>
-      )}
-
-      {/* Customer List */}
-      {!loading && customers.length > 0 && (
-        <div className="space-y-4">
-          {customers.map((customer) => (
-            <div key={customer.id} className="bg-white border border-gray-200 rounded-lg shadow-sm p-5">
-              <div className="flex justify-between">
-                <div>
-                  <div className="flex items-center mb-2">
-                    <User className="h-5 w-5 text-blue-600 mr-2" />
-                    <span className="text-xl font-bold text-gray-900">{customer.name}</span>
+        ) : customers.length === 0 ? (
+          <div className="p-12 text-center text-gray-500">
+            <User className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+            <p>No customers found.</p>
+          </div>
+        ) : (
+          <ul className="divide-y divide-gray-200">
+            {customers.map((customer) => (
+              <li key={customer.id} className="hover:bg-blue-50 transition-colors cursor-pointer" onClick={() => handleSelectCustomer(customer)}>
+                <div className="p-4 sm:px-6 flex items-center justify-between">
+                  <div className="flex items-center min-w-0 flex-1">
+                    <div className="h-10 w-10 flex-shrink-0 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold">
+                      {(customer.first_name || customer.name || '?').charAt(0).toUpperCase()}
+                    </div>
+                    <div className="ml-4 truncate">
+                      <div className="text-sm font-medium text-blue-600 truncate">
+                        {customer.first_name ? `${customer.first_name} ${customer.last_name || ''}` : customer.name}
+                      </div>
+                      <div className="flex flex-col sm:flex-row sm:items-center text-sm text-gray-500 gap-1 sm:gap-3 mt-0.5">
+                        {customer.email && <span>{customer.email}</span>}
+                        {customer.email && customer.phone && <span className="hidden sm:inline text-gray-300">•</span>}
+                        {customer.phone && <span className="flex items-center"><Phone className="w-3 h-3 mr-1" /> {customer.phone}</span>}
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex items-center">
-                    <Phone className="h-4 w-4 text-gray-400 mr-2" />
-                    <span className="text-gray-600">{customer.phone}</span>
+                  <div className="flex items-center ml-4">
+                    {customer.tenure && (
+                      <span className={`hidden sm:inline-flex px-2 py-0.5 text-xs font-semibold rounded-full mr-4 ${customer.tenure === 'Prospect' ? 'bg-gray-100 text-gray-800' : 'bg-green-100 text-green-800'}`}>
+                        {customer.tenure}
+                      </span>
+                    )}
+                    <ChevronRight className="h-5 w-5 text-gray-400" />
                   </div>
                 </div>
-                <div className="flex items-center space-x-6 text-sm text-gray-500">
-                  {customer.email && (
-                    <div className="flex items-center">
-                      <Mail className="h-4 w-4 mr-1" />
-                      {customer.email}
-                    </div>
-                  )}
-                  {customer.address && (
-                    <div className="flex items-center">
-                      <MapPin className="h-4 w-4 mr-1" />
-                      {customer.address}
-                    </div>
-                  )}
-                  {customer.last_visit_date && (
-                    <div className="flex items-center">
-                      <Calendar className="h-4 w-4 mr-1" />
-                      Last visit: {new Date(customer.last_visit_date).toLocaleDateString()}
-                    </div>
-                  )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+
+  // 2. DETAILS VIEW (READ ONLY)
+  const renderDetails = () => {
+    if (!selectedCustomer) return null;
+    const displayName = selectedCustomer.first_name 
+        ? `${selectedCustomer.first_name} ${selectedCustomer.last_name || ''}` 
+        : selectedCustomer.name;
+
+    return (
+      <div className="max-w-3xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-300">
+        <button 
+          onClick={() => setViewMode('list')}
+          className="mb-6 flex items-center text-gray-600 hover:text-blue-600 transition-colors"
+        >
+          <ArrowLeft className="w-5 h-5 mr-2" />
+          Back to Directory
+        </button>
+
+        <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-slate-700 to-slate-800 p-6 text-white flex justify-between items-start">
+            <div className="flex items-center gap-4">
+              <div className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center backdrop-blur-sm border-2 border-white/20 text-2xl font-bold">
+                {displayName?.charAt(0).toUpperCase()}
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold">{displayName}</h2>
+                <div className="flex items-center mt-2 gap-2">
+                   <span className="px-3 py-1 rounded-full text-xs font-bold bg-white/20 border border-white/10">
+                     {selectedCustomer.tenure || 'Customer'}
+                   </span>
                 </div>
               </div>
             </div>
-          ))}
+            <button 
+              onClick={initEditMode}
+              className="p-2 bg-white/10 hover:bg-white/20 rounded-full transition text-white"
+              title="Edit Customer"
+            >
+              <Edit2 size={20} />
+            </button>
+          </div>
+
+          {/* Body */}
+          <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="space-y-6">
+              <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider border-b pb-2">Contact Info</h3>
+              
+              <div className="flex items-start gap-3">
+                <Mail className="w-5 h-5 text-gray-400 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-gray-900">Email</p>
+                  <p className="text-sm text-gray-600">{selectedCustomer.email || 'N/A'}</p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3">
+                <Phone className="w-5 h-5 text-gray-400 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-gray-900">Phone</p>
+                  <p className="text-sm text-gray-600">{selectedCustomer.phone || 'N/A'}</p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3">
+                <MapPin className="w-5 h-5 text-gray-400 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-gray-900">Address</p>
+                  <p className="text-sm text-gray-600">{selectedCustomer.address || 'N/A'}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider border-b pb-2">Account Details</h3>
+              <div className="bg-gray-50 p-4 rounded-lg border border-gray-100">
+                 <div className="flex items-center gap-2 mb-2">
+                    <Calendar className="w-4 h-4 text-blue-500" />
+                    <span className="text-sm font-semibold text-gray-700">Joined Date</span>
+                 </div>
+                 <p className="text-sm text-gray-600 pl-6">
+                    {selectedCustomer.joined_at 
+                      ? new Date(selectedCustomer.joined_at).toLocaleDateString() 
+                      : 'N/A'
+                    }
+                 </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // 3. CREATE / EDIT FORM VIEW
+  const renderForm = () => {
+    const isEdit = viewMode === 'edit';
+    const title = isEdit ? 'Edit Customer' : 'Add New Customer';
+    const submitHandler = isEdit ? handleUpdateSubmit : handleCreateSubmit;
+
+    return (
+      <div className="max-w-2xl mx-auto animate-in zoom-in-95 duration-200">
+        <button 
+          onClick={() => setViewMode(isEdit ? 'details' : 'list')}
+          className="mb-6 flex items-center text-gray-600 hover:text-blue-600 transition-colors"
+        >
+          <ArrowLeft className="w-5 h-5 mr-2" />
+          {isEdit ? 'Back to Details' : 'Back to Directory'}
+        </button>
+
+        <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+          <div className="p-6 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
+            <h2 className="text-xl font-bold text-gray-900">{title}</h2>
+            {isEdit && (
+               <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded font-mono">
+                 ID: {selectedCustomer?.id}
+               </span>
+            )}
+          </div>
+          
+          <div className="p-6">
+            <form onSubmit={submitHandler} className="space-y-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">First Name <span className="text-red-500">*</span></label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.first_name}
+                    onChange={(e) => setFormData({...formData, first_name: e.target.value})}
+                    className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Last Name</label>
+                  <input
+                    type="text"
+                    value={formData.last_name}
+                    onChange={(e) => setFormData({...formData, last_name: e.target.value})}
+                    className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Phone Number <span className="text-red-500">*</span></label>
+                <div className="mt-1 relative rounded-md shadow-sm">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Phone className="h-5 w-5 text-gray-400" />
+                  </div>
+                  <input
+                    type="tel"
+                    required
+                    value={formData.phone}
+                    onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                    className="block w-full pl-10 border border-gray-300 rounded-md py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                    placeholder="(555) 123-4567"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Email Address</label>
+                <div className="mt-1 relative rounded-md shadow-sm">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Mail className="h-5 w-5 text-gray-400" />
+                  </div>
+                  <input
+                    type="email"
+                    value={formData.email}
+                    onChange={(e) => setFormData({...formData, email: e.target.value})}
+                    className="block w-full pl-10 border border-gray-300 rounded-md py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                    placeholder="customer@example.com"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Physical Address</label>
+                <div className="mt-1 relative rounded-md shadow-sm">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <MapPin className="h-5 w-5 text-gray-400" />
+                  </div>
+                  <input
+                    type="text"
+                    value={formData.address}
+                    onChange={(e) => setFormData({...formData, address: e.target.value})}
+                    className="block w-full pl-10 border border-gray-300 rounded-md py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                    placeholder="123 Main St..."
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-4 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => setViewMode(isEdit ? 'details' : 'list')}
+                  className="mr-3 px-4 py-2 bg-white border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={actionLoading}
+                  className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none disabled:opacity-50 flex items-center"
+                >
+                  {actionLoading ? (
+                    'Saving...'
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4 mr-2" />
+                      {isEdit ? 'Update Customer' : 'Create Customer'}
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="p-4 sm:p-6 bg-gray-50 min-h-screen">
+      {/* Notifications */}
+      {notification && (
+        <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg flex items-center gap-2 animate-in slide-in-from-top-2 ${
+          notification.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+        }`}>
+          {notification.type === 'success' ? <CheckCircle size={18} /> : <AlertCircle size={18} />}
+          <span className="text-sm font-medium">{notification.message}</span>
         </div>
       )}
+
+      {viewMode === 'list' && renderList()}
+      {viewMode === 'details' && renderDetails()}
+      {(viewMode === 'create' || viewMode === 'edit') && renderForm()}
     </div>
   );
 }
