@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Search, User, Phone, Mail, MapPin, Plus, 
   ChevronRight, X, Save, ArrowLeft, Edit2, 
-  Trash2, CheckCircle, AlertCircle, Calendar
+  CheckCircle, AlertCircle, Calendar
 } from 'lucide-react';
 import axios from 'axios';
 import baseURL from '../lib/config';
@@ -12,7 +12,7 @@ interface Customer {
   id: number;
   first_name?: string;
   last_name?: string;
-  name?: string; // Fallback for some APIs
+  name?: string; // Fallback
   email: string;
   phone: string;
   address?: string;
@@ -22,15 +22,12 @@ interface Customer {
 
 export default function CustomerManagement() {
   // --- STATE ---
-  // View Modes: 'list' | 'create' | 'details' | 'edit'
   const [viewMode, setViewMode] = useState<'list' | 'create' | 'details' | 'edit'>('list');
-  
-  // Data State
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   
-  // Form State (Reused for Create & Edit)
+  // Form State
   const [formData, setFormData] = useState({
     first_name: '',
     last_name: '',
@@ -39,12 +36,11 @@ export default function CustomerManagement() {
     address: ''
   });
 
-  // UI Status
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [notification, setNotification] = useState<{type: 'success'|'error', message: string} | null>(null);
 
-  // --- 1. FETCH / SEARCH CUSTOMERS ---
+  // --- 1. FETCH CUSTOMERS ---
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
       if (viewMode === 'list') {
@@ -73,22 +69,23 @@ export default function CustomerManagement() {
     }
   };
 
-  // --- 2. CREATE NEW CUSTOMER (Updated to match Python Backend) ---
+  // --- 2. CREATE CUSTOMER ---
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setActionLoading(true);
     try {
       const token = localStorage.getItem("accessToken");
       
-      // Prepare payload to match 'NewCustomerRequest' schema
-      // Note: Backend requires a password to hash. We default to the phone number.
+      // Sanitize Phone: Remove non-digits
+      const cleanPhone = formData.phone.replace(/\D/g, ''); 
+
       const payload = {
         first_name: formData.first_name,
         last_name: formData.last_name,
         email: formData.email,
         address: formData.address,
-        phone: formData.phone, 
-        password: formData.phone || "123456" // Default password is required by backend hashing
+        phone: cleanPhone, 
+        password: cleanPhone || "123456" // Default password
       };
 
       await axios.post(
@@ -100,7 +97,7 @@ export default function CustomerManagement() {
       showNotification('success', 'Customer created successfully!');
       resetForm();
       setViewMode('list');
-      fetchCustomers(); // Refresh list to show new user
+      fetchCustomers();
     } catch (error: any) {
       const msg = error.response?.data?.detail || "Failed to create customer.";
       showNotification('error', msg);
@@ -117,17 +114,28 @@ export default function CustomerManagement() {
     setActionLoading(true);
     try {
       const token = localStorage.getItem("accessToken");
-      // Assuming PUT endpoint exists for updates
+      
+      const cleanPhone = formData.phone.replace(/\D/g, '');
+
+      // Payload must match the backend schema (usually doesn't need password for edit)
+      const payload = {
+        first_name: formData.first_name,
+        last_name: formData.last_name,
+        email: formData.email,
+        address: formData.address,
+        phone: cleanPhone
+      };
+
       const response = await axios.put(
         `${baseURL}/api/organizations/customers/${selectedCustomer.id}`, 
-        formData, 
+        payload, 
         { headers: { Authorization: `Bearer ${token}` } }
       );
       
-      // Update local state immediately
-      setSelectedCustomer(response.data);
+      setSelectedCustomer(response.data); // Update local details view
       showNotification('success', 'Customer updated successfully!');
-      setViewMode('details'); // Go back to read-only details
+      setViewMode('details');
+      fetchCustomers(); // Refresh main list
     } catch (error: any) {
       console.error("Update failed", error);
       const msg = error.response?.data?.detail || "Failed to update customer.";
@@ -154,7 +162,6 @@ export default function CustomerManagement() {
 
   const initEditMode = () => {
     if (!selectedCustomer) return;
-    // Pre-fill form with current data
     setFormData({
       first_name: selectedCustomer.first_name || selectedCustomer.name?.split(' ')[0] || '',
       last_name: selectedCustomer.last_name || selectedCustomer.name?.split(' ').slice(1).join(' ') || '',
@@ -246,7 +253,7 @@ export default function CustomerManagement() {
     </div>
   );
 
-  // 2. DETAILS VIEW (READ ONLY)
+  // 2. DETAILS VIEW
   const renderDetails = () => {
     if (!selectedCustomer) return null;
     const displayName = selectedCustomer.first_name 
@@ -292,7 +299,6 @@ export default function CustomerManagement() {
           <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-8">
             <div className="space-y-6">
               <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider border-b pb-2">Contact Info</h3>
-              
               <div className="flex items-start gap-3">
                 <Mail className="w-5 h-5 text-gray-400 mt-0.5" />
                 <div>
@@ -300,7 +306,6 @@ export default function CustomerManagement() {
                   <p className="text-sm text-gray-600">{selectedCustomer.email || 'N/A'}</p>
                 </div>
               </div>
-
               <div className="flex items-start gap-3">
                 <Phone className="w-5 h-5 text-gray-400 mt-0.5" />
                 <div>
@@ -308,7 +313,6 @@ export default function CustomerManagement() {
                   <p className="text-sm text-gray-600">{selectedCustomer.phone || 'N/A'}</p>
                 </div>
               </div>
-
               <div className="flex items-start gap-3">
                 <MapPin className="w-5 h-5 text-gray-400 mt-0.5" />
                 <div>
@@ -451,9 +455,7 @@ export default function CustomerManagement() {
                   disabled={actionLoading}
                   className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none disabled:opacity-50 flex items-center"
                 >
-                  {actionLoading ? (
-                    'Saving...'
-                  ) : (
+                  {actionLoading ? 'Saving...' : (
                     <>
                       <Save className="w-4 h-4 mr-2" />
                       {isEdit ? 'Update Customer' : 'Create Customer'}
@@ -470,7 +472,6 @@ export default function CustomerManagement() {
 
   return (
     <div className="p-4 sm:p-6 bg-gray-50 min-h-screen">
-      {/* Notifications */}
       {notification && (
         <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg flex items-center gap-2 animate-in slide-in-from-top-2 ${
           notification.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
