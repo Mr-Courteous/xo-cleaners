@@ -4,16 +4,16 @@ export function renderPickupReceiptHtml(ticket: Ticket) {
     const items = ticket.items || [];
 
     // --- CALCULATE SUBTOTAL ---
-    // Summing item_total which includes (price * qty) + additional charges
     const subtotal = items.reduce((sum, item) => sum + (Number(item.item_total) || 0), 0);
-    
     const paid = Number(ticket.paid_amount) || 0;
 
     // --- TAX & FEES ---
     const envCharge = subtotal * 0.047;  // 4.7%
     const tax = subtotal * 0.0825;       // 8.25%
+    
     const finalTotal = subtotal + envCharge + tax;
     const balance = finalTotal - paid;
+    const isPaid = balance <= 0.01;
 
     // --- PIECE COUNT ---
     const totalPieces = items.reduce((sum, item) => sum + (Number(item.quantity) * (Number(item.pieces) || 1)), 0);
@@ -28,22 +28,11 @@ export function renderPickupReceiptHtml(ticket: Ticket) {
         const additional = Number(item.additional_charge) || 0;
 
         const details = [];
-        
-        if (item.starch_level && item.starch_level !== 'none' && item.starch_level !== 'no_starch') {
-            details.push(item.starch_level);
-        }
-        if (item.crease) {
-            details.push('Crease');
-        }
-        if (item.alterations) {
-            details.push(`<span style="font-weight:900; color:#000; font-style:normal;">Alt: ${item.alterations}</span>`);
-        }
-        if (additional > 0) {
-            details.push(`<span style="font-weight:900; color:#000; font-style:normal;">Add'l: $${additional.toFixed(2)}</span>`);
-        }
-        if (item.item_instructions) {
-            details.push(`<br><span style="font-weight:900; color:#000; font-style:normal;">Note: ${item.item_instructions}</span>`);
-        }
+        if (item.starch_level && item.starch_level !== 'none' && item.starch_level !== 'no_starch') details.push(item.starch_level);
+        if (item.crease) details.push('Crease');
+        if (item.alterations) details.push(`<span style="font-weight:900;">Alt: ${item.alterations}</span>`);
+        if (additional > 0) details.push(`<span style="font-weight:900;">Add'l: $${additional.toFixed(2)}</span>`);
+        if (item.item_instructions) details.push(`<br><span style="font-weight:900;">Note: ${item.item_instructions}</span>`);
 
         const detailsHtml = details.length > 0
             ? `<div style="font-size:8pt;color:#666;margin-left:8px;">+ ${details.join(', ')}</div>`
@@ -62,15 +51,15 @@ export function renderPickupReceiptHtml(ticket: Ticket) {
     }).join('');
 
     return `
-    <div style="width:55mm;margin:0 auto;font-family: Arial, sans-serif;color:#111;padding:8px;">
+    <div style="width:55mm;margin:0 auto;font-family: 'Courier New', Courier, monospace;color:#111;padding:8px; background: white;">
       
       <div style="text-align:center;">
-        <div style="font-size:20px;font-weight:900;">Airport Cleaners</div>
+        <div style="font-size:18px;font-weight:900; font-family: Arial, sans-serif;">Airport Cleaners</div>
         <div style="font-size:9pt;">(713) 723-5579</div>
       </div>
       
       <div style="text-align:center;margin-top:10px;border-bottom:1px solid #000;padding-bottom:5px;">
-        <div style="font-size:24px;font-weight:800;">${ticket.ticket_number}</div>
+        <div style="font-size:24px;font-weight:800; font-family: Arial, sans-serif;">${ticket.ticket_number}</div>
         <div style="font-size:12pt;font-weight:bold;margin-top:5px;">PICKED UP</div>
         <div style="font-size:9pt;">${pickedUpDate}</div>
       </div>
@@ -94,7 +83,14 @@ export function renderPickupReceiptHtml(ticket: Ticket) {
       <div style="font-size:10pt;font-weight: 600;">
         <div style="display:flex;justify-content:space-between;"> <div>Total:</div> <div>$${finalTotal.toFixed(2)}</div> </div>
         <div style="display:flex;justify-content:space-between;"> <div>Paid:</div> <div>$${paid.toFixed(2)}</div> </div>
-        <div style="display:flex;justify-content:space-between;font-weight:800;margin-top:4px;"> <div>BALANCE:</div> <div>$${balance.toFixed(2)}</div> </div>
+        
+        ${isPaid 
+            ? `<div style="text-align:center; margin-top:8px; font-weight:900; font-size: 14pt; border: 2px solid black;">PAID</div>`
+            : `<div style="display:flex;justify-content:space-between;font-weight:900;margin-top:4px; font-size:11pt;"> 
+                 <div>BALANCE DUE:</div> 
+                 <div>$${balance.toFixed(2)}</div> 
+               </div>`
+        }
       </div>
       
       <div style="margin-top:12px;text-align:center;font-weight:800;">

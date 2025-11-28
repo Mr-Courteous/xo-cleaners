@@ -42,6 +42,7 @@ export default function PrintPreviewModal({
               font-family: Arial, sans-serif;
               margin: 0;
               padding: 0;
+              background-color: white;
             }
             body > * {
               width: 55mm !important;
@@ -70,8 +71,9 @@ export default function PrintPreviewModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col max-h-[90vh] overflow-hidden">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col max-h-[90vh] overflow-hidden animate-in fade-in zoom-in duration-200">
         
+        {/* Header */}
         <div className="flex justify-between items-center p-4 border-b bg-white z-10">
           <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
             <Printer className="w-5 h-5 text-blue-600" />
@@ -85,6 +87,7 @@ export default function PrintPreviewModal({
           </button>
         </div>
 
+        {/* Warning Note */}
         {note && (
             <div className="bg-amber-50 border-b border-amber-100 p-3 flex items-start gap-3">
                 <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
@@ -92,12 +95,15 @@ export default function PrintPreviewModal({
             </div>
         )}
 
-        <div className="flex-1 p-6 overflow-auto bg-gray-100 flex justify-center items-start">
-           <div className="bg-white shadow-lg transition-transform h-fit">
+        {/* Content Area */}
+        <div className="flex-1 p-6 overflow-y-auto bg-gray-100 flex justify-center items-start">
+           <div className="bg-white shadow-lg transition-transform h-fit min-h-[200px] w-auto">
+                {/* Render the HTML receipt content */}
                 <div dangerouslySetInnerHTML={{ __html: content }} />
            </div>
         </div>
 
+        {/* Footer Actions */}
         <div className="p-4 border-t bg-white flex flex-col sm:flex-row justify-end gap-3 z-10">
             <button
                 onClick={onClose}

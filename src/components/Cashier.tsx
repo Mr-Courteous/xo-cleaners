@@ -355,7 +355,7 @@ export default function CashierDashboard() {
           <NavButton tab="pick-up" icon={CheckCircle} label="Pick Up" />
           <NavButton tab="tickets" icon={FileText} label="Tickets" />
           <NavButton tab="assign-rack" icon={RefreshCw} label="Assign Rack" />
-          <NavButton tab="directory" icon={BookUser} label="Directory" />
+          {/* <NavButton tab="directory" icon={BookUser} label="Directory" /> */}
           <NavButton tab="customers" icon={Users} label="Customers (Edit)" />
 
           <div className="pt-4 mt-4 border-t border-gray-200">

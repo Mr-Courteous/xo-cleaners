@@ -127,6 +127,7 @@ export default function PickUp() {
         setStep('search');
         setTickets([]);
         setSearchQuery('');
+        console.log('Pickup processed successfully.', response.data);
       }
 
     } catch (err: any) {
