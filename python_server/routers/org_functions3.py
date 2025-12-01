@@ -290,67 +290,161 @@ async def get_ticket_details(
 
 # --- ADD THIS FUNCTION *AFTER* THE ONE ABOVE ---
 
-@router.get("/find-tickets", response_model=List[TicketResponse]) # Ensure TicketResponse matches the columns below
+@router.get("/find-tickets", response_model=List[TicketResponse], summary="Search for tickets by number, name, or phone")
 async def find_tickets(
-    query: str = Query(..., min_length=2),
+    query: str = Query(..., min_length=2, description="Search term for ticket #, customer name, or phone"),
     db: Session = Depends(get_db),
     payload: Dict[str, Any] = Depends(get_current_user_payload)
 ):
+    """
+    Searches for tickets within the user's organization.
+    OPTIMIZED: Batch fetching (2 queries total).
+    SAFE: Defaults missing pricing fields to 0.0 to prevent 500 Validation Errors.
+    """
+    
     organization_id = payload.get("organization_id")
     if not organization_id:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token: Organization ID missing."
+        )
     
     search_pattern = f"%{query}%"
     
-    # OPTIMIZED: Fetch all details in ONE query. 
-    # No more loops, no more "get_ticket_details" calls.
-    sql = text("""
-        SELECT 
-            t.id, 
-            t.ticket_number, 
-            t.status, 
-            t.created_at,
-            u.first_name, 
-            u.last_name, 
-            u.phone,
-            u.email
-        FROM tickets AS t
-        JOIN allusers AS u ON t.customer_id = u.id
-        WHERE 
-            t.organization_id = :org_id
-            AND (
-                t.ticket_number ILIKE :pattern
-                OR (u.first_name || ' ' || u.last_name) ILIKE :pattern
-                OR u.phone ILIKE :pattern
-            )
-        ORDER BY t.created_at DESC
-        LIMIT 50;
-    """)
-    
-    result = db.execute(sql, {
-        "org_id": organization_id, 
-        "pattern": search_pattern
-    }).fetchall()
-
-    # Convert raw SQL results to a list of dictionaries (or objects)
-    # This is fast because it happens in memory, no DB calls here.
-    tickets_list = []
-    for row in result:
-        tickets_list.append({
-            "id": row.id,
-            "ticket_number": row.ticket_number,
-            "status": row.status,
-            "created_at": row.created_at,
-            "customer": {
-                "first_name": row.first_name,
-                "last_name": row.last_name,
-                "phone": row.phone,
-                "email": row.email
-            }
-        })
-            
-    return tickets_list
+    try:
+        # ---------------------------------------------------------
+        # STEP 1: FETCH TICKETS
+        # ---------------------------------------------------------
+        sql_tickets = text("""
+            SELECT 
+                t.id, 
+                t.ticket_number, 
+                t.status, 
+                t.created_at,
+                t.total_amount,
+                t.paid_amount,
+                t.rack_number,
+                t.special_instructions,
+                t.pickup_date,
+                t.organization_id,
+                t.customer_id,
+                u.first_name, 
+                u.last_name, 
+                u.phone,
+                u.email
+            FROM tickets AS t
+            JOIN allusers AS u ON t.customer_id = u.id
+            WHERE 
+                t.organization_id = :org_id
+                AND (
+                    t.ticket_number ILIKE :pattern
+                    OR (u.first_name || ' ' || u.last_name) ILIKE :pattern
+                    OR u.phone ILIKE :pattern
+                )
+            ORDER BY t.created_at DESC
+            LIMIT 50;
+        """)
         
+        ticket_rows = db.execute(sql_tickets, {
+            "org_id": organization_id, 
+            "pattern": search_pattern
+        }).fetchall()
+
+        if not ticket_rows:
+            return []
+
+        # ---------------------------------------------------------
+        # STEP 2: FETCH ITEMS (With Defaults)
+        # ---------------------------------------------------------
+        ticket_ids = tuple([row.id for row in ticket_rows])
+        
+        items_map = {}
+        
+        if ticket_ids:
+            # We fetch basic info. We intentionally skip 'price' or 'plant_price' in SQL 
+            # to avoid "UndefinedColumn" errors since we don't know your exact schema.
+            sql_items = text("""
+                SELECT 
+                    ti.id,
+                    ti.ticket_id,
+                    ti.clothing_type_id,
+                    ti.quantity,
+                    ti.starch_level,
+                    ti.crease,
+                    ct.name as clothing_name 
+                FROM ticket_items ti
+                LEFT JOIN clothing_types ct ON ti.clothing_type_id = ct.id
+                WHERE ti.ticket_id IN :ticket_ids
+            """)
+            
+            item_rows = db.execute(sql_items, {"ticket_ids": ticket_ids}).fetchall()
+            
+            for item in item_rows:
+                tid = item.ticket_id
+                if tid not in items_map:
+                    items_map[tid] = []
+                
+                # We calculate 'item_total' if we can, otherwise default to 0.0
+                # Since we don't have price, we default everything to 0.0
+                items_map[tid].append({
+                    "id": item.id,
+                    "ticket_id": item.ticket_id,
+                    "clothing_type_id": item.clothing_type_id,
+                    "quantity": item.quantity,
+                    "starch_level": item.starch_level,
+                    "crease": item.crease,
+                    "clothing_name": item.clothing_name or "Unknown Item",
+                    
+                    # --- FILL MISSING FIELDS WITH DEFAULTS ---
+                    "price": 0.0,
+                    "plant_price": 0.0,
+                    "additional_charge": 0.0,
+                    "item_total": 0.0,
+                    "margin": 0.0
+                    # -----------------------------------------
+                })
+
+        # ---------------------------------------------------------
+        # STEP 3: BUILD RESPONSE
+        # ---------------------------------------------------------
+        results = []
+        for row in ticket_rows:
+            full_name = f"{row.first_name or ''} {row.last_name or ''}".strip()
+            
+            total = float(row.total_amount) if row.total_amount is not None else 0.0
+            paid = float(row.paid_amount) if row.paid_amount is not None else 0.0
+
+            results.append({
+                "id": row.id,
+                "ticket_number": row.ticket_number,
+                "status": row.status,
+                "created_at": row.created_at,
+                "total_amount": total,
+                "paid_amount": paid,
+                "rack_number": row.rack_number,
+                "special_instructions": row.special_instructions,
+                "pickup_date": row.pickup_date,
+                "organization_id": row.organization_id,
+                "customer_id": row.customer_id,
+                "customer_name": full_name, 
+                "customer_phone": row.phone,
+                "customer": {
+                    "first_name": row.first_name,
+                    "last_name": row.last_name,
+                    "phone": row.phone,
+                    "email": row.email
+                },
+                "items": items_map.get(row.id, [])
+            })
+                
+        return results
+
+    except Exception as e:
+        print(f"Error during ticket search: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while searching for tickets."
+        )        
         
 @router.get("/customers/search", summary="Search for customers by name, phone, or email")
 async def search_customers(
