@@ -41,20 +41,39 @@ export default function Tag(): JSX.Element {
       );
       const results = res.data || [];
 
-      // Fetch full ticket details including items
-      const ticketsWithItems = await Promise.all(
-        results.map(async (ticket: Ticket) => {
-          try {
-            // Use ticket ID to get full details including items, same as other components
-            const td = await axios.get(`${baseURL}/api/organizations/tickets/${ticket.id}`, { headers });
-            const ticketDetails = td.data || {};
-            return { ...ticket, items: ticketDetails.items || [] };
-          } catch (error) {
-            console.error(`Failed to fetch items for ticket ${ticket.id}:`, error);
-            return { ...ticket, items: [] };
-          }
-        })
-      );
+      // --- FIX: BATCHING REQUESTS ---
+      // Instead of firing all requests at once (which crashes the server),
+      // we process them in small batches (e.g., 5 at a time).
+      const ticketsWithItems: Array<Ticket & { items?: Array<any> }> = [];
+      const BATCH_SIZE = 5; 
+
+      for (let i = 0; i < results.length; i += BATCH_SIZE) {
+        // Get the next group of 5 tickets
+        const batch = results.slice(i, i + BATCH_SIZE);
+        
+        // Fetch details for this group only
+        const batchResults = await Promise.all(
+          batch.map(async (ticket: Ticket) => {
+            try {
+              // If the backend already provided items, skip the extra fetch!
+              if ((ticket as any).items && (ticket as any).items.length > 0) {
+                 return ticket;
+              }
+
+              const td = await axios.get(`${baseURL}/api/organizations/tickets/${ticket.id}`, { headers });
+              const ticketDetails = td.data || {};
+              return { ...ticket, items: ticketDetails.items || [] };
+            } catch (error) {
+              console.error(`Failed to fetch items for ticket ${ticket.id}:`, error);
+              return { ...ticket, items: [] };
+            }
+          })
+        );
+        
+        // Add processed batch to the main list
+        ticketsWithItems.push(...batchResults);
+      }
+      // -----------------------------
 
       setTickets(ticketsWithItems);
     } catch (error) {
@@ -80,17 +99,12 @@ export default function Tag(): JSX.Element {
     const readyDate = new Date(ticket.created_at);
     readyDate.setDate(readyDate.getDate() + 2);
 
-    // Format the customer name - prefer customer_name, fall back to phone or 'Guest'
     const rawName = ticket.customer_name || ticket.customer_phone || 'Guest';
     const nameParts = rawName.trim().split(/\s+/);
     const fullName = rawName;
-    const formattedName = nameParts.length > 0
-      ? `${nameParts[nameParts.length - 1]}, ${nameParts[0][0] || ''}`
-      : rawName;
     const ticketId = ticket.ticket_number || '';
     const dateIssued = ticket.created_at ? new Date(ticket.created_at).toLocaleDateString() : '';
 
-    // Format starch level and crease
     const preferences = [];
     if (item.starch_level && item.starch_level !== 'no_starch' && item.starch_level !== 'none') {
       preferences.push(`${item.starch_level} starch`);
@@ -100,13 +114,8 @@ export default function Tag(): JSX.Element {
     }
     const preferencesText = preferences.join(' / ');
 
-
-    // Create an array with length equal to the quantity
     const tags = Array(item.quantity).fill(null);
-
-    // Pick a font size for the name based on length so it fits
     const nameLen = fullName.length || 0;
-    // Note: With full width, we may not need to shrink the font as aggressively
     const nameFontSize = nameLen > 50 ? '9pt' : nameLen > 35 ? '10pt' : '11pt';
     const prefFontSize = '9pt';
     
@@ -114,7 +123,6 @@ export default function Tag(): JSX.Element {
       <div style="
         display: flex;
         flex-direction: column;
-        /* align-items: center; <-- REMOVED */
         gap: 8px;
         padding: 6px;
         font-family: system-ui, -apple-system, sans-serif;
@@ -123,7 +131,7 @@ export default function Tag(): JSX.Element {
           <div style="
             border: 1.5px solid #000;
             padding: 6px 8px;
-            width: 100%; /* <-- CHANGED from 55mm */
+            width: 100%;
             box-sizing: border-box;
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -186,10 +194,7 @@ export default function Tag(): JSX.Element {
           </div>
           <div className="divide-y divide-gray-200">
             {tickets.map((ticket) => (
-              <div
-                key={ticket.id}
-                className="p-6"
-              >
+              <div key={ticket.id} className="p-6">
                 <div className="flex justify-between items-start">
                   <div className="flex-1">
                     <div className="flex items-center space-x-4 mb-3">

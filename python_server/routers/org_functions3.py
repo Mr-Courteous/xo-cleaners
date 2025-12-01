@@ -290,29 +290,30 @@ async def get_ticket_details(
 
 # --- ADD THIS FUNCTION *AFTER* THE ONE ABOVE ---
 
-@router.get("/find-tickets", response_model=List[TicketResponse], summary="Search for tickets by number, name, or phone")
+@router.get("/find-tickets", response_model=List[TicketResponse]) # Ensure TicketResponse matches the columns below
 async def find_tickets(
-    query: str = Query(..., min_length=2, description="Search term for ticket #, customer name, or phone"),
+    query: str = Query(..., min_length=2),
     db: Session = Depends(get_db),
     payload: Dict[str, Any] = Depends(get_current_user_payload)
 ):
-    """
-    Searches for tickets within the user's organization based on a query string.
-    Matches against ticket number, customer full name, and customer phone number.
-    """
-    
     organization_id = payload.get("organization_id")
     if not organization_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token: Organization ID missing."
-        )
+        raise HTTPException(status_code=401, detail="Invalid token")
     
     search_pattern = f"%{query}%"
     
-    # Use 'allusers' (lowercase) and SELECT DISTINCT 't.id, t.created_at'
-    find_ids_query = text("""
-        SELECT DISTINCT t.id, t.created_at
+    # OPTIMIZED: Fetch all details in ONE query. 
+    # No more loops, no more "get_ticket_details" calls.
+    sql = text("""
+        SELECT 
+            t.id, 
+            t.ticket_number, 
+            t.status, 
+            t.created_at,
+            u.first_name, 
+            u.last_name, 
+            u.phone,
+            u.email
         FROM tickets AS t
         JOIN allusers AS u ON t.customer_id = u.id
         WHERE 
@@ -326,32 +327,29 @@ async def find_tickets(
         LIMIT 50;
     """)
     
-    try:
-        result = db.execute(find_ids_query, {
-            "org_id": organization_id,
-            "pattern": search_pattern
+    result = db.execute(sql, {
+        "org_id": organization_id, 
+        "pattern": search_pattern
+    }).fetchall()
+
+    # Convert raw SQL results to a list of dictionaries (or objects)
+    # This is fast because it happens in memory, no DB calls here.
+    tickets_list = []
+    for row in result:
+        tickets_list.append({
+            "id": row.id,
+            "ticket_number": row.ticket_number,
+            "status": row.status,
+            "created_at": row.created_at,
+            "customer": {
+                "first_name": row.first_name,
+                "last_name": row.last_name,
+                "phone": row.phone,
+                "email": row.email
+            }
         })
-        
-        ticket_ids = [row[0] for row in result.fetchall()] 
-
-        if not ticket_ids:
-            return []
             
-        tickets_list = []
-        for ticket_id in ticket_ids:
-            # This line will now work, because get_ticket_details is defined above
-            ticket_details = await get_ticket_details(ticket_id=ticket_id, db=db, payload=payload)
-            tickets_list.append(ticket_details)
-            
-        return tickets_list
-
-    except Exception as e:
-        print(f"Error during ticket search: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred while searching for tickets."
-        )
-        
+    return tickets_list
         
         
 @router.get("/customers/search", summary="Search for customers by name, phone, or email")
