@@ -20,6 +20,23 @@ from utils.common import (
     hash_password
 )
 
+
+
+class UserCreate(BaseModel):
+    first_name: str
+    last_name: str
+    email: EmailStr
+    password: str
+    phone: Optional[str] = None
+    role: str = Field(..., description="Role must be one of the allowed staff roles")
+
+class UserUpdate(BaseModel):
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    role: Optional[str] = None
+    
+    
 router = APIRouter()
 
 @router.get("/workers")
@@ -28,58 +45,53 @@ async def get_all_workers(
     payload: Dict[str, Any] = Depends(get_current_user_payload)
 ):
     """
-    ✅ Retrieve all workers that belong to the same organization as the logged-in user.
-    ✅ Uses only the `allUsers` table.
+    Retrieves all workers for the organization.
+    Includes 'is_deactivated' status so the UI can grey them out.
     """
     org_id = payload.get("organization_id")
     role = payload.get("role")
 
-    # Validate organization_id
     if not org_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Organization ID missing in token."
+            detail="Organization ID missing from token."
         )
 
-    # Restrict access to specific roles
+    # Allow access only to Org Owners and Platform Admins
     if role not in ["org_owner", "store_admin", "STORE_OWNER"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to view organization workers."
+            detail="Insufficient permissions to view workers."
         )
 
     try:
-        # ✅ Query only from allUsers
-        workers_stmt = text("""
-            SELECT id, first_name, last_name, email, role
+        # ✅ MODIFIED: Added 'is_deactivated' to the SELECT statement
+        query = text("""
+            SELECT 
+                id, 
+                first_name, 
+                last_name, 
+                email, 
+                phone, 
+                role, 
+                organization_id, 
+                joined_at,
+                is_deactivated 
             FROM allUsers
             WHERE organization_id = :org_id
-            ORDER BY id DESC
         """)
+        
+        results = db.execute(query, {"org_id": org_id}).fetchall()
 
-        workers = db.execute(workers_stmt, {"org_id": org_id}).fetchall()
-
-        # ✅ Return clean data (no organization info)
-        return {
-            "organization_id": org_id,
-            "total_workers": len(workers),
-            "workers": [
-                {
-                    "id": w.id,
-                    "first_name": w.first_name,
-                    "last_name": w.last_name,
-                    "email": w.email,
-                    "role": w.role,
-                }
-                for w in workers
-            ]
-        }
+        # Convert to list of dicts
+        workers = [dict(row._mapping) for row in results]
+        return workers
 
     except Exception as e:
         print("Error fetching workers:", e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to fetch workers for this organization."
+            detail="Failed to fetch workers."
         )
 
 
@@ -244,71 +256,142 @@ async def delete_organization(
         )
 
 # =========================
-# PUT: Update user
+# PUT: Update User
 # =========================
 @router.put("/users/{user_id}")
 async def update_user(
     user_id: int,
-    data: Dict[str, Any],  # expects {"first_name": ..., "last_name": ..., "email": ..., "role": ...}
+    user_data: UserUpdate,
     db: Session = Depends(get_db),
     payload: Dict[str, Any] = Depends(get_current_user_payload)
 ):
-    if payload.get("role") != "platform_admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only Platform Admins can update users."
-        )
+    requester_role = payload.get("role")
+    
+    # Permission Check
+    if requester_role not in ["org_owner", "store_admin", "store_owner"]:
+        raise HTTPException(status_code=403, detail="Only Admins/Owners can update users.")
+
+    data = user_data.dict(exclude_unset=True)
+    if not data:
+        raise HTTPException(status_code=400, detail="No fields provided to update.")
 
     try:
-        update_stmt = text("""
-            UPDATE allUsers
-            SET first_name = :first_name,
-                last_name = :last_name,
-                email = :email,
-                role = :role
-            WHERE id = :user_id
-        """)
-        db.execute(update_stmt, {
-            "first_name": data.get("first_name"),
-            "last_name": data.get("last_name"),
-            "email": data.get("email"),
-            "role": data.get("role"),
-            "user_id": user_id
-        })
+        # Build dynamic SQL
+        set_clauses = [f"{key} = :{key}" for key in data.keys()]
+        query_str = f"UPDATE allUsers SET {', '.join(set_clauses)} WHERE id = :user_id"
+
+        update_stmt = text(query_str)
+        # Add user_id to the parameters
+        data["user_id"] = user_id
+
+        result = db.execute(update_stmt, data)
         db.commit()
+        
+        if result.rowcount == 0:
+             raise HTTPException(status_code=404, detail="User not found.")
+
         return {"message": f"User {user_id} updated successfully."}
     except Exception as e:
         db.rollback()
         print("Error updating user:", e)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to update user."
-        )
+        raise HTTPException(status_code=500, detail="Failed to update user.")
 
 # =========================
-# DELETE: User
+# DELETE: Soft Delete (Deactivate)
 # =========================
 @router.delete("/users/{user_id}")
-async def delete_user(
+async def deactivate_user(
     user_id: int,
     db: Session = Depends(get_db),
     payload: Dict[str, Any] = Depends(get_current_user_payload)
 ):
-    if payload.get("role") != "platform_admin":
+    """
+    ✅ MODIFIED: Instead of deleting the row, we set is_deactivated = TRUE.
+    Also allows Org Owners to perform this action (previously restricted to Platform Admin).
+    """
+    requester_role = payload.get("role")
+    org_id = payload.get("organization_id")
+
+    # 1. Allow Org Owners AND Platform Admins to deactivate
+    if requester_role not in ["org_owner", "store_admin", "STORE_OWNER"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only Platform Admins can delete users."
+            detail="You do not have permission to deactivate users."
         )
 
     try:
-        delete_stmt = text("DELETE FROM allUsers WHERE id = :user_id")
-        db.execute(delete_stmt, {"user_id": user_id})
+        # 2. Perform Soft Delete (Update)
+        # We also check organization_id to ensure Owners don't deactivate users from other orgs
+        if requester_role == PLATFORM_ADMIN_ROLE:
+            # Platform admin can deactivate anyone
+            stmt = text("UPDATE allUsers SET is_deactivated = TRUE WHERE id = :user_id")
+            params = {"user_id": user_id}
+        else:
+            # Org Owners can only deactivate their own staff
+            stmt = text("""
+                UPDATE allUsers 
+                SET is_deactivated = TRUE 
+                WHERE id = :user_id AND organization_id = :org_id
+            """)
+            params = {"user_id": user_id, "org_id": org_id}
+
+        result = db.execute(stmt, params)
         db.commit()
-        return {"message": f"User {user_id} deleted successfully."}
+
+        if result.rowcount == 0:
+            raise HTTPException(status_code=404, detail="User not found or does not belong to your organization.")
+
+        return {"message": f"User {user_id} has been deactivated successfully."}
+
+    except HTTPException:
+        raise
     except Exception as e:
         db.rollback()
-        print("Error deleting user:", e)
+        print("Error deactivating user:", e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to delete user."
+            detail="Failed to deactivate user."
         )
+
+# =========================
+# PATCH: Reactivate User (New)
+# =========================
+@router.patch("/users/{user_id}/reactivate")
+async def reactivate_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    payload: Dict[str, Any] = Depends(get_current_user_payload)
+):
+    """
+    ✅ NEW: Allows reactivating a previously deactivated user.
+    """
+    requester_role = payload.get("role")
+    org_id = payload.get("organization_id")
+
+    if requester_role not in ["org_owner", "store_admin", "STORE_OWNER"]:
+        raise HTTPException(status_code=403, detail="Insufficient permissions.")
+
+    try:
+        if requester_role == PLATFORM_ADMIN_ROLE:
+            stmt = text("UPDATE allUsers SET is_deactivated = FALSE WHERE id = :user_id")
+            params = {"user_id": user_id}
+        else:
+            stmt = text("""
+                UPDATE allUsers 
+                SET is_deactivated = FALSE 
+                WHERE id = :user_id AND organization_id = :org_id
+            """)
+            params = {"user_id": user_id, "org_id": org_id}
+
+        result = db.execute(stmt, params)
+        db.commit()
+
+        if result.rowcount == 0:
+             raise HTTPException(status_code=404, detail="User not found.")
+
+        return {"message": f"User {user_id} has been reactivated."}
+
+    except Exception as e:
+        db.rollback()
+        print("Error reactivating user:", e)
+        raise HTTPException(status_code=500, detail="Failed to reactivate user.")
