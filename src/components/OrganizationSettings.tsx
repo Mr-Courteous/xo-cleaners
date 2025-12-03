@@ -11,8 +11,8 @@ import {
   CheckCircle,
   AlertCircle
 } from "lucide-react";
-import baseURL from "../lib/config"; // Adjust path to your config
-import Header from "./Header"; // Adjust path to your Header
+import baseURL from "../lib/config"; 
+import Header from "./Header"; 
 
 export default function OrganizationSettings() {
   // ================= State Management =================
@@ -100,7 +100,9 @@ export default function OrganizationSettings() {
       await axios.put(`${baseURL}/api/settings/branding`, branding, getAuthHeader());
       setMsg({ type: 'success', text: "Branding updated successfully!" });
     } catch (err: any) {
-      setMsg({ type: 'error', text: "Failed to update branding." });
+      // ✅ UPDATED: Capture backend error
+      const errorMsg = err.response?.data?.detail || err.response?.data?.message || "Failed to update branding.";
+      setMsg({ type: 'error', text: errorMsg });
     } finally {
       setLoading(false);
     }
@@ -110,6 +112,7 @@ export default function OrganizationSettings() {
   const createBranch = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setMsg(null);
     try {
       const payload = {
         ...newBranch,
@@ -120,7 +123,9 @@ export default function OrganizationSettings() {
       setShowBranchModal(false);
       fetchBranches(); // Refresh list
     } catch (err: any) {
-      setMsg({ type: 'error', text: err.response?.data?.detail || "Failed to create branch." });
+       // ✅ UPDATED: Capture backend error
+      const errorMsg = err.response?.data?.detail || err.response?.data?.message || "Failed to create branch.";
+      setMsg({ type: 'error', text: errorMsg });
     } finally {
       setLoading(false);
     }
@@ -130,6 +135,7 @@ export default function OrganizationSettings() {
   const savePayments = async () => {
     if (!selectedBranchId) return;
     setLoading(true);
+    setMsg(null);
     try {
       await axios.put(`${baseURL}/api/settings/payments/config`, {
         branch_id: selectedBranchId,
@@ -137,7 +143,9 @@ export default function OrganizationSettings() {
       }, getAuthHeader());
       setMsg({ type: 'success', text: "Payment methods updated for this branch." });
     } catch (err: any) {
-      setMsg({ type: 'error', text: "Failed to update payments." });
+       // ✅ UPDATED: Capture backend error
+      const errorMsg = err.response?.data?.detail || err.response?.data?.message || "Failed to update payments.";
+      setMsg({ type: 'error', text: errorMsg });
     } finally {
       setLoading(false);
     }
@@ -147,11 +155,14 @@ export default function OrganizationSettings() {
   const saveTags = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setMsg(null);
     try {
       await axios.put(`${baseURL}/api/settings/tags/config`, tagConfig, getAuthHeader());
       setMsg({ type: 'success', text: "Tag configuration saved." });
     } catch (err: any) {
-      setMsg({ type: 'error', text: "Failed to update tag config." });
+       // ✅ UPDATED: Capture backend error
+      const errorMsg = err.response?.data?.detail || err.response?.data?.message || "Failed to update tag config.";
+      setMsg({ type: 'error', text: errorMsg });
     } finally {
       setLoading(false);
     }
@@ -364,7 +375,7 @@ export default function OrganizationSettings() {
                   <option value="Internal">Internal / Handwritten</option>
                 </select>
                 <p className="text-sm text-gray-500 mt-1">
-                   Heat press requires compatible hardware. Paper tags are standard for Dry Cleaning.
+                    Heat press requires compatible hardware. Paper tags are standard for Dry Cleaning.
                 </p>
               </div>
 
@@ -405,11 +416,11 @@ export default function OrganizationSettings() {
             <h2 className="text-xl font-bold mb-4">Add New Branch</h2>
             <form onSubmit={createBranch} className="space-y-4">
               <input required type="text" placeholder="Branch Name" className="w-full border p-2 rounded" 
-                 value={newBranch.name} onChange={e => setNewBranch({...newBranch, name: e.target.value})} />
+                  value={newBranch.name} onChange={e => setNewBranch({...newBranch, name: e.target.value})} />
               <input required type="text" placeholder="Address" className="w-full border p-2 rounded" 
-                 value={newBranch.address} onChange={e => setNewBranch({...newBranch, address: e.target.value})} />
+                  value={newBranch.address} onChange={e => setNewBranch({...newBranch, address: e.target.value})} />
               <input required type="text" placeholder="Phone" className="w-full border p-2 rounded" 
-                 value={newBranch.phone} onChange={e => setNewBranch({...newBranch, phone: e.target.value})} />
+                  value={newBranch.phone} onChange={e => setNewBranch({...newBranch, phone: e.target.value})} />
               
               <select className="w-full border p-2 rounded" 
                 value={newBranch.location_type} 

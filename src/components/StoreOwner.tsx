@@ -4,24 +4,25 @@ import axios from "axios";
 import {
   Users,
   UserPlus,
-  BarChart3,
   Shield,
   X,
   Power,
   RefreshCcw,
   CheckCircle,
   AlertCircle,
-  Settings, // Import Settings Icon
-  ArrowLeft // Import Arrow for back button
+  Settings,
+  ArrowLeft,
+  Eye,      // Imported for password toggle
+  EyeOff    // Imported for password toggle
 } from "lucide-react";
 import baseURL from "../lib/config";
 import Header from "./Header";
-
-// ✅ 1. Import your new Settings Component
 import OrganizationSettings from "./OrganizationSettings";
 
 export default function StoreOwner() {
   const [organizationName, setOrganizationName] = useState("Your Organization");
+  const [organizationId, setOrganizationId] = useState<number | null>(null); // ✅ Added Org ID state
+  
   const [workers, setWorkers] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,25 +32,52 @@ export default function StoreOwner() {
   const [showManageModal, setShowManageModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   
-  // ✅ 2. New State for toggling Settings View
   const [showSettings, setShowSettings] = useState(false);
 
   // Add Worker Form State
   const [addLoading, setAddLoading] = useState(false);
+  
+  // ✅ Updated Form State to include confirm_password
   const [formData, setFormData] = useState({
     first_name: "",
     last_name: "",
     email: "",
     phone: "",
     password: "",
+    confirm_password: "", 
     role: "cashier"
   });
 
+  // ✅ Password Visibility Toggles
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
   const navigate = useNavigate();
 
+  // ✅ 1. Combined Effect: Get Org Name AND Decode Token for Org ID
   useEffect(() => {
+    // Set Org Name
     const name = localStorage.getItem("organizationName");
     if (name) setOrganizationName(name);
+
+    // Decode Token for Organization ID
+    const token = localStorage.getItem("accessToken") || localStorage.getItem("token");
+    if (token) {
+        try {
+            const payload = JSON.parse(atob(token.split(".")[1]));
+            if (payload?.organization_id) {
+                setOrganizationId(Number(payload.organization_id));
+                localStorage.setItem("organization_id", payload.organization_id);
+            } else {
+                const storedOrgId = localStorage.getItem("organization_id");
+                if (storedOrgId) setOrganizationId(Number(storedOrgId));
+            }
+        } catch (e) {
+            console.error("Error parsing token:", e);
+            const storedOrgId = localStorage.getItem("organization_id");
+            if (storedOrgId) setOrganizationId(Number(storedOrgId));
+        }
+    }
   }, []);
 
   const fetchWorkers = async () => {
@@ -78,22 +106,60 @@ export default function StoreOwner() {
     }
   };
 
+  // ✅ 2. Updated Handle Add Worker to use correct Endpoint and Logic
   const handleAddWorker = async (e: React.FormEvent) => {
     e.preventDefault();
     setAddLoading(true);
     setError(null);
     setSuccessMsg(null);
+
+    // Validation
+    if (formData.password !== formData.confirm_password) {
+        setError("Passwords do not match.");
+        setAddLoading(false);
+        return;
+    }
+
+    if (!organizationId) {
+        setError("Organization ID is missing. Please log in again.");
+        setAddLoading(false);
+        return;
+    }
+
     try {
       const token = localStorage.getItem("accessToken") || localStorage.getItem("token");
-      await axios.post(`${baseURL}/workers`, formData, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      
+      // ✅ CHANGED ENDPOINT from /workers to /register/staff
+      // ✅ ADDED organization_id to payload
+      await axios.post(`${baseURL}/register/staff`, 
+        {
+            ...formData,
+            organization_id: organizationId 
+        }, 
+        {
+            headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
       setSuccessMsg(`Successfully registered ${formData.first_name} as a ${formData.role}.`);
-      setFormData({ first_name: "", last_name: "", email: "", phone: "", password: "", role: "cashier" });
+      
+      // Reset Form
+      setFormData({ 
+          first_name: "", 
+          last_name: "", 
+          email: "", 
+          phone: "", 
+          password: "", 
+          confirm_password: "", 
+          role: "cashier" 
+      });
+      
       setShowAddModal(false);
       if (showManageModal) fetchWorkers();
+      
     } catch (err: any) {
-      setError(err.response?.data?.detail || "Failed to add worker.");
+      console.error("Add worker error", err);
+      setError(err.response?.data?.detail || err.response?.data?.message || "Failed to add worker.");
     } finally {
       setAddLoading(false);
     }
@@ -125,25 +191,20 @@ export default function StoreOwner() {
     }
   };
 
-  // ✅ 3. Conditional Rendering: If Settings is active, show it instead of dashboard
   if (showSettings) {
     return (
       <div className="relative">
-        {/* Floating Back Button to return to Dashboard */}
         <button 
           onClick={() => setShowSettings(false)}
           className="fixed bottom-6 left-6 z-50 bg-gray-800 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 hover:bg-gray-700 transition-all"
         >
           <ArrowLeft size={18} /> Back to Dashboard
         </button>
-        
-        {/* Render the imported Settings Component */}
         <OrganizationSettings />
       </div>
     );
   }
 
-  // --- STANDARD DASHBOARD VIEW ---
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col font-sans text-gray-900">
       <Header />
@@ -158,8 +219,6 @@ export default function StoreOwner() {
 
         {/* Action Cards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
-          
-          {/* Card 1: Manage Staff */}
           <div
             onClick={() => { setShowManageModal(true); fetchWorkers(); }}
             className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-shadow flex items-center space-x-4 group"
@@ -173,7 +232,6 @@ export default function StoreOwner() {
             </div>
           </div>
 
-          {/* Card 2: Add Worker */}
           <div 
              onClick={() => setShowAddModal(true)}
              className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-shadow flex items-center space-x-4 group"
@@ -187,7 +245,6 @@ export default function StoreOwner() {
             </div>
           </div>
 
-          {/* Card 3: Settings (NEW) - Triggers the View Switch */}
           <div 
             onClick={() => setShowSettings(true)}
             className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-shadow flex items-center space-x-4 group"
@@ -201,7 +258,6 @@ export default function StoreOwner() {
             </div>
           </div>
 
-          {/* Card 4: Audit Logs */}
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-shadow flex items-center space-x-4 group">
             <div className="bg-orange-100 p-3 rounded-full text-orange-600 group-hover:scale-110 transition-transform">
               <Shield size={24} />
@@ -218,8 +274,8 @@ export default function StoreOwner() {
         {/* ======================= */}
         {showAddModal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-            <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden animate-fade-in-up">
-              <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100 bg-gray-50">
+            <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden animate-fade-in-up max-h-[90vh] overflow-y-auto">
+              <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100 bg-gray-50 sticky top-0 z-10">
                 <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
                   <UserPlus size={20} className="text-green-600" />
                   Add New Worker
@@ -240,29 +296,52 @@ export default function StoreOwner() {
                     <input required type="text" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" value={formData.last_name} onChange={(e) => setFormData({...formData, last_name: e.target.value})} />
                   </div>
                 </div>
+                
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
                   <input required type="email" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} />
                 </div>
+                
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
                   <input type="tel" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-                    <input required type="password" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" value={formData.password} onChange={(e) => setFormData({...formData, password: e.target.value})} />
-                  </div>
-                  <div>
+
+                {/* Role Selection - Merged options from AddWorker.tsx */}
+                <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-                    <select className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none bg-white" value={formData.role} onChange={(e) => setFormData({...formData, role: e.target.value})}>
+                    <select required className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none bg-white" value={formData.role} onChange={(e) => setFormData({...formData, role: e.target.value})}>
                       <option value="cashier">Cashier</option>
                       <option value="store_manager">Store Manager</option>
                       <option value="driver">Driver</option>
                       <option value="operator">Operator</option>
+                      <option value="assistant">Assistant</option>
                     </select>
+                </div>
+
+                {/* Password Fields with Toggle */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="relative">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                    <div className="relative">
+                        <input required minLength={8} type={showPassword ? "text" : "password"} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" value={formData.password} onChange={(e) => setFormData({...formData, password: e.target.value})} />
+                        <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500">
+                           {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
+                    </div>
+                  </div>
+
+                  <div className="relative">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label>
+                    <div className="relative">
+                        <input required minLength={8} type={showConfirmPassword ? "text" : "password"} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" value={formData.confirm_password} onChange={(e) => setFormData({...formData, confirm_password: e.target.value})} />
+                        <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500">
+                           {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
+                    </div>
                   </div>
                 </div>
+
                 <div className="pt-4 flex gap-3">
                   <button type="button" onClick={() => setShowAddModal(false)} className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">Cancel</button>
                   <button type="submit" disabled={addLoading} className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex justify-center items-center gap-2">

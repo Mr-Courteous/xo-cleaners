@@ -179,23 +179,32 @@ class TicketItemCreate(BaseModel):
     
     
 class TicketItemResponse(BaseModel):
-    """Data returned for a single item on a ticket."""
+    """Schema for individual items inside a ticket response."""
     id: int
     ticket_id: int
     clothing_type_id: int
     clothing_name: str
     quantity: int
-    starch_level: Optional[str]
-    crease: Optional[bool]
+    
+    # ✅ FIX: Changed to Optional[Any] to allow boolean 'False' or strings
+    starch_level: Optional[Any] = None 
+    crease: Optional[Any] = None 
+    
+    alterations: Optional[str] = None
+    item_instructions: Optional[str] = None
+    
+    # ✅ Added for new logic
+    alteration_behavior: Optional[str] = "none" 
+    
     item_total: float
     plant_price: float
     margin: float
-    additional_charge: float
-    pieces: Optional[int] = None  # <-- THIS IS THE FIX
-    alterations: Optional[str] = None
-    item_instructions: Optional[str] = None  # <--- ADD THIS
+    additional_charge: float = 0.0
+    pieces: int = 1
+
     class Config:
-        orm_mode = True
+        from_attributes = True
+
 
 class TicketCreate(BaseModel):
     customer_id: int
@@ -205,31 +214,44 @@ class TicketCreate(BaseModel):
     paid_amount: float = 0.0
     pickup_date: Optional[datetime] = None
 
+# =======================
+# TICKET RESPONSE (Updated)
+# =======================
 class TicketResponse(BaseModel):
     """Full ticket data returned after creation."""
     id: int
     ticket_number: str
     customer_id: int
     customer_name: str
-    customer_phone: Optional[str]
+    customer_phone: Optional[str] = None
     total_amount: float
     paid_amount: float
     status: str
-    rack_number: Optional[str]
-    special_instructions: Optional[str]
-    alterations: Optional[str] = None # <--- ADD THIS
-    item_instructions: Optional[str] = None  # <--- ADD THIS
+    rack_number: Optional[str] = None
+    special_instructions: Optional[str] = None
     
-    # 👇 THIS IS THE FIX
-    pickup_date: Optional[datetime]
+    # ✅ Added as per your request (Note: These are usually item-level, but included here as Optional)
+    alterations: Optional[str] = None 
+    item_instructions: Optional[str] = None 
+    
+    # ✅ Added for Branding/Receipts
+    receipt_header: Optional[str] = None 
+    receipt_footer: Optional[str] = None 
+    
+    organization_name: Optional[str] = None
+
+
+    # Fix for pickup_date
+    pickup_date: Optional[datetime] = None
     created_at: datetime
     organization_id: int
     
-    # The list of items correctly goes here
-    items: List[TicketItemResponse] 
+    # List of items
+    items: List[TicketItemResponse]
 
     class Config:
-        orm_mode = True
+        from_attributes = True
+
         
 
 class StarchLevel(str, Enum):
