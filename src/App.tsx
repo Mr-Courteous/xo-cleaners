@@ -33,6 +33,7 @@ import AddWorker from "./components/AddWorker";
 import WorkersLogin from "./components/WorkersLogin";
 import CashierAssociate from "./components/CashierAssociate";
 import Cashier from "./components/Cashier";
+import OrganizationSettings from "./components/OrganizationSettings";
 
 // import CustomerDirectory from "./components/customerDirectory";
 // ----------------------
@@ -117,6 +118,7 @@ function AppContent() {
       <Route path="/workers-login" element={<WorkersLogin />} />
       <Route path="/cashier" element={<Cashier />} />
       {/* <Route path="/customer" element={<CustomerDirectory />} /> */}
+      <Route path="/org-settings" element={<OrganizationSettings />} />
 
 
 

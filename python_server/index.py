@@ -15,6 +15,7 @@ from routers.org_functions import router as org_functions_router
 from routers.org_functions2 import router as org_functions2_router
 from routers.clothing_types import router as clothing_types_router
 from routers.org_functions3 import router as org_functions3_router
+from routers.org_settings import router as settings_router
 
 import uvicorn
 
@@ -81,6 +82,7 @@ app.include_router(org_functions_router)
 app.include_router(org_functions2_router)
 app.include_router(clothing_types_router)
 app.include_router(org_functions3_router)
+app.include_router(settings_router)
 
 @app.get("/")
 def read_root():
