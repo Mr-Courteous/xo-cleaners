@@ -85,11 +85,11 @@ export default function PickUp() {
   // --- 3. Proceed to Payment ---
   const handleProceedToPayment = () => {
     if (!selectedTicket) return;
-    
-    const balanceDue = selectedTicket.total_amount - selectedTicket.paid_amount;
-    
+    // Compute charges (env + tax) and balance to match receipts
+    const { finalTotal, balance } = computeCharges(selectedTicket);
+
     // Auto-fill the exact balance
-    setAmountPaid(balanceDue.toFixed(2));
+    setAmountPaid(balance.toFixed(2));
     setStep('payment');
   };
 
@@ -160,6 +160,17 @@ export default function PickUp() {
     printFrame.contentWindow?.focus();
     printFrame.contentWindow?.print();
     setTimeout(() => document.body.removeChild(printFrame), 1000);
+  };
+
+  // --- Charges calculation helper (match receipt calculations) ---
+  const computeCharges = (ticket: Ticket) => {
+    const subtotal = ticket.total_amount || 0;
+    const envCharge = subtotal * 0.047;
+    const tax = subtotal * 0.0825;
+    const finalTotal = subtotal + envCharge + tax;
+    const paid = ticket.paid_amount || 0;
+    const balance = finalTotal - paid;
+    return { subtotal, envCharge, tax, finalTotal, paid, balance };
   };
 
   return (
@@ -269,20 +280,34 @@ export default function PickUp() {
           </div>
 
           <div className="border-t pt-4">
-             <div className="flex justify-between items-center mb-4">
-                <span className="text-gray-600">Total Ticket Amount:</span>
-                <span className="text-xl font-bold">${selectedTicket.total_amount.toFixed(2)}</span>
-             </div>
-             <div className="flex justify-between items-center mb-4">
-                <span className="text-gray-600">Already Paid:</span>
-                <span className="text-xl font-bold text-green-600">-${selectedTicket.paid_amount.toFixed(2)}</span>
-             </div>
-             <div className="flex justify-between items-center pt-4 border-t">
-                <span className="text-lg font-bold text-gray-900">Balance Due:</span>
-                <span className="text-2xl font-bold text-red-600">
-                    ${(selectedTicket.total_amount - selectedTicket.paid_amount).toFixed(2)}
-                </span>
-             </div>
+             {/* Use same charge calculations as receipts (subtotal + env + tax) */}
+             {(() => {
+               const charges = computeCharges(selectedTicket);
+               return (
+                 <>
+                   <div className="flex justify-between items-center mb-4">
+                     <span className="text-gray-600">Subtotal:</span>
+                     <span className="text-xl font-bold">${charges.subtotal.toFixed(2)}</span>
+                   </div>
+                   <div className="flex justify-between items-center mb-2">
+                     <span className="text-gray-600">Env Charge (4.7%):</span>
+                     <span className="text-xl font-bold text-gray-800">${charges.envCharge.toFixed(2)}</span>
+                   </div>
+                   <div className="flex justify-between items-center mb-4">
+                     <span className="text-gray-600">Tax (8.25%):</span>
+                     <span className="text-xl font-bold text-gray-800">${charges.tax.toFixed(2)}</span>
+                   </div>
+                   <div className="flex justify-between items-center mb-4">
+                     <span className="text-gray-600">Already Paid:</span>
+                     <span className="text-xl font-bold text-green-600">-${charges.paid.toFixed(2)}</span>
+                   </div>
+                   <div className="flex justify-between items-center pt-4 border-t">
+                     <span className="text-lg font-bold text-gray-900">Balance Due:</span>
+                     <span className="text-2xl font-bold text-red-600">${charges.balance.toFixed(2)}</span>
+                   </div>
+                 </>
+               );
+             })()}
           </div>
 
           <div className="mt-8 flex justify-end gap-3">
@@ -310,9 +335,9 @@ export default function PickUp() {
             
             <div className="mb-6 text-center">
                 <p className="text-gray-500 mb-1">Outstanding Balance</p>
-                <p className="text-4xl font-bold text-blue-600">
-                    ${(selectedTicket.total_amount - selectedTicket.paid_amount).toFixed(2)}
-                </p>
+              <p className="text-4xl font-bold text-blue-600">
+                ${(() => computeCharges(selectedTicket).balance.toFixed(2))()}
+              </p>
             </div>
 
             <div className="mb-6">

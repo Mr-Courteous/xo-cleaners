@@ -8,7 +8,7 @@ export function renderPlantReceiptHtml(ticket: Ticket, organizationName: string 
     const quantity = Number(item.quantity) || 0;
     const plantPrice = Number(item.plant_price) || 0;
     const additional = Number(item.additional_charge) || 0;
-    
+
     return sum + (plantPrice * quantity) + additional;
   }, 0);
 
@@ -19,19 +19,33 @@ export function renderPlantReceiptHtml(ticket: Ticket, organizationName: string 
   const totalPieces = items.reduce((sum, item) => sum + (Number(item.quantity) * (Number(item.pieces) || 1)), 0);
 
   const isPickedUp = ticket.status === 'picked_up';
-  
+
   const statusDate = isPickedUp
     ? `${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`
     : new Date(ticket.created_at || Date.now()).toLocaleDateString();
 
-  // --- 2. HEADER INFO ---
+  // --- 2. PAYMENT LOGIC (New Request) ---
+  const rawPaid = Number(ticket.paid_amount) || 0;
+  
+  // Logic: If paid amount is less than plant total, show actual paid.
+  // If paid amount is equal or higher, show total plant cost (cap at total).
+  const displayPaid = rawPaid >= finalPlantTotal ? finalPlantTotal : rawPaid;
+  
+  const balance = finalPlantTotal - displayPaid;
+  const isPaid = balance <= 0.01;
+
+  // --- 3. HEADER INFO ---
   // Plant tags typically just need the Org Name for identification
   // We use the receipt header as a secondary line if present
   const greetingText = ticket.receipt_header 
-    ? ticket.receipt_header.split('\n')[0] 
-    : "";
+    ? ticket.receipt_header.replace(/\n/g, '<br>') 
+    : `Welcome! We appreciate your business.`;
 
-  // --- 3. ITEMS LIST ---
+  const footerText = ticket.receipt_footer
+    ? ticket.receipt_footer.replace(/\n/g, '<br>')
+    : `Thank you for choosing us!`;
+
+  // --- 4. ITEMS LIST ---
   const itemsHtml = items.map(item => {
     const quantity = Number(item.quantity) || 0;
     const plantPrice = Number(item.plant_price) || 0;
@@ -61,22 +75,18 @@ export function renderPlantReceiptHtml(ticket: Ticket, organizationName: string 
     `;
   }).join('');
 
-  // --- 4. FINAL HTML TEMPLATE ---
+  // --- 5. FINAL HTML TEMPLATE ---
   return `
     <div style="width:55mm; margin:0 auto; font-family: 'Courier New', Courier, monospace; color:#111; background: white; padding:5px;">
       
-      <!-- HEADER SECTION -->
       <div style="text-align:center;">
-        <!-- Organization Name (Reserved Space) -->
         <div style="font-size:14pt; font-weight:900; font-family: Arial, sans-serif; margin-bottom: 4px;">
           ${ticket.organization_name || organizationName}
         </div>
         
-        <!-- Greeting / Extra Info -->
         ${greetingText ? `<div style="font-size:10pt; margin-bottom:5px;">${greetingText}</div>` : ''}
       </div>
 
-      <!-- TICKET STATUS -->
       <div style="text-align:center; border-top:1px solid #000; padding-top:5px; margin-top:5px;">
         <div style="font-size:26px; font-weight:800; font-family: Arial, sans-serif; letter-spacing:1px;">
           ${ticket.ticket_number}
@@ -99,7 +109,6 @@ export function renderPlantReceiptHtml(ticket: Ticket, organizationName: string 
         ${itemsHtml}
       </div>
 
-      <!-- TOTALS -->
       <div style="margin-top: 10px; border-top: 2px dashed #000; padding-top: 6px; font-size:10pt; font-weight: 600;">
         <div style="display:flex; justify-content:space-between;"> <div>Plant Sub:</div> <div>$${totalPlantPrice.toFixed(2)}</div> </div>
         <div style="display:flex; justify-content:space-between;"> <div>Env (4.7%):</div> <div>$${envCharge.toFixed(2)}</div> </div>
@@ -108,10 +117,27 @@ export function renderPlantReceiptHtml(ticket: Ticket, organizationName: string 
         <div style="display:flex; justify-content:space-between; font-weight:800; font-size:12pt; margin-top:6px; border-top:2px solid #000; padding-top:2px;">
           <div>COST TOTAL:</div> <div>$${finalPlantTotal.toFixed(2)}</div>
         </div>
+
+        <div style="display:flex; justify-content:space-between; margin-top:4px; font-size:10pt;"> 
+            <div>Paid Amount:</div> 
+            <div>$${displayPaid.toFixed(2)}</div> 
+        </div>
+
+        ${isPaid 
+            ? `<div style="text-align:center; margin-top:12px; border: 3px solid #000; padding: 4px; font-weight:900; font-size: 16pt;">PAID IN FULL</div>`
+            : `<div style="display:flex; justify-content:space-between; font-weight:900; margin-top:8px; font-size:12pt; background: #eee; padding: 2px;"> 
+                 <div>BALANCE DUE:</div> 
+                 <div>$${balance.toFixed(2)}</div> 
+               </div>`
+        }
       </div>
       
       <div style="margin-top:12px; text-align:center; font-weight:800; font-size:12pt; border:2px solid #000; padding:4px;">
         ${totalPieces} PIECES
+      </div>
+
+            <div style="margin-top:15px; text-align:center; font-size:9pt; border-top:1px dashed #444; padding-top:8px;">
+        ${footerText}
       </div>
     </div>
   `;
