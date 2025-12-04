@@ -671,6 +671,30 @@ async def process_ticket_pickup(
         # 7. Commit the transaction
         db.commit()
 
+        # ===========================================================================
+        # NEW: FETCH ORGANIZATION NAME & BRANDING (Header/Footer)
+        # ===========================================================================
+        # A. Fetch Org Name
+        org_name_query = text("SELECT name FROM organizations WHERE id = :org_id")
+        org_name_row = db.execute(org_name_query, {"org_id": organization_id}).fetchone()
+        org_name_val = org_name_row.name if org_name_row else "Your Cleaners"
+
+        # B. Fetch Settings (Header/Footer)
+        settings_query = text("""
+            SELECT receipt_header, receipt_footer 
+            FROM organization_settings 
+            WHERE organization_id = :org_id
+        """)
+        settings_row = db.execute(settings_query, {"org_id": organization_id}).fetchone()
+        
+        receipt_header_val = settings_row.receipt_header if settings_row and settings_row.receipt_header else "Thank you!"
+        receipt_footer_val = settings_row.receipt_footer if settings_row and settings_row.receipt_footer else "Have a great day!"
+        
+        # Safe format for HTML
+        greeting_html = receipt_header_val.replace('\n', '<br>')
+        footer_html = receipt_footer_val.replace('\n', '<br>')
+        # ===========================================================================
+
         # --- FIX 2: Add missing Comma in SQL ---
         items_query = text("""
             SELECT 
@@ -720,13 +744,29 @@ async def process_ticket_pickup(
             """
         # ---------------------------------------------
         
-        # 8. Generate a receipt
+        # 8. Generate a receipt with Branding
         # We use 'new_total_paid' which we forced to match 'current_total', so balance is mathematically 0.
         receipt_html = f"""
             <div style="font-family: monospace; font-size: 10pt; width: 300px; margin: 0 auto; color: #000;">
-                <h4 style="text-align: center; font-size: 12pt; font-weight: bold; margin: 5px 0;">Pick Up Receipt</h4>
-                <p>Ticket #: <strong>{ticket.ticket_number}</strong></p>
-                <p>Customer: {ticket.first_name} {ticket.last_name}</p>
+                
+                <!-- HEADER: ORG NAME -->
+                <div style="text-align:center; margin-bottom: 4px;">
+                    <div style="font-size:14pt; font-weight:900; font-family: Arial, sans-serif;">{org_name_val}</div>
+                </div>
+                
+                <!-- HEADER: GREETING -->
+                <div style="text-align:center; font-size:9pt; font-weight:normal; margin-bottom: 8px;">
+                    {greeting_html}
+                </div>
+
+                <div style="text-align: center; border-bottom: 1px dashed #000; padding-bottom: 5px;">
+                    <h4 style="margin: 0; font-size: 12pt; font-weight: bold;">PICKUP RECEIPT</h4>
+                    <p style="margin: 2px 0;">Ticket #: <strong>{ticket.ticket_number}</strong></p>
+                    <p style="margin: 2px 0; font-size: 9pt;">{datetime.now().strftime("%Y-%m-%d %I:%M %p")}</p>
+                </div>
+
+                <p style="margin-top: 8px;">Customer: {ticket.first_name} {ticket.last_name}</p>
+                
                 <hr style="margin: 8px 0; border: 0; border-top: 1px dashed #000;" />
                 
                 <div style="margin-bottom: 10px;">
@@ -734,14 +774,28 @@ async def process_ticket_pickup(
                 </div>
                 <hr style="margin: 8px 0; border: 0; border-top: 1px dashed #000;" />
 
-                <p>Total Amount: ${current_total:.2f}</p>
-                <p>Previously Paid: ${current_paid:.2f}</p>
-                <p>Amount Paid Now: ${amount_paying:.2f}</p>
-                <p><strong>Total Paid: ${new_total_paid:.2f}</strong></p>
-                <p><strong>Balance Due: $0.00</strong></p>
-                <hr style="margin: 8px 0; border: 0; border-top: 1px dashed #000;" />
-                <p>Date: {datetime.now().strftime("%Y-%m-%d %I:%M %p")}</p>
-                <p style="text-align: center; margin-top: 10px;">Thank you!</p>
+                <div style="font-weight: 600;">
+                    <div style="display:flex; justify-content:space-between;"> 
+                        <span>Total Amount:</span> <span>${current_total:.2f}</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between;"> 
+                        <span>Previously Paid:</span> <span>${current_paid:.2f}</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between;"> 
+                        <span>Paid Now:</span> <span>${amount_paying:.2f}</span>
+                    </div>
+                </div>
+
+                <div style="border: 2px solid #000; padding: 5px; margin-top: 10px; text-align: center;">
+                    <p style="margin: 0; font-size: 12pt; font-weight: 900;">PAID IN FULL</p>
+                </div>
+                
+                <hr style="margin: 15px 0 8px 0; border: 0; border-top: 1px dashed #000;" />
+                
+                <!-- FOOTER -->
+                <div style="text-align: center; font-size: 9pt;">
+                    {footer_html}
+                </div>
             </div>
         """
 

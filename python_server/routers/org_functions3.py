@@ -228,12 +228,12 @@ async def get_ticket_details(
         if not ticket:
             raise HTTPException(status_code=404, detail="Ticket not found.")
 
-        # 2. Get Items (Added item_instructions)
+        # 2. Get Items
         items_stmt = text("""
             SELECT 
                 ti.id, ti.ticket_id, ti.clothing_type_id, ti.quantity, 
                 ti.item_total, ti.plant_price, ti.margin, ti.starch_level, ti.crease,
-                ti.alterations, ti.item_instructions, ti.additional_charge,  -- <--- ADDED
+                ti.alterations, ti.item_instructions, ti.additional_charge, ti.alteration_behavior, 
                 ct.name AS clothing_name,
                 ct.image_url AS clothing_image_url,
                 COALESCE(ct.pieces, 1) AS pieces
@@ -253,16 +253,37 @@ async def get_ticket_details(
                 starch_level=item_row.starch_level,
                 crease=item_row.crease,
                 alterations=item_row.alterations,
-                item_instructions=item_row.item_instructions, # <--- MAPPED
+                item_instructions=item_row.item_instructions,
+                alteration_behavior=item_row.alteration_behavior, # <--- MAPPED
                 item_total=item_row.item_total,
                 plant_price=item_row.plant_price,
                 margin=item_row.margin,
                 additional_charge=item_row.additional_charge or 0.0,
                 clothing_name=item_row.clothing_name,
-                clothing_image_url=item_row.clothing_image_url,
                 pieces=item_row.pieces
             ) for item_row in items_results
         ]
+
+        # ===========================================================================
+        # 3. FETCH ORGANIZATION NAME & BRANDING (Header/Footer)
+        # ===========================================================================
+        
+        # A. Fetch Org Name
+        org_name_query = text("SELECT name FROM organizations WHERE id = :org_id")
+        org_name_row = db.execute(org_name_query, {"org_id": org_id}).fetchone()
+        org_name_val = org_name_row.name if org_name_row else "Your Cleaners"
+
+        # B. Fetch Settings (Header/Footer)
+        settings_query = text("""
+            SELECT receipt_header, receipt_footer 
+            FROM organization_settings 
+            WHERE organization_id = :org_id
+        """)
+        settings_row = db.execute(settings_query, {"org_id": org_id}).fetchone()
+        
+        receipt_header_val = settings_row.receipt_header if settings_row else None
+        receipt_footer_val = settings_row.receipt_footer if settings_row else None
+        # ===========================================================================
 
         return TicketResponse(
             id=ticket.id,
@@ -278,13 +299,22 @@ async def get_ticket_details(
             created_at=ticket.created_at,
             special_instructions=ticket.special_instructions,
             items=items_list,
-            organization_id=org_id 
+            organization_id=org_id,
+            
+            # ✅ Return Org Name & Branding
+            organization_name=org_name_val,
+            receipt_header=receipt_header_val,
+            receipt_footer=receipt_footer_val
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Error: {e}")
         raise HTTPException(status_code=500, detail="Error retrieving ticket.")
-
+    
+    
+    
 # --- END OF get_ticket_details FUNCTION ---
 
 
