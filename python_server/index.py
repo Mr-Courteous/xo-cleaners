@@ -33,7 +33,7 @@ if not DATABASE_URL:
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Default Platform Admin credentials 
+# Default Platform Admin credential
 DEFAULT_ADMIN_NAME = "Taiwo Courteous"
 DEFAULT_ADMIN_EMAIL = "tinumidun@moduslights.com"
 DEFAULT_ADMIN_PASSWORD = "1234567890"
