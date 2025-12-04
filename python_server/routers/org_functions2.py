@@ -609,30 +609,54 @@ async def process_ticket_pickup(
                 detail=f"Ticket status is '{ticket.status}'. It is not ready for pickup."
             )
 
-        # 4. Payment Validation
-        current_total = decimal.Decimal(str(ticket.total_amount)) # Use str conversion for safety
+        # 4. PAYMENT HANDLING
+        # Recompute subtotal from ticket items and apply env/tax so frontend and backend match receipts
+        items_query = text("""
+            SELECT ti.item_total
+            FROM ticket_items ti
+            WHERE ti.ticket_id = :ticket_id
+        """)
+        items_rows = db.execute(items_query, {"ticket_id": ticket_id}).fetchall()
+        subtotal = decimal.Decimal('0')
+        for r in items_rows:
+            subtotal += decimal.Decimal(str(r.item_total or 0))
+
+        env_charge = subtotal * decimal.Decimal('0.047')
+        tax = subtotal * decimal.Decimal('0.0825')
+        final_total = subtotal + env_charge + tax
+
         current_paid = decimal.Decimal(str(ticket.paid_amount))
-        amount_paying = decimal.Decimal(str(req.amount_paid))
-        
-        outstanding_balance = current_total - current_paid
-        
-        # Check if payment is sufficient (allowing for 1 cent rounding diff)
-        if amount_paying < (outstanding_balance - decimal.Decimal('0.01')):
+
+        # NOTE: Frontend now sends the new TOTAL paid amount (not the increment).
+        # We'll validate and REPLACE the stored paid_amount with this value (subject to caps),
+        # rather than adding it to the existing paid_amount.
+        new_total_paid_input = decimal.Decimal(str(req.amount_paid))
+
+        if new_total_paid_input < decimal.Decimal('0'):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Payment amount ${amount_paying} is less than the outstanding balance of ${outstanding_balance}."
+                detail="Payment amount must be zero or greater."
             )
 
-        # --- FIX 1: Force "Clean" Zero Balance ---
-        # If they are paying off the remainder, set new_total_paid exactly to current_total.
-        # This prevents floating point errors leaving $0.01 outstanding.
-        if amount_paying >= (outstanding_balance - decimal.Decimal('0.01')):
-             new_total_paid = current_total
-        else:
-             # This branch technically won't hit due to the check above, but good for logic safety
-             new_total_paid = current_paid + amount_paying
+        # Prevent accidental decreases to paid_amount. Require the supplied new total to be
+        # at least the current stored paid amount (cannot reduce paid history).
+        if new_total_paid_input < current_paid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Supplied paid amount ${new_total_paid_input} is less than the existing paid amount ${current_paid}."
+            )
 
-        new_status = "picked_up"
+        # Cap at the final total to avoid over-crediting
+        new_total_paid = new_total_paid_input
+        if new_total_paid > final_total:
+            new_total_paid = final_total
+
+        # Amount actually collected now (could be zero if frontend sent a total equal to current)
+        paid_now = new_total_paid - current_paid
+
+        # Determine whether the ticket is now fully paid (allow 1 cent tolerance)
+        is_fully_paid = new_total_paid >= (final_total - decimal.Decimal('0.01'))
+        new_status = "picked_up" if is_fully_paid else ticket.status
 
         # 5. Update the ticket
         update_query = text("""
@@ -645,16 +669,18 @@ async def process_ticket_pickup(
                 id = :ticket_id AND organization_id = :org_id
         """)
         
+        # Set pickup_date only if fully paid (otherwise leave it NULL)
+        pickup_date_value = datetime.now() if is_fully_paid else None
         db.execute(update_query, {
             "status": new_status,
-            "paid_amount": new_total_paid, # Using the clean total
-            "pickup_date": datetime.now(),
+            "paid_amount": float(new_total_paid),
+            "pickup_date": pickup_date_value,
             "ticket_id": ticket_id,
             "org_id": organization_id
         })
         
-        # 6. Free up the rack if one was assigned
-        if ticket.rack_number:
+        # 6. Free up the rack if one was assigned AND the ticket is fully paid
+        if is_fully_paid and ticket.rack_number:
             rack_free_query = text("""
                 UPDATE racks
                 SET 
@@ -699,7 +725,7 @@ async def process_ticket_pickup(
         items_query = text("""
             SELECT 
                 ti.quantity, ti.item_total, ti.starch_level, ti.crease, 
-                ti.alterations, ti.item_instructions, ti.additional_charge, -- <--- Added Comma
+                ti.alterations, ti.item_instructions, ti.additional_charge,
                 ct.name as clothing_name
             FROM ticket_items ti
             JOIN clothing_types ct ON ti.clothing_type_id = ct.id
@@ -745,7 +771,12 @@ async def process_ticket_pickup(
         # ---------------------------------------------
         
         # 8. Generate a receipt with Branding
-        # We use 'new_total_paid' which we forced to match 'current_total', so balance is mathematically 0.
+        # Compute subtotal/env/tax/final and balance for the receipt
+        # Note: we already computed 'subtotal', 'env_charge', 'tax', 'final_total' above
+        previous_paid = current_paid
+        # use the computed paid_now (new_total_paid - previous_paid)
+        balance_after = final_total - decimal.Decimal(str(new_total_paid))
+
         receipt_html = f"""
             <div style="font-family: monospace; font-size: 10pt; width: 300px; margin: 0 auto; color: #000;">
                 
@@ -776,19 +807,26 @@ async def process_ticket_pickup(
 
                 <div style="font-weight: 600;">
                     <div style="display:flex; justify-content:space-between;"> 
-                        <span>Total Amount:</span> <span>${current_total:.2f}</span>
+                        <span>Subtotal:</span> <span>${float(subtotal):.2f}</span>
                     </div>
                     <div style="display:flex; justify-content:space-between;"> 
-                        <span>Previously Paid:</span> <span>${current_paid:.2f}</span>
+                        <span>Env (4.7%):</span> <span>${float(env_charge):.2f}</span>
                     </div>
                     <div style="display:flex; justify-content:space-between;"> 
-                        <span>Paid Now:</span> <span>${amount_paying:.2f}</span>
+                        <span>Tax (8.25%):</span> <span>${float(tax):.2f}</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; margin-top:6px; font-weight:900;"> 
+                        <span>TOTAL:</span> <span>${float(final_total):.2f}</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; margin-top:6px;"> 
+                        <span>Previously Paid:</span> <span>${float(previous_paid):.2f}</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between;"> 
+                        <span>Paid Now:</span> <span>${float(paid_now):.2f}</span>
                     </div>
                 </div>
 
-                <div style="border: 2px solid #000; padding: 5px; margin-top: 10px; text-align: center;">
-                    <p style="margin: 0; font-size: 12pt; font-weight: 900;">PAID IN FULL</p>
-                </div>
+                {"<div style=\"border: 2px solid #000; padding: 5px; margin-top: 10px; text-align: center;\"><p style=\"margin: 0; font-size: 12pt; font-weight: 900;\">PAID IN FULL</p></div>" if is_fully_paid else f"<div style=\"display:flex;justify-content:space-between;margin-top:8px;font-weight:900;font-size:12pt;background:#eee;padding:4px;\"><div>BALANCE DUE:</div><div>${float(balance_after):.2f}</div></div>"}
                 
                 <hr style="margin: 15px 0 8px 0; border: 0; border-top: 1px dashed #000;" />
                 

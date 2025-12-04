@@ -100,34 +100,48 @@ export default function PickUp() {
     setLoading(true);
     try {
       const token = localStorage.getItem('accessToken');
-      
-      // Send the payment amount to backend
+
+      // Validate amountPaid is a positive number
+      const amountNumber = Number(parseFloat(amountPaid));
+      if (isNaN(amountNumber) || amountNumber <= 0) {
+        setModal({ isOpen: true, title: 'Invalid Amount', message: 'Please enter a valid payment amount.', type: 'error' });
+        setLoading(false);
+        return;
+      }
+
+      // Send only the amount_paid to the pickup endpoint. Backend will compute subtotal/env/tax and cap totals.
       const response = await axios.put(
         `${baseURL}/api/organizations/tickets/${selectedTicket.id}/pickup`,
-        { amount_paid: parseFloat(amountPaid) }, 
+        { amount_paid: amountNumber },
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      if (response.data.success) {
-        // Update local state with the returned (updated) ticket data
-        // We merge the response data to ensure receipt templates have latest info
-        const updatedTicket = { ...selectedTicket, ...response.data, status: 'picked_up' };
-        
-        // Generate Receipt HTML
-        const receiptHtml = renderPickupReceiptHtml(updatedTicket);
-        const plantHtml = renderPlantReceiptHtml(updatedTicket);
+      if (response.data && response.data.success) {
+        // Merge backend returned totals/status into the local ticket for client-side renderers
+        const updatedTicket: Ticket = {
+          ...selectedTicket,
+          paid_amount: response.data.new_total_paid ?? selectedTicket.paid_amount,
+          status: response.data.new_status ?? selectedTicket.status
+        } as Ticket;
+
+        // Prefer backend-generated receipt HTML when available (server-side is authoritative)
+        const receiptHtml = response.data.receipt_html || renderPickupReceiptHtml(updatedTicket);
+        const plantHtml = renderPlantReceiptHtml ? renderPlantReceiptHtml(updatedTicket) : '';
 
         setPrintContent(receiptHtml);
         setPlantPrintContent(plantHtml);
-        
+
         // Open Print Preview
         setShowPrintPreview(true);
-        
+
         // Reset flow in background
         setStep('search');
         setTickets([]);
         setSearchQuery('');
         console.log('Pickup processed successfully.', response.data);
+      } else {
+        const msg = response.data?.message || 'Failed to process pickup.';
+        setModal({ isOpen: true, title: 'Error', message: msg, type: 'error' });
       }
 
     } catch (err: any) {
@@ -164,11 +178,16 @@ export default function PickUp() {
 
   // --- Charges calculation helper (match receipt calculations) ---
   const computeCharges = (ticket: Ticket) => {
-    const subtotal = ticket.total_amount || 0;
-    const envCharge = subtotal * 0.047;
-    const tax = subtotal * 0.0825;
+    // Match receipt template: subtotal is sum of item.item_total
+    const items = ticket.items || [];
+    const subtotal = items.reduce((sum, item) => sum + (Number(item.item_total) || 0), 0);
+    
+    // --- ENABLED: Standard Dry Cleaning Fees ---
+    const envCharge = subtotal * 0.047; // 4.7%
+    const tax = subtotal * 0.0825;      // 8.25%
+    
     const finalTotal = subtotal + envCharge + tax;
-    const paid = ticket.paid_amount || 0;
+    const paid = Number(ticket.paid_amount) || 0;
     const balance = finalTotal - paid;
     return { subtotal, envCharge, tax, finalTotal, paid, balance };
   };
@@ -289,6 +308,8 @@ export default function PickUp() {
                      <span className="text-gray-600">Subtotal:</span>
                      <span className="text-xl font-bold">${charges.subtotal.toFixed(2)}</span>
                    </div>
+                   
+                   {/* SHOW TAXES */}
                    <div className="flex justify-between items-center mb-2">
                      <span className="text-gray-600">Env Charge (4.7%):</span>
                      <span className="text-xl font-bold text-gray-800">${charges.envCharge.toFixed(2)}</span>
@@ -297,6 +318,7 @@ export default function PickUp() {
                      <span className="text-gray-600">Tax (8.25%):</span>
                      <span className="text-xl font-bold text-gray-800">${charges.tax.toFixed(2)}</span>
                    </div>
+
                    <div className="flex justify-between items-center mb-4">
                      <span className="text-gray-600">Already Paid:</span>
                      <span className="text-xl font-bold text-green-600">-${charges.paid.toFixed(2)}</span>
@@ -356,13 +378,16 @@ export default function PickUp() {
                 </div>
                 {/* Quick Actions */}
                 <div className="mt-2 flex gap-2 justify-center">
-                    <button 
-                        type="button"
-                        onClick={() => setAmountPaid((selectedTicket.total_amount - selectedTicket.paid_amount).toFixed(2))}
-                        className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded border border-blue-100 hover:bg-blue-100"
-                    >
-                        Full Balance
-                    </button>
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      const charges = computeCharges(selectedTicket);
+                      setAmountPaid(charges.balance.toFixed(2));
+                    }}
+                    className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded border border-blue-100 hover:bg-blue-100"
+                  >
+                    Full Balance
+                  </button>
                 </div>
             </div>
 
