@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, Search, Trash2, User, Phone, Calendar, Grid, List, Shirt, ImageOf, Mail, Printer } from 'lucide-react';
 import axios from "axios";
 import baseURL from "../lib/config";
-import { Customer, ClothingType, TicketItem } from '../types';
+import { Customer, ClothingType, TicketItem, Ticket } from '../types'; // Ensure 'Ticket' and 'TicketItem' types are available
 import Modal from './Modal';
 import PrintPreviewModal from './PrintPreviewModal';
 import renderReceiptHtml from '../lib/receiptTemplate';
@@ -13,6 +13,18 @@ const CLOTHING_IMAGE_MAP: { [key: string]: string } = {
   // Add your item images here
 };
 // -------------------------------------------------------------
+
+// --- TYPE EXTENSIONS FOR MERGED LOGIC ---
+// Define the full Ticket structure needed for tag printing, if not fully defined in '../types'
+interface TicketWithItems extends Ticket {
+  items: Array<TicketItem & {
+    clothing_name: string;
+    starch_level: string;
+    crease: string;
+    quantity: number;
+    // Add other fields from the backend TicketItem response if necessary
+  }>;
+}
 
 const getAuthHeaders = () => {
   const token = localStorage.getItem("accessToken");
@@ -108,8 +120,9 @@ export default function DropOff() {
     type: 'error' as 'error' | 'success'
   });
   const [showPrintPreview, setShowPrintPreview] = useState(false);
-  const [printContent, setPrintContent] = useState('');
-  const [plantHtmlState, setPlantHtmlState] = useState('');
+  const [printContent, setPrintContent] = useState(''); // Customer Receipt HTML
+  const [plantHtmlState, setPlantHtmlState] = useState(''); // Plant Receipt HTML
+  const [tagHtmlState, setTagHtmlState] = useState(''); // Tag HTML for all items
 
   const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => {
     if (typeof window !== 'undefined') {
@@ -217,7 +230,8 @@ export default function DropOff() {
         first_name: newCustomer.first_name,
         last_name: newCustomer.last_name,
         address: newCustomer.address,
-        password: "1234567890",
+        phone: newCustomer.phone, // Include phone in registration payload
+        password: "1234567890", // Assumed default password for a new customer account
       };
 
       const response = await axios.post(`${baseURL}/api/organizations/register-customer`, payload, {
@@ -305,6 +319,99 @@ export default function DropOff() {
     setItems(items.filter((_, i) => i !== index));
   };
 
+  /**
+   * Generates the HTML string for item tags.
+   * Logic copied from Tag.tsx.
+   */
+  const generateTagHtml = (ticket: TicketWithItems) => {
+    let combinedHtml = '';
+
+    const rawName = ticket.customer_name || ticket.customer_phone || 'Guest';
+    const fullName = rawName;
+    const ticketId = ticket.ticket_number || '';
+    const dateIssued = ticket.created_at ? new Date(ticket.created_at).toLocaleDateString() : '';
+    
+    // Process each item in the ticket
+    ticket.items.forEach((item) => {
+      // 1. Prepare preferences text
+      const preferences = [];
+      if (item.starch_level && item.starch_level !== 'no_starch' && item.starch_level !== 'none') {
+        preferences.push(`${item.starch_level} starch`);
+      }
+      if (item.crease === 'crease') {
+        preferences.push('Crease');
+      }
+      if (item.alterations) {
+        preferences.push(`Alt: ${item.alterations}`);
+      }
+      if (item.item_instructions) {
+         preferences.push(`Note: ${item.item_instructions}`);
+      }
+      const preferencesText = preferences.join(' / ');
+      
+      // 2. Determine tag quantity (from item quantity)
+      const tags = Array(item.quantity).fill(null);
+      
+      // 3. Determine font size based on name length
+      const nameLen = fullName.length || 0;
+      const nameFontSize = nameLen > 50 ? '9pt' : nameLen > 35 ? '10pt' : '11pt';
+      const prefFontSize = '9pt';
+      
+      // 4. Generate HTML for this item's tags (one tag per quantity)
+      const itemTagsHtml = tags.map(() => `
+          <div style="
+            border: 1.5px solid #000;
+            padding: 6px 8px;
+            width: 100%;
+            box-sizing: border-box;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+            font-size: 10pt;
+            line-height: 1.1;
+            margin-bottom: 8px; /* Separator for individual tags */
+            page-break-after: always; /* Force new page/label for each tag */
+          ">
+            <div style="font-size: 10pt; font-weight: 700; overflow-wrap: break-word; word-break: break-word;">
+              ${ticketId}
+            </div>
+            <div style="font-size: ${nameFontSize}; font-weight: 700; text-align: right; overflow-wrap: break-word; word-break: break-word;">
+              ${fullName}
+            </div>
+
+            <div style="font-size: 9pt;">
+              Issued: ${dateIssued}
+            </div>
+            <div style="font-size: ${prefFontSize}; text-align: right; overflow-wrap: break-word; word-break: break-word;">
+              ${preferencesText}
+            </div>
+            
+            <div style="grid-column: 1 / span 2; text-align: center; font-size: 11pt; font-weight: 900; padding: 2px 0; border-top: 1px dashed #ccc; margin-top: 4px;">
+                ${item.clothing_name}
+            </div>
+          </div>
+      `).join('');
+      
+      combinedHtml += itemTagsHtml;
+    });
+
+    // 5. Wrap all generated tags in a container
+    return `
+      <div style="
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 6px;
+        font-family: system-ui, -apple-system, sans-serif;
+      ">
+        ${combinedHtml}
+      </div>
+    `;
+  };
+
+  /**
+   * Helper function to execute the print job in a hidden iframe.
+   */
   const handlePrintJob = (htmlContent: string) => {
     const printFrame = document.createElement('iframe');
     printFrame.style.display = 'none';
@@ -315,15 +422,13 @@ export default function DropOff() {
         <head>
           <title>Print</title>
           <style>
-            @page { size: 55mm auto; margin: 0; }
+            @page { size: 55mm auto; margin: 0; } /* Adjust size for common label/tag printers */
             @media print {
               html, body { margin: 0; padding: 0; }
-              .page-break { 
-                page-break-before: always; 
-                break-before: page;
-                display: block; 
-                height: 0; 
-                overflow: hidden;
+              /* Use page-break-after/before for receipts/tags */
+              .page-break-receipt { 
+                page-break-after: always; 
+                break-after: page;
               }
             }
             body { font-family: sans-serif; }
@@ -346,6 +451,7 @@ export default function DropOff() {
     }, 100);
   };
 
+
   const createTicket = async () => {
     const itemsWithValidQuantity = items.filter(item => item.quantity > 0);
     if (itemsWithValidQuantity.length === 0) {
@@ -364,9 +470,9 @@ export default function DropOff() {
         if (!val) return 'none';
         const s = String(val).toLowerCase();
         if (s === 'no_starch' || s === 'none') return 'none';
-        if (s === 'light' || s === 'low') return 'low';
+        if (s === 'light' || s === 'low') return 'light'; // Standardize to 'light'
         if (s === 'medium' || s === 'med') return 'medium';
-        if (s === 'heavy' || s === 'high') return 'high';
+        if (s === 'heavy' || s === 'high') return 'heavy'; // Standardize to 'heavy'
         return 'none';
       };
 
@@ -377,7 +483,7 @@ export default function DropOff() {
           clothing_type_id: Number(item.clothing_type_id),
           quantity: Number(item.quantity) || 0,
           starch_level: mapStarchLevel(item.starch_level),
-          crease: item.crease === true || item.crease === 'crease',
+          crease: item.crease === 'crease', // map 'crease' string to boolean
           additional_charge: Number(item.additional_charge) || 0.0,
           alterations: item.alterations || null, // <--- MAP NEW FIELD HERE
           item_instructions: item.item_instructions || null,
@@ -397,16 +503,28 @@ export default function DropOff() {
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      const newTicket = response.data;
+      // The newTicket object from the backend response should contain
+      // the created_at, ticket_number, customer_name, customer_phone, and the full items list.
+      const newTicket = response.data as TicketWithItems;
 
+      // Ensure the items array on the returned ticket contains necessary details for tag generation
+      // This is a common pattern: the POST returns the final, structured ticket object.
+      if (!newTicket.items || newTicket.items.length === 0) {
+          // If items are missing from the response, fetch them separately
+          const ticketDetails = await axios.get(`${baseURL}/api/organizations/tickets/${newTicket.id}`, { headers: { Authorization: `Bearer ${token}` } });
+          newTicket.items = ticketDetails.data.items || [];
+      }
+      
       console.log('Ticket created successfully:', newTicket);
 
-      // 3. Generate Receipts
+      // 3. Generate Receipts & Tags
       const customerHtml = renderReceiptHtml(newTicket as any);
       const plantHtml = renderPlantReceiptHtml(newTicket as any);
+      const tagHtml = generateTagHtml(newTicket); // Generate Tags
 
       setPrintContent(customerHtml);
       setPlantHtmlState(plantHtml);
+      setTagHtmlState(tagHtml); // Save Tag HTML
 
       setShowPrintPreview(true);
       setModal({ isOpen: true, title: 'Ticket Created', type: 'success', message: 'Ticket created successfully.' });
@@ -431,6 +549,37 @@ export default function DropOff() {
   }, [items]);
 
   const getClothingTypeById = (id: number) => clothingTypes.find(ct => ct.id === id);
+
+  // --- Print Handlers ---
+
+  const handlePrintAll = () => {
+    // Note: Added page-break-receipt class to separate receipts/tags
+    const combinedHtml = `
+      <div class="page-break-receipt">${printContent}</div>
+      <div class="page-break-receipt">${plantHtmlState}</div>
+      <div>${tagHtmlState}</div>
+    `;
+    handlePrintJob(combinedHtml);
+    setShowPrintPreview(false);
+  }
+
+  const handlePrintCustomer = () => {
+    handlePrintJob(printContent);
+    setShowPrintPreview(false);
+  }
+
+  const handlePrintPlant = () => {
+    handlePrintJob(plantHtmlState);
+    setShowPrintPreview(false);
+  }
+
+  const handlePrintTags = () => {
+    // This uses the tagHtmlState which now contains the page-break-after: always style on each tag.
+    handlePrintJob(tagHtmlState);
+    setShowPrintPreview(false);
+  }
+  // ----------------------
+
 
   return (
     <div className="w-full max-w-full mx-auto px-4 py-4 min-h-screen bg-gray-100 font-sans">
@@ -528,7 +677,7 @@ export default function DropOff() {
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-lg font-semibold">Add Clothing Items</h3>
             <div className="flex items-center space-x-2">
-              <span className="text-sm text-gray-600">Customer: <span className="font-medium">{selectedCustomer.name}</span></span>
+              <span className="text-sm text-gray-600">Customer: <span className="font-medium">{selectedCustomer.first_name} {selectedCustomer.last_name}</span></span>
               <button onClick={() => saveViewMode('grid')} className={`p-2 rounded-lg transition-colors ${viewMode === 'grid' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`} title="Grid View"><Grid className="h-5 w-5" /></button>
               <button onClick={() => saveViewMode('list')} className={`p-2 rounded-lg transition-colors ${viewMode === 'list' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`} title="List View"><List className="h-5 w-5" /></button>
             </div>
@@ -804,7 +953,7 @@ export default function DropOff() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
             <div className="p-4 bg-gray-50 rounded-lg">
               <h4 className="font-medium mb-2">Customer Information</h4>
-              <p><strong>Name:</strong> {selectedCustomer.name}</p>
+              <p><strong>Name:</strong> {selectedCustomer.first_name} {selectedCustomer.last_name}</p>
               <p><strong>Phone:</strong> {selectedCustomer.phone}</p>
               {selectedCustomer.email && <p><strong>Email:</strong> {selectedCustomer.email}</p>}
             </div>
@@ -871,12 +1020,31 @@ export default function DropOff() {
         {modal.type === 'success' ? <div dangerouslySetInnerHTML={{ __html: plantHtmlState || modal.message }} /> : <div>{modal.message}</div>}
       </Modal>
 
-      <PrintPreviewModal isOpen={showPrintPreview} onClose={() => setShowPrintPreview(false)} onPrint={() => { }} content={printContent} hideDefaultButton={true} extraActions={(
-        <>
-          <button onClick={() => { const combinedHtml = `${printContent}<div class="page-break"></div>${plantHtmlState}`; handlePrintJob(combinedHtml); }} className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 flex items-center gap-2"><Printer size={18} /> Print Receipts (All)</button>
-          <button onClick={() => { handlePrintJob(plantHtmlState); }} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 flex items-center gap-2"><Printer size={18} /> Print Plant Only</button>
-        </>
-      )} />
+      <PrintPreviewModal 
+        isOpen={showPrintPreview} 
+        onClose={() => setShowPrintPreview(false)} 
+        onPrint={() => {}} // Empty default print action as we have custom ones
+        content={printContent} 
+        hideDefaultButton={true} 
+        extraActions={(
+          <>
+            <button onClick={handlePrintCustomer} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-2">
+              <Printer size={18} /> Print Customer Only
+            </button>
+            <button onClick={handlePrintPlant} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 flex items-center gap-2">
+              <Printer size={18} /> Print Plant Only
+            </button>
+            {tagHtmlState && (
+              <button onClick={handlePrintTags} className="px-4 py-2 bg-amber-600 text-white rounded hover:bg-amber-700 flex items-center gap-2">
+                <Printer size={18} /> Print Tags Only
+              </button>
+            )}
+            <button onClick={handlePrintAll} className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 flex items-center gap-2">
+              <Printer size={18} /> Print All
+            </button>
+          </>
+        )} 
+      />
     </div>
   );
 }
