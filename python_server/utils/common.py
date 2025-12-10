@@ -44,6 +44,7 @@ class ALL_STAFF_ROLES(str, Enum):
     ASSISTANT = "assistant"
     CASHIER = "cashier"
     CUSTOMER = "customer"
+    
 
 
 PLATFORM_ADMIN_ROLE = "admin"

@@ -7,7 +7,7 @@ import {
   Menu,
   X,
   LogOut,
-  
+
   // Operational Icons (Cashier Features)
   Package, // Drop Off
   Clock,   // Pick Up
@@ -18,7 +18,7 @@ import {
   Activity, // Status
   Tag,     // Tags
   BookUser, // Directory
-  
+
   // Owner Specific Icons
   UserPlus,
   Shield,
@@ -45,6 +45,7 @@ import ClothingManagement from './ClothingManagement';
 import StatusManagement from './StatusManagement';
 import TagManagement from './Tag'; // Assuming exported as TagManagement or default
 import CustomerDirectory from './CustomerDirectory';
+import DashboardAnalytics from './DashboardAnalytics'; // <--- ADD THIS IMPORT
 
 // --- Import Components (Owner Features) ---
 import OrganizationSettings from "./OrganizationSettings";
@@ -180,6 +181,7 @@ export default function StoreOwner() {
     { id: 'tags', label: 'Tags', icon: Tag, category: 'Management' },
     { id: 'directory', label: 'Directory', icon: BookUser, category: 'Management' },
     { id: 'settings', label: 'Settings', icon: Settings, category: 'System' },
+    { id: 'analytics', label: 'Analytics', icon: BarChart3, category: 'Main' },
   ];
 
   // --- RENDER CONTENT ---
@@ -204,7 +206,7 @@ export default function StoreOwner() {
 
             {/* QUICK STATS / ACTION CARDS */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              
+
               {/* Manage Staff Card */}
               <div
                 onClick={() => { setShowManageModal(true); fetchWorkers(); }}
@@ -223,9 +225,9 @@ export default function StoreOwner() {
               </div>
 
               {/* Add Worker Card */}
-              <div 
-                 onClick={() => setShowAddModal(true)}
-                 className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-all hover:-translate-y-1 group"
+              <div
+                onClick={() => setShowAddModal(true)}
+                className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-all hover:-translate-y-1 group"
               >
                 <div className="flex justify-between items-start">
                   <div className="bg-green-100 p-3 rounded-xl text-green-600 group-hover:scale-110 transition-transform">
@@ -240,7 +242,7 @@ export default function StoreOwner() {
               </div>
 
               {/* Settings Shortcut */}
-              <div 
+              <div
                 onClick={() => setActiveView('settings')}
                 className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-all hover:-translate-y-1 group"
               >
@@ -257,12 +259,15 @@ export default function StoreOwner() {
               </div>
 
               {/* Reports Placeholder */}
-              <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-all hover:-translate-y-1 group">
+              <div
+                onClick={() => setActiveView('analytics')}
+                className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-all hover:-translate-y-1 group"
+              >
                 <div className="flex justify-between items-start">
                   <div className="bg-orange-100 p-3 rounded-xl text-orange-600 group-hover:scale-110 transition-transform">
                     <BarChart3 size={24} />
                   </div>
-                  <Shield size={20} className="text-gray-300" />
+                  <ArrowRight size={20} className="text-gray-300" />
                 </div>
                 <div className="mt-4">
                   <h3 className="font-semibold text-gray-800 text-lg">Analytics</h3>
@@ -273,10 +278,10 @@ export default function StoreOwner() {
 
             {/* Additional Dashboard Content can go here */}
             <div className="mt-8 bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                <h3 className="text-lg font-bold text-gray-800 mb-4">Recent System Activity</h3>
-                <div className="text-gray-400 text-sm italic py-8 text-center bg-gray-50 rounded-xl border border-dashed border-gray-200">
-                    Audit logs and recent activities will appear here.
-                </div>
+              <h3 className="text-lg font-bold text-gray-800 mb-4">Recent System Activity</h3>
+              <div className="text-gray-400 text-sm italic py-8 text-center bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                Audit logs and recent activities will appear here.
+              </div>
             </div>
           </div>
         );
@@ -290,15 +295,17 @@ export default function StoreOwner() {
       case 'tags': return <TagManagement />;
       case 'directory': return <CustomerDirectory />;
       case 'settings': return <OrganizationSettings />;
+      case 'analytics': return <DashboardAnalytics />;
+
       default: return <div>View Not Found</div>;
     }
   };
 
   return (
     <div className="flex h-screen bg-gray-50 font-sans text-gray-900 overflow-hidden">
-      
+
       {/* SIDEBAR NAVIGATION */}
-      <aside 
+      <aside
         className={`
           ${isSidebarOpen ? 'w-64 translate-x-0' : 'w-0 -translate-x-full lg:w-20 lg:translate-x-0'} 
           fixed inset-y-0 left-0 z-30 bg-white border-r border-gray-200 transition-all duration-300 ease-in-out flex flex-col
@@ -306,11 +313,11 @@ export default function StoreOwner() {
       >
         {/* Sidebar Header */}
         <div className="h-16 flex items-center justify-center border-b border-gray-100 px-4">
-           {isSidebarOpen ? (
-             <h2 className="text-xl font-bold text-indigo-600 tracking-tight">XO Cleaners</h2>
-           ) : (
-             <h2 className="text-xl font-bold text-indigo-600">XO</h2>
-           )}
+          {isSidebarOpen ? (
+            <h2 className="text-xl font-bold text-indigo-600 tracking-tight">XO Cleaners</h2>
+          ) : (
+            <h2 className="text-xl font-bold text-indigo-600">XO</h2>
+          )}
         </div>
 
         {/* Navigation Items */}
@@ -318,7 +325,7 @@ export default function StoreOwner() {
           {menuItems.map((item, index) => {
             // Group separators
             const showCategory = isSidebarOpen && (index === 0 || menuItems[index - 1].category !== item.category);
-            
+
             return (
               <React.Fragment key={item.id}>
                 {showCategory && (
@@ -333,8 +340,8 @@ export default function StoreOwner() {
                   }}
                   className={`
                     w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors
-                    ${activeView === item.id 
-                      ? 'bg-indigo-50 text-indigo-600' 
+                    ${activeView === item.id
+                      ? 'bg-indigo-50 text-indigo-600'
                       : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}
                   `}
                   title={!isSidebarOpen ? item.label : ""}
@@ -349,7 +356,7 @@ export default function StoreOwner() {
 
         {/* Sidebar Footer */}
         <div className="p-4 border-t border-gray-100">
-          <button 
+          <button
             onClick={() => {
               localStorage.clear();
               navigate("/");
@@ -367,11 +374,11 @@ export default function StoreOwner() {
 
       {/* MAIN CONTENT AREA */}
       <div className={`flex-1 flex flex-col h-full transition-all duration-300 ${isSidebarOpen ? 'ml-64' : 'ml-0 lg:ml-20'}`}>
-        
+
         {/* Header */}
         <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 sticky top-0 z-20">
           <div className="flex items-center gap-4">
-            <button 
+            <button
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
               className="p-2 hover:bg-gray-100 rounded-lg text-gray-600"
             >
@@ -380,7 +387,7 @@ export default function StoreOwner() {
 
             {/* BACK TO DASHBOARD BUTTON */}
             {activeView !== 'dashboard' && (
-              <button 
+              <button
                 onClick={() => setActiveView('dashboard')}
                 className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition-colors"
               >
@@ -393,15 +400,15 @@ export default function StoreOwner() {
               {menuItems.find(i => i.id === activeView)?.label || 'Dashboard'}
             </h2>
           </div>
-          
+
           <div className="flex items-center gap-3">
-             <div className="hidden md:block text-right">
-                <p className="text-sm font-medium text-gray-800">Store Owner</p>
-                <p className="text-xs text-gray-500">{organizationName}</p>
-             </div>
-             <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-700 font-bold border-2 border-white shadow-sm">
-                SO
-             </div>
+            <div className="hidden md:block text-right">
+              <p className="text-sm font-medium text-gray-800">Store Owner</p>
+              <p className="text-xs text-gray-500">{organizationName}</p>
+            </div>
+            <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-700 font-bold border-2 border-white shadow-sm">
+              SO
+            </div>
           </div>
         </header>
 
@@ -429,30 +436,30 @@ export default function StoreOwner() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
-                  <input required type="text" className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" 
-                    value={formData.first_name} onChange={e => setFormData({...formData, first_name: e.target.value})} />
+                  <input required type="text" className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                    value={formData.first_name} onChange={e => setFormData({ ...formData, first_name: e.target.value })} />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
-                  <input required type="text" className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" 
-                    value={formData.last_name} onChange={e => setFormData({...formData, last_name: e.target.value})} />
+                  <input required type="text" className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                    value={formData.last_name} onChange={e => setFormData({ ...formData, last_name: e.target.value })} />
                 </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                <input required type="email" className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" 
-                  value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
+                <input required type="email" className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                  value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-                  <input required type="password" className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" 
-                    value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} />
+                  <input required type="password" className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                    value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })} />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-                  <select className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white" 
-                    value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})}>
+                  <select className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
+                    value={formData.role} onChange={e => setFormData({ ...formData, role: e.target.value })}>
                     <option value="cashier">Cashier</option>
                     <option value="store_manager">Manager</option>
                     <option value="driver">Driver</option>
@@ -486,7 +493,7 @@ export default function StoreOwner() {
                 <button onClick={() => setShowManageModal(false)} className="p-2 hover:bg-gray-200 rounded-full"><X size={20} /></button>
               </div>
             </div>
-            
+
             <div className="p-6 overflow-y-auto flex-1">
               {loading ? (
                 <div className="text-center py-10 text-gray-500">Loading staff...</div>

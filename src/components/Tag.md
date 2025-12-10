@@ -5,15 +5,6 @@ import baseURL from '../lib/config';
 import { Ticket } from '../types';
 import PrintPreviewModal from './PrintPreviewModal';
 
-// --- CRITICAL FIX: The QZ library is loaded globally via index.html,
-// so we must use 'declare const' instead of import to avoid errors.
-declare const qz: any; 
-// ----------------------------------------------------------------------
-
-// --- PRINTER CONFIGURATION (Update this to your exact printer name) ---
-const PRINTER_NAME = 'EPSON TM-U220 Receipt';
-// ----------------------------------------------------------------------
-
 interface TicketItem {
   id: number;
   ticket_id: number;
@@ -27,110 +18,6 @@ interface TicketItem {
 interface TicketWithItems extends Ticket {
   items: TicketItem[];
 }
-
-/**
- * Converts ticket and item data into a raw ESC/POS byte array (Array<number>).
- * This structure is required by QZ Tray for raw printing and achieving 15mm height/cut.
- */
-const generateEscPosCommands = (ticket: Ticket, item: any): Array<number> => {
-  // Hex codes for ESC/POS commands (represented as decimal numbers)
-  const ESC_INIT = [0x1B, 0x40]; // ESC @: Initialize printer
-  const ESC_FONT_STANDARD = [0x1B, 0x21, 0x00]; // ESC ! 0: Select standard font (dotted)
-
-  const LF = [0x0A]; // Line Feed (0A hex) - CRITICAL for 15mm height control
-  const CUT_PARTIAL = [0x1D, 0x56, 0x01]; // GS V 1: Partial Cut command
-
-  // --- Dynamic Data Assembly ---
-  const ticketId = (ticket.ticket_number || '').trim().slice(0, 15);
-  const rawName = ticket.customer_name || 'Guest';
-  // Example formatting: "Franklin, Alfr"
-  const customerName = rawName.trim().split(/\s+/).join(', ').slice(0, 20); 
-  
-  // Date format matching the image: Fri 09-19
-  const dateObj = ticket.created_at ? new Date(ticket.created_at) : new Date();
-  const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'short' }); 
-  const monthDay = dateObj.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit' }); 
-  const dateLine = `${dayName} ${monthDay.replace('/', '-')}`;
-
-  // Preferences Line
-  const preferences = [];
-  if (item.starch_level && item.starch_level !== 'no_starch' && item.starch_level !== 'none') {
-    preferences.push(item.starch_level.replace(/_/g, ' ').toUpperCase());
-  }
-  if (item.crease === 'crease') {
-    preferences.push('CREASE');
-  }
-  const preferencesText = preferences.join(' / ');
-  
-  // Combine all secondary details
-  const detailsLine = `${dateLine} ${customerName}, ${preferencesText}`.trim().slice(0, 40);
-
-
-  // Helper to convert string to byte array
-  const textToBytes = (text: string): Array<number> => Array.from(new TextEncoder().encode(text));
-
-  // --- Final Command Sequence ---
-  let allCommands: Array<number> = [];
-
-  // Loop to print the required quantity of tags for this item
-  for (let i = 0; i < item.quantity; i++) {
-    const singleTagCommands = [
-      ...ESC_INIT,
-      ...ESC_FONT_STANDARD,
-
-      // Line 1: Ticket ID + Newline (\n)
-      ...textToBytes(ticketId + '\n'), 
-
-      // Line 2: Date + Customer Name/Prefs + Newline (\n)
-      ...textToBytes(detailsLine + '\n'),
-      
-      // --- CRITICAL: LINE FEEDS FOR 15MM HEIGHT ---
-      // 4 LFs (0A hex) are needed to advance the paper to ~15mm.
-      ...LF, ...LF, ...LF, ...LF, 
-
-      // --- CRITICAL: CUT COMMAND ---
-      ...CUT_PARTIAL,
-    ];
-    allCommands.push(...singleTagCommands);
-  }
-
-  return allCommands;
-};
-
-/**
- * Sends the raw ESC/POS byte array to the local printer via QZ Tray.
- */
-const printTagEscPos = async (rawBytes: Array<number>) => {
-  // Access the global qz object
-  if (!qz.websocket.isActive()) {
-    alert("QZ Tray is not running. Please start the QZ Tray application first.");
-    return;
-  }
-
-  try {
-    await qz.websocket.connect();
-
-    const data = [
-      { type: 'raw', data: rawBytes } // Send the raw byte array
-    ];
-
-    await qz.print(
-      { printer: PRINTER_NAME },
-      data
-    );
-    
-    console.log("ESC/POS tag commands sent to QZ Tray successfully.");
-
-  } catch (error) {
-    console.error("QZ Tray Printing Error:", error);
-    alert("An error occurred during printing. Ensure QZ Tray is running and the printer name is correct.");
-  } finally {
-    if (qz.websocket.isActive()) {
-      qz.websocket.disconnect();
-    }
-  }
-};
-
 
 export default function Tag(): JSX.Element {
   const [searchQuery, setSearchQuery] = useState('');
@@ -155,15 +42,20 @@ export default function Tag(): JSX.Element {
       const results = res.data || [];
 
       // --- FIX: BATCHING REQUESTS ---
+      // Instead of firing all requests at once (which crashes the server),
+      // we process them in small batches (e.g., 5 at a time).
       const ticketsWithItems: Array<Ticket & { items?: Array<any> }> = [];
       const BATCH_SIZE = 5; 
 
       for (let i = 0; i < results.length; i += BATCH_SIZE) {
+        // Get the next group of 5 tickets
         const batch = results.slice(i, i + BATCH_SIZE);
         
+        // Fetch details for this group only
         const batchResults = await Promise.all(
           batch.map(async (ticket: Ticket) => {
             try {
+              // If the backend already provided items, skip the extra fetch!
               if ((ticket as any).items && (ticket as any).items.length > 0) {
                  return ticket;
               }
@@ -178,6 +70,7 @@ export default function Tag(): JSX.Element {
           })
         );
         
+        // Add processed batch to the main list
         ticketsWithItems.push(...batchResults);
       }
       // -----------------------------
@@ -202,13 +95,12 @@ export default function Tag(): JSX.Element {
     }
   };
 
-  // 🚨 NOTE: This function is only used for the "View Tag" preview modal. 
-  // It does NOT handle the actual 15mm ESC/POS printing.
-  const generateTagHtml = (ticket: Ticket, item: any) => {
+    const generateTagHtml = (ticket: Ticket, item: any) => {
     const readyDate = new Date(ticket.created_at);
     readyDate.setDate(readyDate.getDate() + 2);
 
     const rawName = ticket.customer_name || ticket.customer_phone || 'Guest';
+    const nameParts = rawName.trim().split(/\s+/);
     const fullName = rawName;
     const ticketId = ticket.ticket_number || '';
     const dateIssued = ticket.created_at ? new Date(ticket.created_at).toLocaleDateString() : '';
@@ -233,7 +125,7 @@ export default function Tag(): JSX.Element {
         flex-direction: column;
         gap: 8px;
         padding: 6px;
-        font-family: monospace; /* Simulating dot-matrix font */
+        font-family: system-ui, -apple-system, sans-serif;
       ">
         ${tags.map(() => `
           <div style="
@@ -329,7 +221,6 @@ export default function Tag(): JSX.Element {
                             </div>
                           </div>
                           <div className="flex space-x-2">
-                            {/* The View button still uses the HTML version for a browser preview */}
                             <button
                               onClick={() => {
                                 setPrintContent(generateTagHtml(ticket, item));
@@ -340,12 +231,10 @@ export default function Tag(): JSX.Element {
                               <Eye className="h-4 w-4 mr-2" />
                               View Tag
                             </button>
-                            
-                            {/* 👈 The Print button now uses the ESC/POS raw printing logic */}
                             <button
-                              onClick={async () => {
-                                const rawBytes = generateEscPosCommands(ticket, item);
-                                await printTagEscPos(rawBytes);
+                              onClick={() => {
+                                setPrintContent(generateTagHtml(ticket, item));
+                                setShowPrintPreview(true);
                               }}
                               className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
                             >

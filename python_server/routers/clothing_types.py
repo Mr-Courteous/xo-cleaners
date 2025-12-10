@@ -100,6 +100,7 @@ async def get_clothing_types_for_organization(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Organization ID missing from token."
         )
+    
 
     try:
         print(f"[INFO] Fetching clothing types for org_id: {org_id}")
@@ -166,11 +167,13 @@ async def create_clothing_type(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Organization ID missing from token."
         )
-    if role != ORG_OWNER_ROLE and role not in ALL_STAFF_ROLES:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to create clothing types."
-        )
+        allowed_roles = ["cashier", "store_admin", "org_owner", "STORE_OWNER", "owner"]
+        
+        if user_role not in allowed_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access Denied: Role '{user_role}' is not authorized."
+            )
 
     try:
         # 2. Save uploaded image
@@ -255,12 +258,13 @@ async def update_clothing_type(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Organization ID missing from token."
         )
-    if role != ORG_OWNER_ROLE and role not in ALL_STAFF_ROLES:
+    allowed_roles = ["cashier", "store_admin", "org_owner", "STORE_OWNER", "owner"]
+        
+    if user_role not in allowed_roles:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to update clothing types."
+            detail=f"Access Denied: Role '{role}' is not authorized."
         )
-
     try:
         # 2. Get existing item
         row = db.execute(
@@ -371,11 +375,13 @@ async def delete_clothing_type(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Organization ID missing from token."
         )
-    if role != ORG_OWNER_ROLE and role not in ALL_STAFF_ROLES:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to delete clothing types."
-        )
+    allowed_roles = ["cashier", "store_admin", "org_owner", "STORE_OWNER", "owner"]
+        
+    if user_role not in allowed_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access Denied: Role '{user_role}' is not authorized."
+            )
 
     try:
         # 2. Check if clothing type exists

@@ -16,6 +16,7 @@ from routers.org_functions2 import router as org_functions2_router
 from routers.clothing_types import router as clothing_types_router
 from routers.org_functions3 import router as org_functions3_router
 from routers.org_settings import router as settings_router
+from routers.org_functions4 import router as org_functions4_router
 
 import uvicorn
 
@@ -33,7 +34,7 @@ if not DATABASE_URL:
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Default Platform Admin credentials 
+# Default Platform Admin credential
 DEFAULT_ADMIN_NAME = "Taiwo Courteous"
 DEFAULT_ADMIN_EMAIL = "tinumidun@moduslights.com"
 DEFAULT_ADMIN_PASSWORD = "1234567890"
@@ -83,6 +84,7 @@ app.include_router(org_functions2_router)
 app.include_router(clothing_types_router)
 app.include_router(org_functions3_router)
 app.include_router(settings_router)
+app.include_router(org_functions4_router)
 
 @app.get("/")
 def read_root():
