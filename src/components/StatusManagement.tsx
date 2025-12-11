@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
-import { Search, Package, Clock, CheckCircle, User, Phone, Calendar, MapPin, X } from 'lucide-react';
+import { 
+  Search, Package, Clock, CheckCircle, User, Phone, 
+  Calendar, MapPin, X, Ban, AlertCircle 
+} from 'lucide-react';
 // import { apiCall } from '../hooks/useApi'; // --- REMOVED ---
 import axios from 'axios'; // --- NEW ---
 import baseURL from '../lib/config'; // --- NEW ---
@@ -60,6 +63,7 @@ export default function StatusManagement() {
       case 'in_process': return 'bg-blue-100 text-blue-800';
       case 'ready_for_pickup': return 'bg-green-100 text-green-800';
       case 'picked_up': return 'bg-gray-100 text-gray-800';
+      case 'voided': return 'bg-red-100 text-red-800';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
@@ -102,60 +106,90 @@ export default function StatusManagement() {
       {/* Ticket List */}
       {!loading && tickets.length > 0 && (
         <div className="space-y-4">
-          {tickets.map((ticket) => (
-            <div key={ticket.id} className="bg-white border border-gray-200 rounded-lg shadow-sm p-5">
-              <div className="flex flex-col md:flex-row justify-between">
-                {/* Left Side Info */}
-                <div>
-                  <div className="flex items-center space-x-3 mb-2">
-                    <span className="text-xl font-bold text-blue-600">#{ticket.ticket_number}</span>
-                    <span className={`px-2.5 py-0.5 text-xs font-medium rounded-full ${getStatusColor(ticket.status)}`}>
-                      {ticket.status.replace('_', ' ').toUpperCase()}
-                    </span>
+          {tickets.map((ticket) => {
+             // Helper booleans for UI logic
+             const isVoid = ticket.is_void || ticket.status === 'voided';
+             const isRefunded = ticket.is_refunded;
+
+             return (
+              <div 
+                key={ticket.id} 
+                className={`border rounded-lg shadow-sm p-5 relative overflow-hidden ${
+                  isVoid ? 'bg-red-50 border-red-200' : 'bg-white border-gray-200'
+                }`}
+              >
+                {/* Watermark for Voided Tickets */}
+                {isVoid && (
+                  <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
+                    <Ban size={100} className="text-red-500" />
                   </div>
-                  
-                  <div className="flex items-center text-gray-700 mb-1">
-                    <User className="h-4 w-4 mr-2 text-gray-400" />
-                    <span className="font-medium">{ticket.customer_name}</span>
+                )}
+
+                <div className="flex flex-col md:flex-row justify-between relative z-10">
+                  {/* Left Side Info */}
+                  <div>
+                    <div className="flex items-center space-x-3 mb-2">
+                      <span className={`text-xl font-bold ${isVoid ? 'text-red-600 line-through' : 'text-blue-600'}`}>
+                        #{ticket.ticket_number}
+                      </span>
+                      
+                      {/* Status Badges */}
+                      {isVoid ? (
+                         <span className="px-2.5 py-0.5 text-xs font-bold text-white bg-red-600 rounded">VOID</span>
+                      ) : (
+                         <span className={`px-2.5 py-0.5 text-xs font-medium rounded-full ${getStatusColor(ticket.status)}`}>
+                           {ticket.status.replace('_', ' ').toUpperCase()}
+                         </span>
+                      )}
+
+                      {isRefunded && (
+                         <span className="px-2.5 py-0.5 text-xs font-bold text-white bg-purple-600 rounded">REFUNDED</span>
+                      )}
+                    </div>
+                    
+                    <div className="flex items-center text-gray-700 mb-1">
+                      <User className="h-4 w-4 mr-2 text-gray-400" />
+                      <span className="font-medium">{ticket.customer_name}</span>
+                    </div>
+
+                    <div className="flex items-center text-gray-600">
+                      <Phone className="h-4 w-4 mr-2 text-gray-400" />
+                      <span>{ticket.customer_phone}</span>
+                    </div>
                   </div>
 
-                  <div className="flex items-center text-gray-600">
-                    <Phone className="h-4 w-4 mr-2 text-gray-400" />
-                    <span>{ticket.customer_phone}</span>
+                  {/* Right Side Info */}
+                  <div className="text-sm text-gray-500 mt-4 md:mt-0 md:text-right">
+                    <div className="flex items-center justify-end">
+                      <Calendar className="h-4 w-4 mr-2" />
+                      <span>Drop Off: {formatDateTime(ticket.created_at)}</span>
+                    </div>
+                    <div className="flex items-center justify-end">
+                      <CheckCircle className="h-4 w-4 mr-2" />
+                      <span>Picked Up: {ticket.pickup_date ? formatDateTime(ticket.pickup_date) : 'N/A'}</span>
+                    </div>
+                    <div className="flex items-center justify-end mt-1 font-medium">
+                      <MapPin className="h-4 w-4 mr-2" />
+                      <span>Rack: {ticket.rack_number || 'N/A'}</span>
+                    </div>
                   </div>
                 </div>
-
-                {/* Right Side Info */}
-                <div className="text-sm text-gray-500 mt-4 md:mt-0 md:text-right">
-                  <div className="flex items-center justify-end">
-                    <Calendar className="h-4 w-4 mr-2" />
-                    <span>Drop Off: {formatDateTime(ticket.created_at)}</span>
+                
+                {/* Footer */}
+                <div className="flex justify-between items-end border-t border-gray-100 mt-4 pt-4 relative z-10">
+                  <div className="text-lg font-bold text-gray-800">
+                    Total: ${ticket.total_amount.toFixed(2)}
                   </div>
-                  <div className="flex items-center justify-end">
-                    <CheckCircle className="h-4 w-4 mr-2" />
-                    <span>Picked Up: {ticket.pickup_date ? formatDateTime(ticket.pickup_date) : 'N/A'}</span>
-                  </div>
-                  <div className="flex items-center justify-end mt-1 font-medium">
-                    <MapPin className="h-4 w-4 mr-2" />
-                    <span>Rack: {ticket.rack_number || 'N/A'}</span>
-                  </div>
+                  <button
+                    onClick={() => setSelectedTicket(ticket)}
+                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200"
+                  >
+                    View Details
+                  </button>
                 </div>
               </div>
-              
-              {/* Footer */}
-              <div className="flex justify-between items-end border-t border-gray-100 mt-4 pt-4">
-                <div className="text-lg font-bold text-gray-800">
-                  Total: ${ticket.total_amount.toFixed(2)}
-                </div>
-                <button
-                  onClick={() => setSelectedTicket(ticket)}
-                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200"
-                >
-                  View Details
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -174,9 +208,17 @@ export default function StatusManagement() {
           <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4">
             {/* Header */}
             <div className="flex justify-between items-center p-5 border-b">
-              <h3 className="text-xl font-semibold">
-                Details for Ticket #{selectedTicket.ticket_number}
-              </h3>
+              <div className="flex items-center gap-2">
+                  <h3 className="text-xl font-semibold">
+                    Details for Ticket #{selectedTicket.ticket_number}
+                  </h3>
+                  {(selectedTicket.is_void || selectedTicket.status === 'voided') && 
+                    <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded text-sm font-bold">VOID</span>
+                  }
+                  {selectedTicket.is_refunded && 
+                    <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-sm font-bold">REFUNDED</span>
+                  }
+              </div>
               <button onClick={() => setSelectedTicket(null)} className="text-gray-400 hover:text-gray-600">
                 <X size={24} />
               </button>

@@ -361,84 +361,110 @@ async def register_organization_and_admin(
         )
         
         
-                
-@router.post("/staff", response_model=RegistrationSuccess)
-async def register_staff_user(
-    data: UserCreate,
+# In organizations.py
+
+# 1. Define a Schema that matches your Frontend form EXACTLY
+class WorkerCreateSchema(BaseModel):
+    first_name: str
+    last_name: str
+    email: EmailStr
+    password: str
+    role: str
+    phone: Optional[str] = None
+    # Notice: NO organization_id here, because Frontend doesn't send it.
+
+# 2. Define the Response Model
+class WorkerRegistrationResponse(BaseModel):
+    message: str
+    user_id: str
+    organization_id: int
+    role: str
+
+# 3. The Route (Updated to use WorkerCreateSchema)
+@router.post("/staff", response_model=WorkerRegistrationResponse, status_code=status.HTTP_201_CREATED)
+async def create_worker(
+    data: WorkerCreateSchema,  # <--- CHANGED from UserCreate to WorkerCreateSchema
     db: Session = Depends(get_db),
     payload: Dict[str, Any] = Depends(get_current_user_payload)
 ):
+    """
+    Registers a new worker (Cashier, Store Admin, etc.)
+    Route matches Frontend: POST /workers
+    """
     token_org_id = payload.get("organization_id")
     requester_role = payload.get("role")
 
-    if data.organization_id and data.organization_id != token_org_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You cannot register staff for another organization."
-        )
-
-    org_id_for_db = token_org_id or data.organization_id
-    if not org_id_for_db:
-        raise HTTPException(
+    # --- Security Checks ---
+    if not token_org_id:
+         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Organization ID is missing from both token and body."
+            detail="Invalid token: Organization ID is missing."
         )
 
+    # Only Owners and Admins can add workers
     if requester_role not in ["store_admin", "STORE_OWNER", "org_owner"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only Store Admin or Organization Owner can register staff."
+            detail="Insufficient permissions to register staff."
+        )
+
+    # --- Check if user already exists ---
+    email_clean = data.email.strip().lower()
+    existing = db.execute(
+        text("SELECT id FROM allUsers WHERE email = :email"), 
+        {"email": email_clean}
+    ).fetchone()
+    
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"User with email '{email_clean}' already exists."
         )
 
     try:
+        # --- Hash Password ---
         hashed_pw = hash_password(data.password)
 
-        # --- MODIFIED: Added 'joined_at' column ---
+        # --- Insert New Worker ---
         insert_stmt = text("""
             INSERT INTO allUsers (
-                organization_id, email, password_hash, first_name, last_name, role, phone, 
-                joined_at  -- <--- ADDED COLUMN
+                organization_id, email, password_hash, 
+                first_name, last_name, role, phone, 
+                joined_at, is_deactivated
             )
             VALUES (
-                :org_id, :email, :password_hash, :first_name, :last_name, :role, :phone, 
-                :joined_at -- <--- ADDED VALUE PLACEHOLDER
+                :org_id, :email, :password_hash, 
+                :first_name, :last_name, :role, :phone, 
+                :joined_at, FALSE
             )
             RETURNING id
         """)
 
-        # --- MODIFIED: Added 'joined_at' parameter (Staff join immediately) ---
         result = db.execute(insert_stmt, {
-            "org_id": org_id_for_db,
-            "email": data.email.strip().lower(),
+            "org_id": token_org_id,
+            "email": email_clean,
             "password_hash": hashed_pw,
             "first_name": data.first_name,
             "last_name": data.last_name,
-            "role": data.role or "staff",
+            "role": data.role,
             "phone": data.phone.strip() if data.phone else None,
-            "joined_at": datetime.now(timezone.utc) # <--- Sets start date to NOW
+            "joined_at": datetime.now(timezone.utc) # Sets active start date
         }).fetchone()
 
         db.commit()
 
-        return RegistrationSuccess(
-            message="Staff user registered successfully.",
+        # --- Return Success Response ---
+        return WorkerRegistrationResponse(
+            message=f"Worker {data.first_name} registered successfully.",
             user_id=str(result[0]),
-            organization_id=org_id_for_db,
-            role=data.role or "staff"
+            organization_id=token_org_id,
+            role=data.role
         )
 
     except Exception as e:
         db.rollback()
-
-        if "duplicate key value violates unique constraint" in str(e):
-            if "allusers_email_key" in str(e): 
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"User with email '{data.email}' already exists."
-                )
-        
-        print("Error during staff registration:", e)
+        print("Error creating worker:", e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An unexpected error occurred while registering staff."
+            detail="Failed to create worker."
         )

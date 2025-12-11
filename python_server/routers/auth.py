@@ -187,9 +187,9 @@ async def login_user(
     # Normalize incoming email to lowercase for consistent lookup
     email = data.email.strip().lower()
 
-    # 1️⃣ Look up user by email (case-insensitive by using LOWER on stored email)
+    # 1️⃣ Look up user by email (Added 'is_deactivated' to query)
     user_stmt = text("""
-        SELECT id, organization_id, email, password_hash, first_name, last_name, role, address
+        SELECT id, organization_id, email, password_hash, first_name, last_name, role, address, is_deactivated
         FROM allUsers
         WHERE LOWER(email) = :email
     """)
@@ -210,7 +210,15 @@ async def login_user(
     first_name = user_map.get("first_name")
     last_name = user_map.get("last_name")
     role = user_map.get("role")
-    address = user_map.get("address") # Added address as requested
+    address = user_map.get("address")
+    is_deactivated = user_map.get("is_deactivated") # ✅ Get the status
+
+    # 🛑 NEW: Check for Deactivation BEFORE checking password or generating token
+    if is_deactivated:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account has been deactivated. Please contact your administrator."
+        )
 
     # 2️⃣ Verify password
     if not verify_password(data.password, password_hash):
@@ -232,14 +240,14 @@ async def login_user(
 
     # 5️⃣ ENCODE data inside the token
     token_data = {
-        "sub": str(user_id), # 'subject' of the token is the user ID
+        "sub": str(user_id), 
         "email": email,
         "role": role,
         "organization_id": organization_id,
         "organization_name": organization_name,
         "first_name": first_name,
         "last_name": last_name,
-        "address": address, # Address is now in the token
+        "address": address, 
     }
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
@@ -248,13 +256,12 @@ async def login_user(
 
     # 6️⃣ Prepare user data for the "non-coded" response
     user_data = LoginUser(
-        id=str(user_id), # <-- FIX: Cast the UUID object to a string
+        id=str(user_id), 
         email=email,
         first_name=first_name,
         last_name=last_name,
         role=role,
         organization_id=organization_id,
-        # Note: address isn't in LoginUser schema, but you can add it
     )
 
     # 7️⃣ RETURN data in the "non-coded" JSON response
@@ -264,7 +271,6 @@ async def login_user(
         organization_name=organization_name,
         message=f"Login successful as {role} for organization '{organization_name}'."
     )
-
 
 @router.post("/admin-login", response_model=PlatformAdminLoginResponse)
 async def platform_admin_login(

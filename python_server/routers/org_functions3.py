@@ -328,8 +328,7 @@ async def find_tickets(
 ):
     """
     Searches for tickets within the user's organization.
-    OPTIMIZED: Batch fetching (2 queries total).
-    SAFE: Defaults missing pricing fields to 0.0 to prevent 500 Validation Errors.
+    UPDATED: Returns 'is_void' and 'is_refunded' so the UI allows toggling them correctly.
     """
     
     organization_id = payload.get("organization_id")
@@ -343,13 +342,15 @@ async def find_tickets(
     
     try:
         # ---------------------------------------------------------
-        # STEP 1: FETCH TICKETS
+        # STEP 1: FETCH TICKETS (Includes is_void AND is_refunded)
         # ---------------------------------------------------------
         sql_tickets = text("""
             SELECT 
                 t.id, 
                 t.ticket_number, 
                 t.status, 
+                t.is_void,        -- ✅ REQUIRED for Void toggle
+                t.is_refunded,    -- ✅ REQUIRED for Refund toggle
                 t.created_at,
                 t.total_amount,
                 t.paid_amount,
@@ -384,15 +385,12 @@ async def find_tickets(
             return []
 
         # ---------------------------------------------------------
-        # STEP 2: FETCH ITEMS (With Defaults)
+        # STEP 2: FETCH ITEMS 
         # ---------------------------------------------------------
         ticket_ids = tuple([row.id for row in ticket_rows])
-        
         items_map = {}
         
         if ticket_ids:
-            # We fetch basic info. We intentionally skip 'price' or 'plant_price' in SQL 
-            # to avoid "UndefinedColumn" errors since we don't know your exact schema.
             sql_items = text("""
                 SELECT 
                     ti.id,
@@ -414,8 +412,6 @@ async def find_tickets(
                 if tid not in items_map:
                     items_map[tid] = []
                 
-                # We calculate 'item_total' if we can, otherwise default to 0.0
-                # Since we don't have price, we default everything to 0.0
                 items_map[tid].append({
                     "id": item.id,
                     "ticket_id": item.ticket_id,
@@ -424,14 +420,10 @@ async def find_tickets(
                     "starch_level": item.starch_level,
                     "crease": item.crease,
                     "clothing_name": item.clothing_name or "Unknown Item",
-                    
-                    # --- FILL MISSING FIELDS WITH DEFAULTS ---
                     "price": 0.0,
-                    "plant_price": 0.0,
-                    "additional_charge": 0.0,
                     "item_total": 0.0,
+                    "plant_price": 0.0, 
                     "margin": 0.0
-                    # -----------------------------------------
                 })
 
         # ---------------------------------------------------------
@@ -440,7 +432,6 @@ async def find_tickets(
         results = []
         for row in ticket_rows:
             full_name = f"{row.first_name or ''} {row.last_name or ''}".strip()
-            
             total = float(row.total_amount) if row.total_amount is not None else 0.0
             paid = float(row.paid_amount) if row.paid_amount is not None else 0.0
 
@@ -448,6 +439,8 @@ async def find_tickets(
                 "id": row.id,
                 "ticket_number": row.ticket_number,
                 "status": row.status,
+                "is_void": row.is_void,          # ✅ MAPPED
+                "is_refunded": row.is_refunded,  # ✅ MAPPED
                 "created_at": row.created_at,
                 "total_amount": total,
                 "paid_amount": paid,
@@ -474,8 +467,9 @@ async def find_tickets(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while searching for tickets."
-        )        
+        )
         
+                
 @router.get("/customers/search", summary="Search for customers by name, phone, or email")
 async def search_customers(
     query: str = Query(..., min_length=2, description="Search term for customer name, phone, or email"),
@@ -484,17 +478,17 @@ async def search_customers(
 ):
     """
     Searches for users with the 'customer' role within the user's organization.
-    Implements security checks for role and organization.
+    Returns address and deactivated status as requested.
     """
     
-    # --- CHANGED: Allowed roles list is now defined *inside* the route ---
-    CUSTOMER_SEARCH_ALLOWED_ROLES = ["platform_admin", "store_owner", "cashier"]
+    # Allowed roles defined inside the route
+    CUSTOMER_SEARCH_ALLOWED_ROLES = ["platform_admin", "store_owner", "cashier", "store_admin", "org_owner"]
 
-    # 1. (SECURITY) Get user's role and organization ID from their token
+    # 1. (SECURITY) Get user's role and organization ID
     user_role = payload.get("role")
     organization_id = payload.get("organization_id")
 
-    # 2. (AUTHORIZATION) Check if the user's role is allowed to perform this search
+    # 2. (AUTHORIZATION) Check permissions
     if user_role not in CUSTOMER_SEARCH_ALLOWED_ROLES:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -505,15 +499,13 @@ async def search_customers(
     if not organization_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid token: Organization ID is required for this operation."
+            detail="Invalid token: Organization ID is required."
         )
 
     # 4. Prepare the search query
     search_pattern = f"%{query}%"
 
-    # This query searches 'allusers' as requested, filters by 'customer' role,
-    # and securely scopes the search to the user's organization.
-    # It also adds a subquery to find the customer's last visit (most recent ticket).
+    # Updated Query: Includes address, joined_at, and is_deactivated
     query_sql = text("""
         SELECT
             u.id,
@@ -522,7 +514,8 @@ async def search_customers(
             u.phone,
             u.email,
             u.address,
-            u.created_at,
+            u.joined_at,       -- Updated column name based on your schema
+            u.is_deactivated,  -- ✅ Added is_deactivated
             (SELECT MAX(t.created_at) FROM tickets AS t WHERE t.customer_id = u.id) AS last_visit_date
         FROM allusers AS u
         WHERE
@@ -537,7 +530,7 @@ async def search_customers(
         LIMIT 50;
     """)
 
-    # 5. Execute the query
+    # 5. Execute and map results
     try:
         result = db.execute(query_sql, {
             "org_id": organization_id,
@@ -551,9 +544,10 @@ async def search_customers(
                 "name": f"{row.first_name or ''} {row.last_name or ''}".strip(), 
                 "phone": row.phone,
                 "email": row.email,
-                "address": row.address,
-                "last_visit_date": row.last_visit_date,
-                "created_at": row.created_at
+                "address": row.address,              # ✅ Already present
+                "is_deactivated": row.is_deactivated,# ✅ Added
+                "joined_at": row.joined_at,          # ✅ Matches schema
+                "last_visit_date": row.last_visit_date
             })
             
         return customers
@@ -561,7 +555,7 @@ async def search_customers(
     except Exception as e:
         print(f"Error during customer search: {e}")
         raise HTTPException(status_code=500, detail=f"An error occurred while searching for customers: {e}")
-    
+       
     
 # ==========================================
 # GET: All Customers (Secured)

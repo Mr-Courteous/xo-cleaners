@@ -231,6 +231,10 @@ class TicketResponse(BaseModel):
     rack_number: Optional[str] = None
     special_instructions: Optional[str] = None
     
+    
+    is_void: bool = False      # Default to False
+    is_refunded: bool = False  # Default to False
+    
     # ✅ Added as per your request (Note: These are usually item-level, but included here as Optional)
     alterations: Optional[str] = None 
     item_instructions: Optional[str] = None 
@@ -351,6 +355,11 @@ class CustomerResponse(BaseModel):
     role: str
     organization_id: int
     joined_at: Optional[datetime] = None
+    
+
+    is_deactivated: bool = False
+    last_visit_date: Optional[datetime] = None
+    
     tenure: Optional[str] = "Prospect"
     
 class CustomerUpdate(BaseModel):

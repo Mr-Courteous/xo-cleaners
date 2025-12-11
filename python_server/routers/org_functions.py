@@ -641,7 +641,7 @@ async def register_customer(
 #     db: Session = Depends(get_db),
 #     payload: Dict[str, Any] = Depends(get_current_user_payload) 
 # ):
-#     """Creates a new ticket, saving all item details (including alterations) and financial data."""
+#     """Creates a new ticket, saving all item details and activating loyalty if needed."""
     
 #     try:
 #         # 3. GET SECURE DATA FROM TOKEN:
@@ -656,9 +656,9 @@ async def register_customer(
             
 #         print(f"User {user_email} (Org: {organization_id}) is creating a new ticket.")
         
-#         # 1. Check customer existence (NOW FILTERED BY ORG)
+#         # 1. Check customer existence AND fetch joined_at status
 #         customer_query = text("""
-#             SELECT id, first_name, last_name, email  
+#             SELECT id, first_name, last_name, email, joined_at 
 #             FROM allUsers 
 #             WHERE id = :id AND organization_id = :org_id AND role = 'customer'
 #         """)
@@ -669,6 +669,14 @@ async def register_customer(
         
 #         if not customer:
 #             raise HTTPException(status_code=404, detail=f"Customer not found in your organization.")
+
+#         # --- LOYALTY TRIGGER: Activate Customer on First Ticket ---
+#         if customer.joined_at is None:
+#             activate_query = text("UPDATE allUsers SET joined_at = :now WHERE id = :id")
+#             db.execute(activate_query, {
+#                 "now": datetime.now(timezone.utc),
+#                 "id": ticket_data.customer_id
+#             })
 
 #         # 2. Fetch prices (NOW FILTERED BY ORG)
 #         total_amount = decimal.Decimal('0.00')
@@ -708,7 +716,20 @@ async def register_customer(
 #                     detail=f"Invalid item: Clothing type ID {item_create.clothing_type_id} not found in your organization."
 #                 )
 
-#             item_total_price = prices["total_price"] * item_create.quantity
+#             # --- CALCULATE ITEM PRICE BASED ON ALTERATION BEHAVIOR ---
+#             base_wash_price = prices["total_price"]
+#             quantity = decimal.Decimal(str(item_create.quantity))
+#             extra_charge = decimal.Decimal(str(item_create.additional_charge or 0.0))
+            
+#             behavior = getattr(item_create, 'alteration_behavior', 'none') # Safe getter
+            
+#             if behavior == 'alteration_only':
+#                 item_total_price = extra_charge
+#             elif behavior == 'wash_and_alteration':
+#                 item_total_price = (base_wash_price * quantity) + extra_charge
+#             else:
+#                 item_total_price = (base_wash_price * quantity) + extra_charge
+            
 #             total_amount += item_total_price
 
 #             # Prepare the item dictionary for batch insert
@@ -717,92 +738,90 @@ async def register_customer(
 #                 "quantity": item_create.quantity,
 #                 "starch_level": item_create.starch_level,
 #                 "crease": item_create.crease,
-#                 "alterations": item_create.alterations, # <--- CHANGED: Added Alterations field
-#                 "item_instructions": item_create.item_instructions, # <--- MAP THIS
+#                 "alterations": item_create.alterations,
+#                 "item_instructions": item_create.item_instructions,
+#                 "alteration_behavior": behavior, 
+#                 "additional_charge": float(extra_charge),
 #                 "plant_price": prices["plant_price"],
 #                 "margin": prices["margin"],
 #                 "item_total": item_total_price,
 #                 "organization_id": organization_id
 #             })
 
-#         # 4. DYNAMIC TICKET NUMBER (WITH 'FOR UPDATE' LOCK)
-#         date_prefix = datetime.now().strftime("%y%m%d")
+#         # 4. DYNAMIC TICKET NUMBER (Tag Config Logic)
+#         tag_config_query = text("""
+#             SELECT current_sequence, tag_type 
+#             FROM tag_configurations 
+#             WHERE organization_id = :org_id
+#             FOR UPDATE
+#         """)
+#         tag_config = db.execute(tag_config_query, {"org_id": organization_id}).fetchone()
+
+#         ticket_number = ""
         
-#         def _fetch_latest_sequence():
+#         if tag_config:
+#             current_seq = tag_config.current_sequence
+#             ticket_number = str(current_seq)
+            
+#             db.execute(text("""
+#                 UPDATE tag_configurations 
+#                 SET current_sequence = current_sequence + 1 
+#                 WHERE organization_id = :org_id
+#             """), {"org_id": organization_id})
+            
+#         else:
+#             date_prefix = datetime.now().strftime("%y%m%d")
 #             latest_ticket_query = text("""
 #                 SELECT ticket_number FROM tickets
-#                 WHERE ticket_number LIKE :prefix_like
-#                 ORDER BY ticket_number DESC
+#                 WHERE ticket_number LIKE :prefix_like AND organization_id = :org_id
+#                 ORDER BY created_at DESC
 #                 LIMIT 1
 #             """)
 #             row = db.execute(latest_ticket_query, {
 #                 "prefix_like": f"{date_prefix}-%",
+#                 "org_id": organization_id
 #             }).fetchone()
-#             if not row:
-#                 return 0
-#             try:
-#                 return int(row[0].split('-')[-1])
-#             except Exception:
-#                 return 0
+            
+#             last_seq = 0
+#             if row:
+#                 try:
+#                     last_seq = int(row[0].split('-')[-1])
+#                 except Exception:
+#                     last_seq = 0
+            
+#             new_sequence = last_seq + 1
+#             ticket_number = f"{date_prefix}-{new_sequence:03d}"
 
 #         rack_number_val = ticket_data.rack_number
 #         instructions_val = ticket_data.special_instructions
 #         paid_amount_val = decimal.Decimal(str(ticket_data.paid_amount))
 #         pickup_date_val = ticket_data.pickup_date
 
-#         max_retries = 20
-#         attempt = 0
-#         ticket_result = None
-        
-#         while attempt < max_retries:
-#             attempt += 1
-#             last_seq = _fetch_latest_sequence()
-#             new_sequence = last_seq + 1
-#             ticket_number = f"{date_prefix}-{new_sequence:03d}"
+#         # 5. Insert Ticket
+#         ticket_insert_query = text("""
+#             INSERT INTO tickets (
+#                 ticket_number, customer_id, total_amount, rack_number, 
+#                 special_instructions, paid_amount, pickup_date, 
+#                 organization_id, status
+#             )
+#             VALUES (
+#                 :ticket_number, :customer_id, :total_amount, :rack_number, 
+#                 :special_instructions, :paid_amount, :pickup_date, 
+#                 :org_id, 'received'
+#             )
+#             RETURNING id, created_at, status
+#         """)
 
-#             try:
-#                 ticket_insert_query = text("""
-#                     INSERT INTO tickets (
-#                         ticket_number, customer_id, total_amount, rack_number, 
-#                         special_instructions, paid_amount, pickup_date, 
-#                         organization_id
-#                     )
-#                     VALUES (
-#                         :ticket_number, :customer_id, :total_amount, :rack_number, 
-#                         :special_instructions, :paid_amount, :pickup_date, 
-#                         :org_id
-#                     )
-#                     RETURNING id, created_at, status
-#                 """)
-
-#                 ticket_result = db.execute(ticket_insert_query, {
-#                     "ticket_number": ticket_number,
-#                     "customer_id": ticket_data.customer_id,
-#                     "total_amount": total_amount,
-#                     "rack_number": rack_number_val,
-#                     "special_instructions": instructions_val,
-#                     "paid_amount": paid_amount_val,
-#                     "pickup_date": pickup_date_val,
-#                     "org_id": organization_id
-#                 }).fetchone()
-
-#                 if ticket_result is not None:
-#                     break
-
-#             except IntegrityError as ie:
-#                 db.rollback()
-#                 lower = str(ie).lower()
-#                 if 'unique' in lower and ('ticket_number' in lower or 'tickets_ticket_number' in lower):
-#                     continue
-#                 else:
-#                     raise
-#             except Exception:
-#                 db.rollback()
-#                 raise
-
-#         if ticket_result is None:
-#             db.rollback()
-#             raise HTTPException(status_code=500, detail="Failed to generate a unique ticket number.")
+#         ticket_result = db.execute(ticket_insert_query, {
+#             "ticket_number": ticket_number,
+#             "customer_id": ticket_data.customer_id,
+#             "total_amount": total_amount,
+#             "rack_number": rack_number_val,
+#             "special_instructions": instructions_val,
+#             "paid_amount": paid_amount_val,
+#             "pickup_date": pickup_date_val,
+#             "org_id": organization_id
+#         }).fetchone()
         
 #         ticket_id = ticket_result[0]
 #         created_at = ticket_result[1]
@@ -816,22 +835,45 @@ async def register_customer(
 #                 item["organization_id"] = organization_id
 #             item_rows.append(item)
 
-#         # <--- CHANGED: SQL Query now includes alterations
 #         item_insert_query = text("""
 #             INSERT INTO ticket_items (
-#                 ticket_id, clothing_type_id, quantity, starch_level, crease, alterations, item_instructions, plant_price, margin, item_total, organization_id
+#                 ticket_id, clothing_type_id, quantity, starch_level, crease, 
+#                 alterations, item_instructions, additional_charge, 
+#                 plant_price, margin, item_total, organization_id, alteration_behavior
 #             )
 #             VALUES (
-#                 :ticket_id, :clothing_type_id, :quantity, :starch_level, :crease, :alterations, :item_instructions, :plant_price, :margin, :item_total, :organization_id
+#                 :ticket_id, :clothing_type_id, :quantity, :starch_level, :crease, 
+#                 :alterations, :item_instructions, :additional_charge, 
+#                 :plant_price, :margin, :item_total, :organization_id, :alteration_behavior
 #             )
-#             RETURNING id
 #         """)
 #         db.execute(item_insert_query, item_rows)
         
 #         # 7. Commit transaction
 #         db.commit()
 
-#         # 8. Build the complete response object
+#         # ===========================================================================
+#         # 8. FETCH ORGANIZATION NAME & BRANDING for Frontend Response
+#         # ===========================================================================
+        
+#         # A. Fetch Org Name
+#         org_name_query = text("SELECT name FROM organizations WHERE id = :org_id")
+#         org_name_row = db.execute(org_name_query, {"org_id": organization_id}).fetchone()
+#         org_name_val = org_name_row.name if org_name_row else "Your Cleaners" # Fallback
+
+#         # B. Fetch Settings (Header/Footer)
+#         settings_query = text("""
+#             SELECT receipt_header, receipt_footer 
+#             FROM organization_settings 
+#             WHERE organization_id = :org_id
+#         """)
+#         settings_row = db.execute(settings_query, {"org_id": organization_id}).fetchone()
+        
+#         receipt_header_val = settings_row.receipt_header if settings_row else None
+#         receipt_footer_val = settings_row.receipt_footer if settings_row else None 
+#         # ===========================================================================
+
+#         # 9. Build the complete response object
 #         response_items = []
 #         for i, item in enumerate(ticket_items_to_insert, 1):
 #             clothing_type_id = item['clothing_type_id']
@@ -846,12 +888,13 @@ async def register_customer(
 #                     quantity=item['quantity'],
 #                     starch_level=item['starch_level'],
 #                     crease=item['crease'],
-#                     alterations=item['alterations'], # <--- CHANGED: Return alterations in response
-#                     item_instructions=item['item_instructions'], # <--- RETURN IT
+#                     alterations=item['alterations'],
+#                     item_instructions=item['item_instructions'],
+#                     alteration_behavior=item['alteration_behavior'],
 #                     item_total=float(item['item_total']),
 #                     plant_price=float(item['plant_price']),
 #                     margin=float(item['margin']),
-#                     additional_charge=0.0,
+#                     additional_charge=item['additional_charge'],
 #                     pieces=type_prices[clothing_type_id]['pieces']
 #                 )
 #             )
@@ -872,7 +915,12 @@ async def register_customer(
 #             pickup_date=pickup_date_val,
 #             created_at=created_at,
 #             items=response_items,
-#             organization_id=organization_id 
+#             organization_id=organization_id,
+            
+#             # ✅ Return Org Name & Branding
+#             organization_name=org_name_val,
+#             receipt_header=receipt_header_val,
+#             receipt_footer=receipt_footer_val
 #         )
 
 #     except HTTPException:
@@ -882,6 +930,7 @@ async def register_customer(
 #         db.rollback()
 #         print(f"Error during ticket creation: {e}")
 #         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred during ticket processing.")
+
 
 @router.post("/tickets", response_model=TicketResponse, status_code=status.HTTP_201_CREATED, tags=["Tickets"])
 def create_ticket(
@@ -904,9 +953,9 @@ def create_ticket(
             
         print(f"User {user_email} (Org: {organization_id}) is creating a new ticket.")
         
-        # 1. Check customer existence AND fetch joined_at status
+        # 1. Check customer existence AND fetch status (joined_at, is_deactivated)
         customer_query = text("""
-            SELECT id, first_name, last_name, email, joined_at 
+            SELECT id, first_name, last_name, email, joined_at, is_deactivated
             FROM allUsers 
             WHERE id = :id AND organization_id = :org_id AND role = 'customer'
         """)
@@ -917,6 +966,13 @@ def create_ticket(
         
         if not customer:
             raise HTTPException(status_code=404, detail=f"Customer not found in your organization.")
+
+        # ✅ NEW: Check for Deactivation
+        if customer.is_deactivated:
+            raise HTTPException(
+                status_code=400, 
+                detail="Cannot create ticket. This customer account is deactivated."
+            )
 
         # --- LOYALTY TRIGGER: Activate Customer on First Ticket ---
         if customer.joined_at is None:
@@ -1178,6 +1234,7 @@ def create_ticket(
         db.rollback()
         print(f"Error during ticket creation: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred during ticket processing.")
+
 
 
 @router.get("/tickets", response_model=List[TicketSummaryResponse], summary="Get all tickets for *your* organization")

@@ -12,8 +12,10 @@ from utils.common import (
 )
 
 # 1. Define the Router
-router = APIRouter()
-
+router = APIRouter(
+    prefix="/api/organizations", 
+    tags=["Organization Resources"]
+)
 # 2. Define the Response Model
 class DashboardAnalyticsResponse(BaseModel):
     today_sales: float
@@ -125,3 +127,147 @@ async def get_dashboard_analytics(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
             detail=f"Database Error: {str(e)}"
         )
+        
+        
+        
+@router.patch("/tickets/{ticket_id}/void", summary="Toggle ticket void status")
+async def toggle_void_ticket(
+    ticket_id: int,
+    db: Session = Depends(get_db),
+    payload: Dict[str, Any] = Depends(get_current_user_payload)
+):
+    """
+    Toggles the void status of a ticket.
+    - If is_void is FALSE -> Sets is_void=TRUE, status='voided'
+    - If is_void is TRUE  -> Sets is_void=FALSE, status='received'
+    """
+    org_id = payload.get("organization_id")
+    user_role = payload.get("role")
+
+    allowed_roles = ["cashier", "store_admin", "org_owner", "STORE_OWNER", "owner"]
+    if user_role not in allowed_roles:
+        raise HTTPException(status_code=403, detail="Insufficient permissions.")
+
+    try:
+        # 1. Check current status
+        check_query = text("SELECT is_void FROM tickets WHERE id = :id AND organization_id = :org_id")
+        current_state = db.execute(check_query, {"id": ticket_id, "org_id": org_id}).scalar()
+
+        if current_state is None:
+            raise HTTPException(status_code=404, detail="Ticket not found.")
+
+        # 2. Toggle Logic
+        # If currently Void (True) -> Unvoid (False)
+        # If currently Active (False) -> Void (True)
+        new_void_state = not current_state
+        
+        # Determine new status string
+        if new_void_state:
+            new_status = 'voided'
+            message = "Ticket has been voided."
+        else:
+            new_status = 'received' # Default active status when unvoiding
+            message = "Ticket unvoided and set to 'received'."
+
+        # 3. Update
+        update_query = text("""
+            UPDATE tickets 
+            SET 
+                is_void = :new_void, 
+                status = :new_status,
+                updated_at = :now
+            WHERE id = :id
+        """)
+        
+        db.execute(update_query, {
+            "new_void": new_void_state,
+            "new_status": new_status,
+            "now": datetime.now(timezone.utc),
+            "id": ticket_id
+        })
+        db.commit()
+
+        return {
+            "success": True, 
+            "message": message, 
+            "is_void": new_void_state, 
+            "status": new_status
+        }
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.patch("/tickets/{ticket_id}/refund", summary="Toggle ticket refund status")
+async def toggle_refund_ticket(
+    ticket_id: int,
+    db: Session = Depends(get_db),
+    payload: Dict[str, Any] = Depends(get_current_user_payload)
+):
+    """
+    Toggles the refund status.
+    - If Active -> Sets is_refunded=TRUE AND status='refunded'
+    - If Refunded -> Sets is_refunded=FALSE AND restores status to 'picked_up' (or 'ready')
+    """
+    org_id = payload.get("organization_id")
+    user_role = payload.get("role")
+
+    allowed_roles = ["cashier", "store_admin", "org_owner", "STORE_OWNER", "owner"]
+    if user_role not in allowed_roles:
+        raise HTTPException(status_code=403, detail="Insufficient permissions.")
+
+    try:
+        # 1. Check current state
+        check_query = text("SELECT is_refunded FROM tickets WHERE id = :id AND organization_id = :org_id")
+        current_refund_state = db.execute(check_query, {"id": ticket_id, "org_id": org_id}).scalar()
+
+        if current_refund_state is None:
+            raise HTTPException(status_code=404, detail="Ticket not found.")
+
+        # 2. Toggle Logic
+        new_refund_state = not current_refund_state
+        
+        if new_refund_state:
+            # APPLYING REFUND
+            message = "Ticket marked as refunded."
+            # Update status to 'refunded' so it persists visually on reload
+            update_query = text("""
+                UPDATE tickets 
+                SET 
+                    is_refunded = TRUE, 
+                    status = 'refunded', 
+                    updated_at = :now
+                WHERE id = :id
+            """)
+        else:
+            # REMOVING REFUND
+            message = "Refund status removed."
+            # Revert status to 'picked_up' (safest assumption for a refunded ticket)
+            # You could also set it to 'ready_for_pickup' depending on your flow, 
+            # but usually refunds happen after pickup.
+            update_query = text("""
+                UPDATE tickets 
+                SET 
+                    is_refunded = FALSE, 
+                    status = 'picked_up', 
+                    updated_at = :now
+                WHERE id = :id
+            """)
+        
+        db.execute(update_query, {
+            "now": datetime.now(timezone.utc),
+            "id": ticket_id
+        })
+        db.commit()
+
+        return {
+            "success": True, 
+            "message": message, 
+            "is_refunded": new_refund_state,
+            "status": "refunded" if new_refund_state else "picked_up"
+        }
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))

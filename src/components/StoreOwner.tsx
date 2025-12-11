@@ -128,7 +128,7 @@ export default function StoreOwner() {
     setError(null);
     try {
       const token = localStorage.getItem("accessToken") || localStorage.getItem("token");
-      await axios.post(`${baseURL}/workers`, formData, {
+      await axios.post(`${baseURL}/register/staff`, formData, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setSuccessMsg(`Successfully registered ${formData.first_name}.`);
@@ -138,7 +138,7 @@ export default function StoreOwner() {
     } catch (err: any) {
       setError(err.response?.data?.detail || "Failed to add worker.");
     } finally {
-      setAddLoading(false);
+      setAddLoading(false); 
     }
   };
 
