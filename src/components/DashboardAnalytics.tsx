@@ -38,7 +38,7 @@ export default function DashboardAnalytics() {
 
   const fetchAnalytics = async () => {
     try {
-      const res = await axios.get(`${baseURL}/analytics/dashboard`, getAuthHeaders());
+      const res = await axios.get(`${baseURL}/api/organizations/analytics/dashboard`, getAuthHeaders());
       setMetrics(res.data);
       setLoading(false);
     } catch (err) {
