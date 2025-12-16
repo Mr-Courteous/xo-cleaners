@@ -230,7 +230,6 @@ async def login_user(
         )
 
     # --- 🛑 SECURITY CHECK: BLOCK CUSTOMERS ---
-    # If the user is a customer, block them from the Worker Portal
     if role == 'customer':
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -239,7 +238,6 @@ async def login_user(
     # ------------------------------------------
 
     # 4️⃣ Check for valid staff roles
-    # Removed "customer" from this list
     valid_roles = ["org_owner", "store_manager", "store_admin", "cashier", "driver", "assistant"]
     if role not in valid_roles:
         raise HTTPException(
@@ -247,8 +245,14 @@ async def login_user(
             detail=f"Unrecognized role '{role}' or not authorized for staff portal."
         )
 
-    # 5️⃣ Get organization name
-    organization_name = get_organization_name(db, organization_id)
+    # 5️⃣ Get organization name (FIXED SQL)
+    organization_name = "Organization"
+    if organization_id:
+        # We query for 'name', not 'organization_name'
+        org_query = text("SELECT name FROM organizations WHERE id = :id")
+        org_res = db.execute(org_query, {"id": organization_id}).fetchone()
+        if org_res:
+            organization_name = org_res.name
 
     # 6️⃣ ENCODE data inside the token
     token_data = {
@@ -316,22 +320,23 @@ def customer_login(login_data: LoginRequest, db: Session = Depends(get_db)):
         )
     # --------------------------------------
 
-    # 4. Fetch Real Organization Name
+    # 4. Fetch Real Organization Name (FIXED SQL)
     organization_name = "Your Cleaners" 
     
     if user.organization_id:
-        org_query = text("SELECT organization_name FROM organizations WHERE id = :id")
+        # Changed 'organization_name' to 'name' based on typical schema
+        org_query = text("SELECT name FROM organizations WHERE id = :id")
         org_result = db.execute(org_query, {"id": user.organization_id}).fetchone()
         if org_result:
-            organization_name = org_result.organization_name
+            organization_name = org_result.name
 
     # 5. Create Token with Customer-Specific Payload
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     
     token_payload = {
         "sub": user.email,
-        "sub_id": str(user.id),       # <--- CRITICAL: Fixes the profile 404 error
-        "role": "customer",           # Enforce standardized role string
+        "sub_id": str(user.id),       
+        "role": "customer",           
         "organization_id": user.organization_id, 
         "type": "customer_access"     
     }
@@ -346,7 +351,7 @@ def customer_login(login_data: LoginRequest, db: Session = Depends(get_db)):
         "token_type": "bearer",
         "user_role": "customer",
         "organization_id": user.organization_id,
-        "organization_name": organization_name # Returns real name now
+        "organization_name": organization_name
     }
 
 @router.post("/admin-login", response_model=PlatformAdminLoginResponse)
