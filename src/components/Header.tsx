@@ -17,30 +17,38 @@ const Header = () => {
     const navigate = useNavigate();
 
     useEffect(() => {
-        const regularToken = localStorage.getItem("accessToken");
-        const adminToken = localStorage.getItem("platformAdminToken"); // Check for admin token
+        // Check for tokens
+        // 1. Staff/Owner use 'accessToken'
+        // 2. Customers use 'token' (based on your CustomerLogin.tsx)
+        const regularToken = localStorage.getItem("accessToken") || localStorage.getItem("token");
+        const adminToken = localStorage.getItem("platformAdminToken"); 
 
         if (regularToken) {
+            // Try to find email in 'userEmail' (staff) OR 'email' (customer might save differently, or fallback)
             const email = localStorage.getItem("userEmail") || 'User';
-            const role = localStorage.getItem("userRole") || 'Member';
+            // Try to find role in 'userRole' (staff) OR 'role' (customer)
+            const role = localStorage.getItem("userRole") || localStorage.getItem("role") || 'Member';
             const org = localStorage.getItem("organizationName") || 'your organization';
+            
             setUserInfo({ email, role, org });
             setIsAuthenticated(true);
         } else if (adminToken) {
             const email = localStorage.getItem("platformAdminEmail") || 'Admin';
             const role = localStorage.getItem("platformAdminRole") || 'Platform Admin';
-            setUserInfo({ email, role, org: 'XoCleaners Platform' }); // Admin org is the platform itself
+            setUserInfo({ email, role, org: 'XoCleaners Platform' }); 
             setIsAuthenticated(true);
         } else {
             setIsAuthenticated(false);
             setUserInfo(null);
         }
-    }, []); // Runs on component mount
+    }, []); 
 
     const handleLogout = () => {
-        // 1. Destroy all specified items from localStorage
+        // 1. Destroy all potential auth items
         localStorage.removeItem("accessToken");
+        localStorage.removeItem("token"); // Remove customer token
         localStorage.removeItem("userRole");
+        localStorage.removeItem("role");  // Remove customer role
         localStorage.removeItem("organizationId");
         localStorage.removeItem("organizationName");
         localStorage.removeItem("userEmail");
@@ -49,12 +57,12 @@ const Header = () => {
         localStorage.removeItem("platformAdminRole");
         localStorage.removeItem("platformAdminEmail");
 
-        // 2. Update the header's state to show "Login"
+        // 2. Update state
         setIsAuthenticated(false);
-        setUserInfo(null); // Clear user info state
+        setUserInfo(null);
 
-        // 3. Redirect the user to the main staff login page
-        navigate('/workers-login');
+        // 3. Redirect
+        navigate('/');
     };
 
     // Cleanup timeout on unmount
@@ -66,23 +74,19 @@ const Header = () => {
         };
     }, []);
 
-    // Function to handle mouse entering the Login button or dropdown area
+    // Dropdown Handlers
     const handleMouseEnter = () => {
-        if (dropdownTimeoutRef.current) {
-            clearTimeout(dropdownTimeoutRef.current);
-        }
+        if (dropdownTimeoutRef.current) clearTimeout(dropdownTimeoutRef.current);
         setIsDropdownOpen(true);
     };
 
-    // Function to handle mouse leaving the Login button or dropdown areas  
     const handleMouseLeave = () => {
-        // Set a timeout to delay the closing action
         dropdownTimeoutRef.current = setTimeout(() => {
             setIsDropdownOpen(false);
         }, HOVER_DELAY_MS);
     };
 
-    // --- NEW: Copied from WorkersLogin.tsx and adapted ---
+    // Role-based Routing
     const getRouteByRole = (role: string) => {
         switch (role?.toLowerCase()) {
             case "store_owner":
@@ -95,23 +99,22 @@ const Header = () => {
                 return "/assistant/dashboard";
             case "cashier":
                 return "/cashier";
-            // --- NEW: Added admin roles ---
             case "platform_admin":
             case "platform admin":
                 return "/platform-admin";
+            case "customer":
+                return "/customer";
             default:
-                // Default to home page if role is unknown
                 return "/"; 
         }
     };
 
-    // --- NEW: Handler for the dashboard button ---
+    // Dashboard Click Handler
     const handleDashboardClick = () => {
-        // Check both admin and regular user roles from local storage
-        const userRole = localStorage.getItem("userRole");
+        // Check for role in all possible storage keys
+        const userRole = localStorage.getItem("userRole") || localStorage.getItem("role");
         const adminRole = localStorage.getItem("platformAdminRole");
         
-        // Prioritize admin role if it exists, otherwise use the user role
         const role = adminRole || userRole; 
         
         const path = getRouteByRole(role || '');
@@ -129,13 +132,14 @@ const Header = () => {
         { name: 'Platform Admin', to: '/platform-admin', icon: Shield },
         { name: 'Store Owner', to: '/store-owner-login', icon: Compass },
         { name: 'Store Worker', to: '/workers-login', icon: Users },
+        { name: 'Customer', to: '/customer-login', icon: User },
     ];
 
     return (
         <>
             <header className="bg-white shadow-lg sticky top-0 z-10 font-sans">
-<div className="w-full max-w-[98vw] mx-auto px-4 sm:px-6 lg:px-8 py-3 flex justify-between items-center">                    
-                    {/* Logo and App Name */}
+                <div className="w-full max-w-[98vw] mx-auto px-4 sm:px-6 lg:px-8 py-3 flex justify-between items-center">                    
+                    {/* Logo */}
                     <Link to="/" className="flex items-center space-x-3 group">
                         <div className="bg-blue-600 p-2 rounded-xl shadow-lg transform transition-all duration-300 group-hover:scale-105 group-hover:shadow-blue-300">
                             <Shirt className="h-7 w-7 text-white" />
@@ -145,10 +149,10 @@ const Header = () => {
                         </h1>
                     </Link>
                     
-                    {/* Navigation and Login Container */}
+                    {/* Navigation */}
                     <nav className="flex items-center space-x-8">
                         
-                        {/* Main Navigation Links */}
+                        {/* Links */}
                         <div className="hidden md:flex space-x-4">
                             {navLinks.map((link) => (
                                 <Link
@@ -162,12 +166,11 @@ const Header = () => {
                             ))}
                         </div>
 
-                        {/* Conditional Login/Logout */}
+                        {/* Auth Section */}
                         <div className="relative">
                             {isAuthenticated ? (
-                                // --- NEW: Wrapper div for Dashboard and Logout buttons ---
+                                // LOGGED IN STATE
                                 <div className="flex items-center space-x-4">
-                                    {/* --- NEW: Dashboard Button --- */}
                                     <button
                                         onClick={handleDashboardClick}
                                         className="flex items-center bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold px-5 py-2.5 rounded-full shadow-lg transition-all duration-300 transform hover:scale-[1.02] active:scale-100 focus:outline-none focus:ring-4 focus:ring-blue-300"
@@ -176,7 +179,6 @@ const Header = () => {
                                         Dashboard
                                     </button>
 
-                                    {/* Existing Logout Button */}
                                     <button
                                         onClick={handleLogout}
                                         className="flex items-center bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white font-semibold px-5 py-2.5 rounded-full shadow-lg transition-all duration-300 transform hover:scale-[1.02] active:scale-100 focus:outline-none focus:ring-4 focus:ring-red-300"
@@ -186,7 +188,7 @@ const Header = () => {
                                     </button>
                                 </div>
                             ) : (
-                                // Login Button
+                                // LOGGED OUT STATE (Dropdown)
                                 <div 
                                     className="relative"
                                     onMouseEnter={handleMouseEnter}
@@ -204,7 +206,6 @@ const Header = () => {
                                         </svg>
                                     </button>
                                     
-                                    {/* Dropdown Menu */}
                                     <div 
                                         className={`absolute right-0 mt-3 w-60 origin-top-right rounded-xl bg-white shadow-2xl ring-1 ring-black ring-opacity-5 transition-opacity duration-150 ${isDropdownOpen ? 'opacity-100 visible' : 'opacity-0 invisible'}`}
                                         role="menu" 
@@ -232,16 +233,14 @@ const Header = () => {
                 </div>
             </header>
 
-            {/* Aesthetic Welcome Message Bar */}
+            {/* Welcome Bar */}
             {isAuthenticated && userInfo && (
                 <div className="bg-white border-b border-gray-200 shadow-sm">
                     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex flex-col sm:flex-row justify-between items-center space-y-2 sm:space-y-0">
-                        {/* Welcome Message */}
                         <p className="text-sm text-gray-700">
                             Welcome, <span className="font-bold text-blue-700">{userInfo.email}</span>
                         </p>
                         
-                        {/* Role & Org Info */}
                         <div className="flex items-center space-x-4">
                             <span className="inline-flex items-center bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-1 rounded-full">
                                 <User className="w-3 h-3 mr-1.5" />

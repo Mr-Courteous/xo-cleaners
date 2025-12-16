@@ -146,17 +146,6 @@ def get_db():
 
 
 
-# ==================================
-# TICKET MODELS (REPLACE ALL TICKET MODELS WITH THIS)
-# ==================================
-
-# class TicketItemCreate(BaseModel):
-#     """Data needed to create a single item on a ticket."""
-#     clothing_type_id: int
-#     quantity: int
-#     starch_level: Optional[str] = "None"
-#     crease: Optional[bool] = False
-#     additional_charge: Optional[float] = 0.0
 
 
 
@@ -175,6 +164,7 @@ class TicketItemCreate(BaseModel):
     additional_charge: Optional[float] = 0.0
     alterations: Optional[str] = None  # <--- ADD THIS
     item_instructions: Optional[str] = None  # <--- ADD THIS
+    instruction_charge: Optional[float] = 0.0 # New field for Instruction Charge
 
 
     
@@ -202,7 +192,10 @@ class TicketItemResponse(BaseModel):
     margin: float
     additional_charge: float = 0.0
     pieces: int = 1
-
+    
+    
+    
+    instruction_charge: float = 0.0  # Instruction Charge
     class Config:
         from_attributes = True
 
@@ -239,6 +232,8 @@ class TicketResponse(BaseModel):
     alterations: Optional[str] = None 
     item_instructions: Optional[str] = None 
     
+    
+    
     # ✅ Added for Branding/Receipts
     receipt_header: Optional[str] = None 
     receipt_footer: Optional[str] = None 
@@ -274,6 +269,8 @@ class TicketItemCreate(BaseModel):
     additional_charge: Optional[float] = 0.0
     alterations: Optional[str] = None  # <--- ADD THIS
     item_instructions: Optional[str] = None  # <--- ADD THIS
+    instruction_charge: Optional[float] = 0.0 # New field for Instruction Charge
+    
     
     
     

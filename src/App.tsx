@@ -34,6 +34,10 @@ import WorkersLogin from "./components/WorkersLogin";
 import CashierAssociate from "./components/CashierAssociate";
 import Cashier from "./components/Cashier";
 import OrganizationSettings from "./components/OrganizationSettings";
+import CustomerDashboard from "./components/CustomerDashboard";
+
+import CustomerLogin from "./components/CustomerLogin";
+
 
 // import CustomerDirectory from "./components/customerDirectory";
 // ----------------------
@@ -117,8 +121,9 @@ function AppContent() {
       <Route path="/add-worker" element={<AddWorker />} />
       <Route path="/workers-login" element={<WorkersLogin />} />
       <Route path="/cashier" element={<Cashier />} />
-      {/* <Route path="/customer" element={<CustomerDirectory />} /> */}
+      <Route path="/customer" element={<CustomerDashboard />} />
       <Route path="/org-settings" element={<OrganizationSettings />} />
+      <Route path="/customer-login" element={<CustomerLogin />} />
 
 
 

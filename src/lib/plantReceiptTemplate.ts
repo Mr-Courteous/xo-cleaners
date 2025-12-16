@@ -8,8 +8,9 @@ export function renderPlantReceiptHtml(ticket: Ticket, organizationName: string 
     const quantity = Number(item.quantity) || 0;
     const plantPrice = Number(item.plant_price) || 0;
     const additional = Number(item.additional_charge) || 0;
+    const instructionCharge = Number(item.instruction_charge) || 0; // Added
 
-    return sum + (plantPrice * quantity) + additional;
+    return sum + (plantPrice * quantity) + additional + instructionCharge;
   }, 0);
 
   const envCharge = totalPlantPrice * 0.047;
@@ -44,13 +45,18 @@ export function renderPlantReceiptHtml(ticket: Ticket, organizationName: string 
     const quantity = Number(item.quantity) || 0;
     const plantPrice = Number(item.plant_price) || 0;
     const additional = Number(item.additional_charge) || 0;
-    const plantLineTotal = (plantPrice * quantity) + additional;
+    const instructionCharge = Number(item.instruction_charge) || 0; // Added
+    
+    // Updated calculation
+    const plantLineTotal = (plantPrice * quantity) + additional + instructionCharge;
 
     const details = [];
     if (item.starch_level && item.starch_level !== 'none' && item.starch_level !== 'no_starch') details.push(`STARCH: ${item.starch_level.toUpperCase()}`);
     if (item.crease) details.push('CREASE: YES');
     if (item.alterations) details.push(`ALT: ${item.alterations.toUpperCase()}`);
     if (additional > 0) details.push(`ADD'L: $${additional.toFixed(2)}`);
+    // Added instruction charge display
+    if (instructionCharge > 0) details.push(`INST CHG: $${instructionCharge.toFixed(2)}`);
     if (item.item_instructions) details.push(`NOTE: ${item.item_instructions.toUpperCase()}`);
 
     const detailsHtml = details.length > 0

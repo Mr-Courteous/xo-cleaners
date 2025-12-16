@@ -173,21 +173,23 @@ async def login_organization_owner(
     )
 
 
+# =======================
+# 1. WORKER / STAFF LOGIN (org_owner, staff)
+# =======================
 @router.post("/workers-login", response_model=LoginResponse)
 async def login_user(
     data: LoginRequest,
     db: Session = Depends(get_db)
 ):
     """
-    Authenticate any user (org_owner, staff, customer).
-    Returns a JWT token (with all data encoded) AND
-    a JSON object with user/org info for immediate visualization.
+    Authenticate Staff & Owners.
+    BLOCKS Customers from using this route.
     """
 
     # Normalize incoming email to lowercase for consistent lookup
     email = data.email.strip().lower()
 
-    # 1️⃣ Look up user by email (Added 'is_deactivated' to query)
+    # 1️⃣ Look up user by email
     user_stmt = text("""
         SELECT id, organization_id, email, password_hash, first_name, last_name, role, address, is_deactivated
         FROM allUsers
@@ -211,34 +213,44 @@ async def login_user(
     last_name = user_map.get("last_name")
     role = user_map.get("role")
     address = user_map.get("address")
-    is_deactivated = user_map.get("is_deactivated") # ✅ Get the status
+    is_deactivated = user_map.get("is_deactivated")
 
-    # 🛑 NEW: Check for Deactivation BEFORE checking password or generating token
+    # 2️⃣ Check for Deactivation
     if is_deactivated:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Your account has been deactivated. Please contact your administrator."
         )
 
-    # 2️⃣ Verify password
+    # 3️⃣ Verify password
     if not verify_password(data.password, password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password."
         )
 
-    # 3️⃣ Check for valid role
-    valid_roles = ["org_owner", "store_manager", "store_admin", "cashier", "customer"]
+    # --- 🛑 SECURITY CHECK: BLOCK CUSTOMERS ---
+    # If the user is a customer, block them from the Worker Portal
+    if role == 'customer':
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are a Customer. Please use the Customer Login page."
+        )
+    # ------------------------------------------
+
+    # 4️⃣ Check for valid staff roles
+    # Removed "customer" from this list
+    valid_roles = ["org_owner", "store_manager", "store_admin", "cashier", "driver", "assistant"]
     if role not in valid_roles:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unrecognized role '{role}'."
+            detail=f"Unrecognized role '{role}' or not authorized for staff portal."
         )
 
-    # 4️⃣ Get organization name
+    # 5️⃣ Get organization name
     organization_name = get_organization_name(db, organization_id)
 
-    # 5️⃣ ENCODE data inside the token
+    # 6️⃣ ENCODE data inside the token
     token_data = {
         "sub": str(user_id), 
         "email": email,
@@ -254,7 +266,7 @@ async def login_user(
         data=token_data, expires_delta=access_token_expires
     )
 
-    # 6️⃣ Prepare user data for the "non-coded" response
+    # 7️⃣ Prepare user data for the response
     user_data = LoginUser(
         id=str(user_id), 
         email=email,
@@ -264,13 +276,78 @@ async def login_user(
         organization_id=organization_id,
     )
 
-    # 7️⃣ RETURN data in the "non-coded" JSON response
+    # 8️⃣ RETURN Response
     return LoginResponse(
         access_token=access_token,
         user=user_data,
         organization_name=organization_name,
         message=f"Login successful as {role} for organization '{organization_name}'."
     )
+
+
+# =======================
+# 2. CUSTOMER SPECIFIC LOGIN
+# =======================
+@router.post("/customer/login", response_model=TokenResponse)
+def customer_login(login_data: LoginRequest, db: Session = Depends(get_db)):
+    """
+    Dedicated login route for End Users (Customers).
+    BLOCKS Staff/Workers from using this route.
+    """
+    # 1. Find user by email (Case insensitive)
+    query = text("SELECT * FROM allUsers WHERE LOWER(email) = LOWER(:email)")
+    user = db.execute(query, {"email": login_data.email}).fetchone()
+    
+    # 2. Verify User Exists & Password
+    if not user or not verify_password(login_data.password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password."
+        )
+    
+    # 3. STRICT ROLE CHECK: Only customers allowed here
+    user_role = str(user.role).lower() if user.role else 'customer'
+    
+    # --- 🛑 SECURITY CHECK: BLOCK STAFF ---
+    if user_role != 'customer':
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This login is for customers only. Staff please use the staff portal."
+        )
+    # --------------------------------------
+
+    # 4. Fetch Real Organization Name
+    organization_name = "Your Cleaners" 
+    
+    if user.organization_id:
+        org_query = text("SELECT organization_name FROM organizations WHERE id = :id")
+        org_result = db.execute(org_query, {"id": user.organization_id}).fetchone()
+        if org_result:
+            organization_name = org_result.organization_name
+
+    # 5. Create Token with Customer-Specific Payload
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    
+    token_payload = {
+        "sub": user.email,
+        "sub_id": str(user.id),       # <--- CRITICAL: Fixes the profile 404 error
+        "role": "customer",           # Enforce standardized role string
+        "organization_id": user.organization_id, 
+        "type": "customer_access"     
+    }
+    
+    access_token = create_access_token(
+        data=token_payload, 
+        expires_delta=access_token_expires
+    )
+    
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user_role": "customer",
+        "organization_id": user.organization_id,
+        "organization_name": organization_name # Returns real name now
+    }
 
 @router.post("/admin-login", response_model=PlatformAdminLoginResponse)
 async def platform_admin_login(
@@ -327,3 +404,5 @@ async def platform_admin_login(
         full_name=admin["full_name"],
         organization_id=None
     )
+    
+    

@@ -123,6 +123,7 @@ export default function TicketManagement() {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const fullTicket: Ticket = response.data; 
+      console.log('Fetched Ticket for Printing:', fullTicket);
       
       const customerHtml = fullTicket.status === 'picked_up' 
         ? renderPickupReceiptHtml(fullTicket) 

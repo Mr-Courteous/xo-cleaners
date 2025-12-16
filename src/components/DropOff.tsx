@@ -15,14 +15,17 @@ const CLOTHING_IMAGE_MAP: { [key: string]: string } = {
 // -------------------------------------------------------------
 
 // --- TYPE EXTENSIONS FOR MERGED LOGIC ---
-// Define the full Ticket structure needed for tag printing, if not fully defined in '../types'
+interface ExtendedTicketItem extends TicketItem {
+  instruction_charge?: number;
+  alteration_behavior?: string;
+}
+
 interface TicketWithItems extends Ticket {
-  items: Array<TicketItem & {
+  items: Array<ExtendedTicketItem & {
     clothing_name: string;
     starch_level: string;
     crease: string;
     quantity: number;
-    // Add other fields from the backend TicketItem response if necessary
   }>;
 }
 
@@ -105,8 +108,8 @@ export default function DropOff() {
   const [newCustomer, setNewCustomer] = useState({ first_name: '', last_name: '', phone: '', email: '', address: '' });
   const [clothingTypes, setClothingTypes] = useState<ClothingType[]>([]);
 
-  // Note: Ensure your TicketItem type in '../types' includes 'alterations?: string'
-  const [items, setItems] = useState<TicketItem[]>([]);
+  // Use ExtendedTicketItem to support instruction_charge
+  const [items, setItems] = useState<ExtendedTicketItem[]>([]);
 
   const [specialInstructions, setSpecialInstructions] = useState('');
   const [paidAmount, setPaidAmount] = useState<number>(0);
@@ -120,9 +123,9 @@ export default function DropOff() {
     type: 'error' as 'error' | 'success'
   });
   const [showPrintPreview, setShowPrintPreview] = useState(false);
-  const [printContent, setPrintContent] = useState(''); // Customer Receipt HTML
-  const [plantHtmlState, setPlantHtmlState] = useState(''); // Plant Receipt HTML
-  const [tagHtmlState, setTagHtmlState] = useState(''); // Tag HTML for all items
+  const [printContent, setPrintContent] = useState('');
+  const [plantHtmlState, setPlantHtmlState] = useState('');
+  const [tagHtmlState, setTagHtmlState] = useState('');
 
   const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => {
     if (typeof window !== 'undefined') {
@@ -133,8 +136,10 @@ export default function DropOff() {
   });
 
   const [additionalChargeInputIndex, setAdditionalChargeInputIndex] = useState<number | null>(null);
+  const [instructionChargeInputIndex, setInstructionChargeInputIndex] = useState<number | null>(null);
+
   const INSTRUCTION_OPTIONS = [
-    { value: '', label: 'No Special Instructions' }, // Default empty option
+    { value: '', label: 'No Special Instructions' },
     { value: 'Check Pockets', label: 'Check Pockets' },
     { value: 'Stain: Collar', label: 'Stain: Collar' },
     { value: 'Stain: Front', label: 'Stain: Front' },
@@ -143,7 +148,6 @@ export default function DropOff() {
     { value: 'Repair Needed', label: 'Repair Needed' },
     { value: 'Press Only', label: 'Press Only' },
     { value: 'Do Not Crease', label: 'Do Not Crease' },
-
   ];
 
   const ALTERATION_OPTIONS = [
@@ -230,8 +234,8 @@ export default function DropOff() {
         first_name: newCustomer.first_name,
         last_name: newCustomer.last_name,
         address: newCustomer.address,
-        phone: newCustomer.phone, // Include phone in registration payload
-        password: "1234567890", // Assumed default password for a new customer account
+        phone: newCustomer.phone,
+        password: "1234567890",
       };
 
       const response = await axios.post(`${baseURL}/api/organizations/register-customer`, payload, {
@@ -255,11 +259,13 @@ export default function DropOff() {
       starch_level: 'no_starch',
       crease: 'no_crease',
       additional_charge: 0,
-      alterations: '', // <--- INIT NEW FIELD
+      instruction_charge: 0,
+      alterations: '',
       item_instructions: '',
       plant_price: ct?.plant_price || 0,
       margin: ct?.margin || 0,
       item_total: (ct?.plant_price || 0) + (ct?.margin || 0),
+      alteration_behavior: 'none'
     }]);
     saveViewMode('list');
   };
@@ -275,11 +281,13 @@ export default function DropOff() {
       starch_level: 'no_starch',
       crease: 'no_crease',
       additional_charge: 0,
-      alterations: '', // <--- INIT NEW FIELD
+      instruction_charge: 0,
+      alterations: '',
       item_instructions: '',
       plant_price: ct.plant_price,
       margin: ct.margin,
       item_total: ct.plant_price + ct.margin,
+      alteration_behavior: 'none'
     }]);
   };
 
@@ -290,26 +298,23 @@ export default function DropOff() {
 
     const clothingType = clothingTypes.find(ct => ct.id === newItems[index].clothing_type_id);
 
-    // Recalculate price logic
     if (clothingType) {
-      const basePrice = clothingType.plant_price + clothingType.margin;
+      let basePrice = clothingType.plant_price + clothingType.margin;
+      
+      if (newItems[index].alteration_behavior === 'alteration_only') {
+        basePrice = 0;
+      }
+
       const quantity = newItems[index].quantity || 0;
-      const additionalCharge = newItems[index].additional_charge || 0;
+      const altCharge = newItems[index].additional_charge || 0;
+      const instCharge = newItems[index].instruction_charge || 0;
+
       newItems[index].plant_price = clothingType.plant_price;
       newItems[index].margin = clothingType.margin;
-      newItems[index].item_total = (basePrice * quantity) + additionalCharge;
+      
+      newItems[index].item_total = (basePrice * quantity) + altCharge + instCharge;
     } else if ('clothing_type_id' in updates) {
       newItems[index].item_total = 0;
-    }
-
-    // Force recalc if qty/charge changes
-    if ('quantity' in updates || 'additional_charge' in updates) {
-      if (clothingType) {
-        const basePrice = clothingType.plant_price + clothingType.margin;
-        const quantity = newItems[index].quantity || 0;
-        const additionalCharge = newItems[index].additional_charge || 0;
-        newItems[index].item_total = (basePrice * quantity) + additionalCharge;
-      }
     }
 
     setItems(newItems);
@@ -319,10 +324,6 @@ export default function DropOff() {
     setItems(items.filter((_, i) => i !== index));
   };
 
-  /**
-   * Generates the HTML string for item tags.
-   * Logic copied from Tag.tsx.
-   */
   const generateTagHtml = (ticket: TicketWithItems) => {
     let combinedHtml = '';
 
@@ -331,9 +332,7 @@ export default function DropOff() {
     const ticketId = ticket.ticket_number || '';
     const dateIssued = ticket.created_at ? new Date(ticket.created_at).toLocaleDateString() : '';
     
-    // Process each item in the ticket
     ticket.items.forEach((item) => {
-      // 1. Prepare preferences text
       const preferences = [];
       if (item.starch_level && item.starch_level !== 'no_starch' && item.starch_level !== 'none') {
         preferences.push(`${item.starch_level} starch`);
@@ -349,15 +348,12 @@ export default function DropOff() {
       }
       const preferencesText = preferences.join(' / ');
       
-      // 2. Determine tag quantity (from item quantity)
       const tags = Array(item.quantity).fill(null);
       
-      // 3. Determine font size based on name length
       const nameLen = fullName.length || 0;
       const nameFontSize = nameLen > 50 ? '9pt' : nameLen > 35 ? '10pt' : '11pt';
       const prefFontSize = '9pt';
       
-      // 4. Generate HTML for this item's tags (one tag per quantity)
       const itemTagsHtml = tags.map(() => `
           <div style="
             border: 1.5px solid #000;
@@ -369,8 +365,8 @@ export default function DropOff() {
             gap: 6px;
             font-size: 10pt;
             line-height: 1.1;
-            margin-bottom: 8px; /* Separator for individual tags */
-            page-break-after: always; /* Force new page/label for each tag */
+            margin-bottom: 8px; 
+            page-break-after: always;
           ">
             <div style="font-size: 10pt; font-weight: 700; overflow-wrap: break-word; word-break: break-word;">
               ${ticketId}
@@ -395,7 +391,6 @@ export default function DropOff() {
       combinedHtml += itemTagsHtml;
     });
 
-    // 5. Wrap all generated tags in a container
     return `
       <div style="
         display: flex;
@@ -409,9 +404,6 @@ export default function DropOff() {
     `;
   };
 
-  /**
-   * Helper function to execute the print job in a hidden iframe.
-   */
   const handlePrintJob = (htmlContent: string) => {
     const printFrame = document.createElement('iframe');
     printFrame.style.display = 'none';
@@ -422,10 +414,9 @@ export default function DropOff() {
         <head>
           <title>Print</title>
           <style>
-            @page { size: 55mm auto; margin: 0; } /* Adjust size for common label/tag printers */
+            @page { size: 55mm auto; margin: 0; }
             @media print {
               html, body { margin: 0; padding: 0; }
-              /* Use page-break-after/before for receipts/tags */
               .page-break-receipt { 
                 page-break-after: always; 
                 break-after: page;
@@ -470,23 +461,26 @@ export default function DropOff() {
         if (!val) return 'none';
         const s = String(val).toLowerCase();
         if (s === 'no_starch' || s === 'none') return 'none';
-        if (s === 'light' || s === 'low') return 'light'; // Standardize to 'light'
+        if (s === 'light' || s === 'low') return 'light'; 
         if (s === 'medium' || s === 'med') return 'medium';
-        if (s === 'heavy' || s === 'high') return 'heavy'; // Standardize to 'heavy'
+        if (s === 'heavy' || s === 'high') return 'heavy'; 
         return 'none';
       };
 
-      // 1. Prepare Payload
       const ticketData = {
         customer_id: Number(selectedCustomer!.id),
         items: itemsWithValidQuantity.map(item => ({
           clothing_type_id: Number(item.clothing_type_id),
           quantity: Number(item.quantity) || 0,
           starch_level: mapStarchLevel(item.starch_level),
-          crease: item.crease === 'crease', // map 'crease' string to boolean
-          additional_charge: Number(item.additional_charge) || 0.0,
-          alterations: item.alterations || null, // <--- MAP NEW FIELD HERE
+          crease: item.crease === 'crease', 
+          
+          additional_charge: Number(item.additional_charge) || 0.0, 
+          instruction_charge: Number(item.instruction_charge) || 0.0, 
+          
+          alterations: item.alterations || null, 
           item_instructions: item.item_instructions || null,
+          alteration_behavior: item.alteration_behavior
         })),
         special_instructions: specialInstructions,
         pickup_date: pickupDate ? new Date(pickupDate).toISOString() : null,
@@ -496,35 +490,28 @@ export default function DropOff() {
       const token = localStorage.getItem("accessToken");
       if (!token) throw new Error("Authentication token not found.");
 
-      // 2. Send Request
       const response = await axios.post(
         `${baseURL}/api/organizations/tickets`,
         ticketData,
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      // The newTicket object from the backend response should contain
-      // the created_at, ticket_number, customer_name, customer_phone, and the full items list.
       const newTicket = response.data as TicketWithItems;
 
-      // Ensure the items array on the returned ticket contains necessary details for tag generation
-      // This is a common pattern: the POST returns the final, structured ticket object.
       if (!newTicket.items || newTicket.items.length === 0) {
-          // If items are missing from the response, fetch them separately
           const ticketDetails = await axios.get(`${baseURL}/api/organizations/tickets/${newTicket.id}`, { headers: { Authorization: `Bearer ${token}` } });
           newTicket.items = ticketDetails.data.items || [];
       }
       
       console.log('Ticket created successfully:', newTicket);
 
-      // 3. Generate Receipts & Tags
       const customerHtml = renderReceiptHtml(newTicket as any);
       const plantHtml = renderPlantReceiptHtml(newTicket as any);
-      const tagHtml = generateTagHtml(newTicket); // Generate Tags
+      const tagHtml = generateTagHtml(newTicket); 
 
       setPrintContent(customerHtml);
       setPlantHtmlState(plantHtml);
-      setTagHtmlState(tagHtml); // Save Tag HTML
+      setTagHtmlState(tagHtml); 
 
       setShowPrintPreview(true);
       setModal({ isOpen: true, title: 'Ticket Created', type: 'success', message: 'Ticket created successfully.' });
@@ -550,10 +537,7 @@ export default function DropOff() {
 
   const getClothingTypeById = (id: number) => clothingTypes.find(ct => ct.id === id);
 
-  // --- Print Handlers ---
-
   const handlePrintAll = () => {
-    // Note: Added page-break-receipt class to separate receipts/tags
     const combinedHtml = `
       <div class="page-break-receipt">${printContent}</div>
       <div class="page-break-receipt">${plantHtmlState}</div>
@@ -574,11 +558,9 @@ export default function DropOff() {
   }
 
   const handlePrintTags = () => {
-    // This uses the tagHtmlState which now contains the page-break-after: always style on each tag.
     handlePrintJob(tagHtmlState);
     setShowPrintPreview(false);
   }
-  // ----------------------
 
 
   return (
@@ -705,11 +687,11 @@ export default function DropOff() {
 
               {items.length > 0 && (
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-4 p-2 mb-2 text-sm font-semibold text-gray-700 border-b border-gray-300">
-                  <div className="col-span-3">Item Type</div>
+                  <div className="col-span-4">Item Type</div> {/* Extended from 3 to 4 */}
                   <div className="col-span-1 text-center">Qty</div>
                   <div className="col-span-3 text-center">Starch</div>
                   <div className="col-span-2 text-center">Crease</div>
-                  <div className="col-span-1 text-center">Addtl</div>
+                  {/* Removed separate Alt $ column from main row */}
                   <div className="col-span-1 text-center">Total</div>
                   <div className="col-span-1"></div>
                 </div>
@@ -718,8 +700,8 @@ export default function DropOff() {
               <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-2">
                 {items.map((item, index) => (
                   <div key={index} className="grid grid-cols-1 md:grid-cols-12 gap-3 p-3 border border-gray-200 rounded-lg items-center bg-white">
-                    {/* Item Type */}
-                    <div className="col-span-3 flex flex-col">
+                    {/* Item Type (Extended Width) */}
+                    <div className="col-span-4 flex flex-col">
                       <span className="font-medium text-sm truncate">{item.clothing_name}</span>
                       <span className="text-xs text-gray-500">${((getClothingTypeById(item.clothing_type_id)?.total_price) || item.item_total).toFixed(2)}</span>
                     </div>
@@ -749,7 +731,7 @@ export default function DropOff() {
                           title={level.replace('_', ' ')}
                           className={`flex-1 text-xs py-2 rounded-md transition-colors font-medium border ${item.starch_level === level ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}
                         >
-                          {level === 'no_starch' ? 'None' : (level === 'light' ? 'Light' : level === 'medium' ? 'Med' : 'Hvy')}
+                          {level === 'no_starch' ? 'None' : (level === 'light' ? 'Lt' : level === 'medium' ? 'Med' : 'Hvy')}
                         </button>
                       ))}
                     </div>
@@ -762,42 +744,6 @@ export default function DropOff() {
                       {item.crease === 'crease' ? 'Crease' : 'No Crease'}
                     </button>
 
-                    {/* Additional Charge */}
-                    <div className="relative col-span-1">
-                      {additionalChargeInputIndex === index ? (
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          value={item.additional_charge === 0 ? '' : String(item.additional_charge)}
-                          onChange={(e) => {
-                            const cleaned = e.target.value.replace(/[^0-9.]/g, '');
-                            updateItem(index, { additional_charge: parseFloat(cleaned) || 0 });
-                          }}
-                          onBlur={() => {
-                            if (!item.additional_charge || item.additional_charge === 0) {
-                              setAdditionalChargeInputIndex(null);
-                            }
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              setAdditionalChargeInputIndex(null);
-                              updateItem(index, { additional_charge: parseFloat((e.target as HTMLInputElement).value) || 0 });
-                            }
-                          }}
-                          placeholder="Amt"
-                          autoFocus
-                          className="w-full px-1 py-2 border border-gray-300 rounded-md text-sm text-center"
-                        />
-                      ) : (
-                        <button
-                          onClick={() => setAdditionalChargeInputIndex(index)}
-                          className={`w-full text-xs py-2 rounded transition-colors font-medium truncate ${item.additional_charge > 0 ? 'bg-amber-500 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
-                        >
-                          {item.additional_charge > 0 ? `$${item.additional_charge.toFixed(2)}` : 'Add'}
-                        </button>
-                      )}
-                    </div>
-
                     {/* Total */}
                     <div className="px-1 py-2 bg-gray-50 rounded-lg text-center font-medium text-sm col-span-1">
                       ${item.item_total.toFixed(2)}
@@ -808,85 +754,154 @@ export default function DropOff() {
                       <Trash2 className="h-4 w-4" />
                     </button>
 
-                    {/* --- NEW ALTERATIONS FIELD FOR EACH ITEM --- */}
+                    {/* --- EXPANDED ROW FOR ALTERATIONS & INSTRUCTIONS --- */}
                     <div className="col-span-1 md:col-span-12 mt-1">
-                      {/* Alterations */}
                       <div className="col-span-1 md:col-span-12 mt-2 bg-gray-50 p-2 rounded border border-gray-200 grid grid-cols-1 md:grid-cols-2 gap-3">
 
-                        {/* LEFT: Behavior Toggles (2 Buttons Only) */}
-                        <div className="flex items-center space-x-1">
-                          <button
-                            /* Standard Wash: Sets behavior to 'none'. Does NOT clear 'alterations' text (allows Wash + Alt). */
-                            onClick={() => updateItem(index, { alteration_behavior: 'none' })}
-                            className={`flex-1 py-1.5 text-xs font-bold rounded border transition-colors ${item.alteration_behavior === 'none' || !item.alteration_behavior
-                                ? 'bg-gray-600 text-white border-gray-600'
-                                : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-100'
-                              }`}
-                          >
-                            Standard Wash
-                          </button>
+                        {/* LEFT: Behavior Toggles & Alteration Dropdown + Price */}
+                        <div className="flex flex-col gap-2">
+                           <div className="flex items-center space-x-1">
+                            <button
+                                onClick={() => updateItem(index, { alteration_behavior: 'none' })}
+                                className={`flex-1 py-1.5 text-xs font-bold rounded border transition-colors ${item.alteration_behavior === 'none' || !item.alteration_behavior
+                                    ? 'bg-gray-600 text-white border-gray-600'
+                                    : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-100'
+                                }`}
+                            >
+                                Standard
+                            </button>
 
-                          <button
-                            /* Alt Only: Sets behavior to 'alteration_only'. Zeroes out base price in calculation. */
-                            onClick={() => updateItem(index, { alteration_behavior: 'alteration_only' })}
-                            className={`flex-1 py-1.5 text-xs font-bold rounded border transition-colors ${item.alteration_behavior === 'alteration_only'
-                                ? 'bg-pink-600 text-white border-pink-600'
-                                : 'bg-white text-pink-700 border-pink-200 hover:bg-pink-50'
-                              }`}
-                          >
-                            Alt Only
-                          </button>
-                        </div>
-
-                        {/* RIGHT: Dropdown (Always Visible) */}
-                        <div className="relative">
-                          <select
-                            value={item.alterations || ''}
-                            onChange={(e) => updateItem(index, { alterations: e.target.value })}
-                            className={`
-                w-full pl-3 pr-8 py-1.5 text-sm border rounded appearance-none font-medium transition-colors
-                focus:ring-1 focus:ring-purple-500 focus:outline-none
-                ${item.alterations
-                                ? 'bg-purple-50 border-purple-300 text-purple-900'
-                                : 'bg-white border-gray-300 text-gray-500'
-                              }
-            `}
-                          >
-                            <option value="">No Alteration...</option>
-                            {ALTERATION_OPTIONS.map((opt) => (
-                              <option key={opt.value} value={opt.value}>{opt.label}</option>
-                            ))}
-                          </select>
-
-                          {/* Arrow Icon */}
-                          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-500">
-                            <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
-                              <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
-                            </svg>
+                            <button
+                                onClick={() => updateItem(index, { alteration_behavior: 'alteration_only' })}
+                                className={`flex-1 py-1.5 text-xs font-bold rounded border transition-colors ${item.alteration_behavior === 'alteration_only'
+                                    ? 'bg-pink-600 text-white border-pink-600'
+                                    : 'bg-white text-pink-700 border-pink-200 hover:bg-pink-50'
+                                }`}
+                            >
+                                Alt Only
+                            </button>
                           </div>
+                          
+                          <div className="flex gap-2">
+                              {/* Alteration Dropdown */}
+                              <div className="relative flex-grow">
+                                <select
+                                    value={item.alterations || ''}
+                                    onChange={(e) => updateItem(index, { alterations: e.target.value })}
+                                    className={`w-full pl-3 pr-8 py-2 text-sm border rounded-md appearance-none font-medium transition-colors focus:ring-1 focus:ring-purple-500 focus:outline-none ${item.alterations ? 'bg-purple-50 border-purple-300 text-purple-900' : 'bg-white border-gray-300 text-gray-500'}`}
+                                >
+                                    <option value="">No Alteration...</option>
+                                    {ALTERATION_OPTIONS.map((opt) => (
+                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                    ))}
+                                </select>
+                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-500">
+                                    <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                                    <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
+                                    </svg>
+                                </div>
+                              </div>
+
+                              {/* Alteration Price Input (Moved here) */}
+                              <div className="w-20 relative">
+                                {additionalChargeInputIndex === index ? (
+                                    <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={item.additional_charge === 0 ? '' : String(item.additional_charge)}
+                                    onChange={(e) => {
+                                        const cleaned = e.target.value.replace(/[^0-9.]/g, '');
+                                        updateItem(index, { additional_charge: parseFloat(cleaned) || 0 });
+                                    }}
+                                    onBlur={() => {
+                                        if (!item.additional_charge || item.additional_charge === 0) {
+                                        setAdditionalChargeInputIndex(null);
+                                        }
+                                    }}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                        setAdditionalChargeInputIndex(null);
+                                        updateItem(index, { additional_charge: parseFloat((e.target as HTMLInputElement).value) || 0 });
+                                        }
+                                    }}
+                                    placeholder="Amt"
+                                    autoFocus
+                                    className="w-full px-1 py-2 border border-purple-300 rounded-md text-sm text-center"
+                                    />
+                                ) : (
+                                    <button
+                                    onClick={() => setAdditionalChargeInputIndex(index)}
+                                    className={`w-full h-full text-xs rounded transition-colors font-medium truncate flex items-center justify-center ${item.additional_charge && item.additional_charge > 0 ? 'bg-purple-600 text-white shadow-md' : 'bg-white text-gray-400 border border-gray-300 hover:bg-gray-50'}`}
+                                    >
+                                    {item.additional_charge && item.additional_charge > 0 ? `$${item.additional_charge.toFixed(2)}` : 'Alt $'}
+                                    </button>
+                                )}
+                              </div>
+                           </div>
                         </div>
-                      </div>
-                      {/* Instructions */}
-                      <div>
-                        <div className="relative">
-                          <select
-                            value={item.item_instructions || ''}
-                            onChange={(e) => updateItem(index, { item_instructions: e.target.value })}
-                            className={`w-full px-3 py-2 text-sm border rounded-md focus:ring-1 focus:ring-blue-500 appearance-none cursor-pointer
-                    ${item.item_instructions ? 'bg-blue-100 border-blue-300 text-blue-800 font-medium' : 'bg-white border-gray-300 text-gray-500'}
-                `}
-                          >
-                            {INSTRUCTION_OPTIONS.map((opt) => (
-                              <option key={opt.value} value={opt.value}>
-                                {opt.label}
-                              </option>
-                            ))}
-                          </select>
-                          {/* Custom Arrow Icon for better UI */}
-                          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-500">
-                            <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" /></svg>
-                          </div>
+
+                        {/* RIGHT: Instructions & Instruction Charge */}
+                        <div className="flex flex-col gap-2">
+                           {/* Label to align with toggles on the left */}
+                           <div className="h-[34px] flex items-center text-xs font-bold text-gray-500 uppercase tracking-wider">
+                              Special Instructions
+                           </div>
+
+                           <div className="flex gap-2">
+                               {/* Instruction Dropdown */}
+                               <div className="relative flex-grow">
+                                    <select
+                                        value={item.item_instructions || ''}
+                                        onChange={(e) => updateItem(index, { item_instructions: e.target.value })}
+                                        className={`w-full px-3 py-2 text-sm border rounded-md focus:ring-1 focus:ring-blue-500 appearance-none cursor-pointer ${item.item_instructions ? 'bg-blue-100 border-blue-300 text-blue-800 font-medium' : 'bg-white border-gray-300 text-gray-500'}`}
+                                    >
+                                        {INSTRUCTION_OPTIONS.map((opt) => (
+                                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                        ))}
+                                    </select>
+                                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-500">
+                                        <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" /></svg>
+                                    </div>
+                               </div>
+
+                               {/* Instruction Charge Input */}
+                               <div className="w-20 relative">
+                                    {instructionChargeInputIndex === index ? (
+                                        <input
+                                        type="text"
+                                        inputMode="decimal"
+                                        value={item.instruction_charge === 0 ? '' : String(item.instruction_charge)}
+                                        onChange={(e) => {
+                                            const cleaned = e.target.value.replace(/[^0-9.]/g, '');
+                                            updateItem(index, { instruction_charge: parseFloat(cleaned) || 0 });
+                                        }}
+                                        onBlur={() => {
+                                            if (!item.instruction_charge || item.instruction_charge === 0) {
+                                            setInstructionChargeInputIndex(null);
+                                            }
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                            setInstructionChargeInputIndex(null);
+                                            updateItem(index, { instruction_charge: parseFloat((e.target as HTMLInputElement).value) || 0 });
+                                            }
+                                        }}
+                                        placeholder="Cost"
+                                        autoFocus
+                                        className="w-full px-1 py-2 border border-blue-300 rounded-md text-sm text-center"
+                                        />
+                                    ) : (
+                                        <button
+                                        onClick={() => setInstructionChargeInputIndex(index)}
+                                        className={`w-full h-full text-xs rounded transition-colors font-medium truncate flex items-center justify-center ${item.instruction_charge && item.instruction_charge > 0 ? 'bg-blue-500 text-white shadow-md' : 'bg-white text-gray-400 border border-gray-300 hover:bg-gray-50'}`}
+                                        >
+                                        {item.instruction_charge && item.instruction_charge > 0 ? `$${item.instruction_charge.toFixed(2)}` : 'Inst $'}
+                                        </button>
+                                    )}
+                               </div>
+                           </div>
                         </div>
+
                       </div>
                     </div>
                     {/* ------------------------------------------- */}
@@ -977,10 +992,15 @@ export default function DropOff() {
                         {item.starch_level !== 'no_starch' && item.starch_level !== 'none' && `${item.starch_level} starch`}
                         {item.starch_level !== 'no_starch' && item.crease === 'crease' && item.starch_level !== 'none' && ', '}
                         {item.crease === 'crease' && 'with crease'}
-                        {item.additional_charge > 0 && `, Addtl: $${item.additional_charge.toFixed(2)}`}
-                        {/* Show Alterations in Review */}
+                        {/* Display both charges if present */}
+                        {(item.additional_charge || 0) > 0 && `, Alt: $${item.additional_charge?.toFixed(2)}`}
+                        {(item.instruction_charge || 0) > 0 && `, Inst: $${item.instruction_charge?.toFixed(2)}`}
+                        
                         {item.alterations &&
                           <div className="text-purple-600 italic mt-1">Alterations: {item.alterations}</div>
+                        }
+                        {item.item_instructions &&
+                          <div className="text-blue-600 italic mt-1">Instr: {item.item_instructions}</div>
                         }
                       </div>
                     </div>

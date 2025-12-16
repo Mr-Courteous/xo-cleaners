@@ -32,12 +32,15 @@ export function renderPickupReceiptHtml(ticket: Ticket, organizationName: string
         const quantity = Number(item.quantity) || 0;
         const itemTotal = Number(item.item_total) || 0;
         const additional = Number(item.additional_charge) || 0;
+        const instructionCharge = Number(item.instruction_charge) || 0; // Added
 
         const details = [];
         if (item.starch_level && item.starch_level !== 'none' && item.starch_level !== 'no_starch') details.push(item.starch_level.toUpperCase());
         if (item.crease) details.push('CREASE');
         if (item.alterations) details.push(`ALT: ${item.alterations.toUpperCase()}`);
         if (additional > 0) details.push(`ADD'L: $${additional.toFixed(2)}`);
+        // Added instruction charge display
+        if (instructionCharge > 0) details.push(`INST CHG: $${instructionCharge.toFixed(2)}`);
         if (item.item_instructions) details.push(`NOTE: ${item.item_instructions.toUpperCase()}`);
 
         const detailsHtml = details.length > 0

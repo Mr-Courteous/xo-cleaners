@@ -201,6 +201,119 @@ router = APIRouter(prefix="/api/organizations", tags=["Organization Resources"])
 
 
 
+# @router.get("/tickets/{ticket_id}", response_model=TicketResponse, summary="Get full details for a single ticket")
+# async def get_ticket_details(
+#     ticket_id: int,
+#     db: Session = Depends(get_db),
+#     payload: Dict[str, Any] = Depends(get_current_user_payload)
+# ):
+#     org_id = payload.get("organization_id")
+#     if not org_id:
+#         raise HTTPException(status_code=400, detail="Organization ID missing.")
+
+#     try:
+#         # 1. Main Ticket Info
+#         ticket_stmt = text("""
+#             SELECT 
+#                 t.id, t.ticket_number, t.customer_id, t.total_amount, 
+#                 t.paid_amount, t.status, t.rack_number, t.created_at, 
+#                 t.pickup_date, t.special_instructions,
+#                 u.first_name, u.last_name, u.email, u.phone
+#             FROM tickets t
+#             JOIN allUsers u ON t.customer_id = u.id
+#             WHERE t.id = :ticket_id AND t.organization_id = :org_id
+#         """)
+#         ticket = db.execute(ticket_stmt, {"ticket_id": ticket_id, "org_id": org_id}).fetchone()
+
+#         if not ticket:
+#             raise HTTPException(status_code=404, detail="Ticket not found.")
+
+#         # 2. Get Items
+#         items_stmt = text("""
+#             SELECT 
+#                 ti.id, ti.ticket_id, ti.clothing_type_id, ti.quantity, 
+#                 ti.item_total, ti.plant_price, ti.margin, ti.starch_level, ti.crease,
+#                 ti.alterations, ti.item_instructions, ti.additional_charge, ti.alteration_behavior, 
+#                 ct.name AS clothing_name,
+#                 ct.image_url AS clothing_image_url,
+#                 COALESCE(ct.pieces, 1) AS pieces
+#             FROM ticket_items ti
+#             JOIN clothing_types ct ON ti.clothing_type_id = ct.id
+#             WHERE ti.ticket_id = :ticket_id
+#         """)
+        
+#         items_results = db.execute(items_stmt, {"ticket_id": ticket_id}).fetchall()
+
+#         items_list = [
+#             TicketItemResponse(
+#                 id=item_row.id,
+#                 ticket_id=item_row.ticket_id,
+#                 clothing_type_id=item_row.clothing_type_id,
+#                 quantity=item_row.quantity,
+#                 starch_level=item_row.starch_level,
+#                 crease=item_row.crease,
+#                 alterations=item_row.alterations,
+#                 item_instructions=item_row.item_instructions,
+#                 alteration_behavior=item_row.alteration_behavior, # <--- MAPPED
+#                 item_total=item_row.item_total,
+#                 plant_price=item_row.plant_price,
+#                 margin=item_row.margin,
+#                 additional_charge=item_row.additional_charge or 0.0,
+#                 clothing_name=item_row.clothing_name,
+#                 pieces=item_row.pieces
+#             ) for item_row in items_results
+#         ]
+
+#         # ===========================================================================
+#         # 3. FETCH ORGANIZATION NAME & BRANDING (Header/Footer)
+#         # ===========================================================================
+        
+#         # A. Fetch Org Name
+#         org_name_query = text("SELECT name FROM organizations WHERE id = :org_id")
+#         org_name_row = db.execute(org_name_query, {"org_id": org_id}).fetchone()
+#         org_name_val = org_name_row.name if org_name_row else "Your Cleaners"
+
+#         # B. Fetch Settings (Header/Footer)
+#         settings_query = text("""
+#             SELECT receipt_header, receipt_footer 
+#             FROM organization_settings 
+#             WHERE organization_id = :org_id
+#         """)
+#         settings_row = db.execute(settings_query, {"org_id": org_id}).fetchone()
+        
+#         receipt_header_val = settings_row.receipt_header if settings_row else None
+#         receipt_footer_val = settings_row.receipt_footer if settings_row else None
+#         # ===========================================================================
+
+#         return TicketResponse(
+#             id=ticket.id,
+#             ticket_number=ticket.ticket_number,
+#             customer_id=ticket.customer_id,
+#             customer_name=f"{ticket.first_name} {ticket.last_name or ''}".strip(),
+#             customer_phone=ticket.email,
+#             total_amount=ticket.total_amount,
+#             paid_amount=ticket.paid_amount,
+#             status=ticket.status,
+#             rack_number=ticket.rack_number,
+#             pickup_date=ticket.pickup_date,
+#             created_at=ticket.created_at,
+#             special_instructions=ticket.special_instructions,
+#             items=items_list,
+#             organization_id=org_id,
+            
+#             # ✅ Return Org Name & Branding
+#             organization_name=org_name_val,
+#             receipt_header=receipt_header_val,
+#             receipt_footer=receipt_footer_val
+#         )
+
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         print(f"Error: {e}")
+#         raise HTTPException(status_code=500, detail="Error retrieving ticket.")
+    
+
 @router.get("/tickets/{ticket_id}", response_model=TicketResponse, summary="Get full details for a single ticket")
 async def get_ticket_details(
     ticket_id: int,
@@ -228,12 +341,14 @@ async def get_ticket_details(
         if not ticket:
             raise HTTPException(status_code=404, detail="Ticket not found.")
 
-        # 2. Get Items
+        # 2. Get Items (Updated to fetch instruction_charge)
         items_stmt = text("""
             SELECT 
                 ti.id, ti.ticket_id, ti.clothing_type_id, ti.quantity, 
                 ti.item_total, ti.plant_price, ti.margin, ti.starch_level, ti.crease,
-                ti.alterations, ti.item_instructions, ti.additional_charge, ti.alteration_behavior, 
+                ti.alterations, ti.item_instructions, 
+                ti.additional_charge, ti.instruction_charge,  -- ✅ ADDED instruction_charge here
+                ti.alteration_behavior, 
                 ct.name AS clothing_name,
                 ct.image_url AS clothing_image_url,
                 COALESCE(ct.pieces, 1) AS pieces
@@ -254,11 +369,15 @@ async def get_ticket_details(
                 crease=item_row.crease,
                 alterations=item_row.alterations,
                 item_instructions=item_row.item_instructions,
-                alteration_behavior=item_row.alteration_behavior, # <--- MAPPED
+                alteration_behavior=item_row.alteration_behavior,
                 item_total=item_row.item_total,
                 plant_price=item_row.plant_price,
                 margin=item_row.margin,
-                additional_charge=item_row.additional_charge or 0.0,
+                
+                # ✅ Return both additional prices
+                additional_charge=item_row.additional_charge or 0.0,   # Alteration Charge
+                instruction_charge=item_row.instruction_charge or 0.0, # Instruction Charge
+                
                 clothing_name=item_row.clothing_name,
                 pieces=item_row.pieces
             ) for item_row in items_results
@@ -312,8 +431,7 @@ async def get_ticket_details(
     except Exception as e:
         print(f"Error: {e}")
         raise HTTPException(status_code=500, detail="Error retrieving ticket.")
-    
-    
+
     
 # --- END OF get_ticket_details FUNCTION ---
 

@@ -27,6 +27,8 @@ const WorkersLogin: React.FC = () => {
                 return "/assistant/dashboard";
             case "cashier":
                 return "/cashier";
+            case "customer":
+                return "/customer";
             default:
                 return "/dashboard";
         }
