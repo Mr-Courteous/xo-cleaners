@@ -18,6 +18,7 @@ from routers.org_functions3 import router as org_functions3_router
 from routers.org_settings import router as settings_router
 from routers.org_functions4 import router as org_functions4_router
 from routers.customer_routes import router as customer_router
+from routers.platform_admin import router as platform_admin_router
 
 import uvicorn
 
@@ -87,6 +88,7 @@ app.include_router(org_functions3_router)
 app.include_router(settings_router)
 app.include_router(org_functions4_router)
 app.include_router(customer_router)
+app.include_router(platform_admin_router)
 
 @app.get("/")
 def read_root():

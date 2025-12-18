@@ -1,8 +1,23 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Plus, Search, Trash2, User, Phone, Calendar, Grid, List, Shirt, ImageOf, Mail, Printer } from 'lucide-react';
+import { 
+  Plus, 
+  Search, 
+  Trash2, 
+  User, 
+  Phone, 
+  Calendar, 
+  Grid, 
+  List, 
+  Shirt, 
+  ImageOf, 
+  Mail, 
+  Printer, 
+  PenTool,
+  Loader2 
+} from 'lucide-react';
 import axios from "axios";
 import baseURL from "../lib/config";
-import { Customer, ClothingType, TicketItem, Ticket } from '../types'; // Ensure 'Ticket' and 'TicketItem' types are available
+import { Customer, ClothingType, TicketItem, Ticket } from '../types'; 
 import Modal from './Modal';
 import PrintPreviewModal from './PrintPreviewModal';
 import renderReceiptHtml from '../lib/receiptTemplate';
@@ -18,6 +33,7 @@ const CLOTHING_IMAGE_MAP: { [key: string]: string } = {
 interface ExtendedTicketItem extends TicketItem {
   instruction_charge?: number;
   alteration_behavior?: string;
+  is_custom?: boolean; 
 }
 
 interface TicketWithItems extends Ticket {
@@ -46,15 +62,17 @@ const VIEW_MODE_STORAGE_KEY = 'dropOffViewMode';
 interface ClothingGridProps {
   clothingTypes: ClothingType[];
   addItemByTypeId: (clothingTypeId: number) => void;
+  onAddCustomItem: () => void; 
 }
 
-const ClothingGrid: React.FC<ClothingGridProps> = ({ clothingTypes, addItemByTypeId }) => {
+const ClothingGrid: React.FC<ClothingGridProps> = ({ clothingTypes, addItemByTypeId, onAddCustomItem }) => {
   const sortedTypes = useMemo(() => {
     return [...clothingTypes].sort((a, b) => a.name.localeCompare(b.name));
   }, [clothingTypes]);
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-5 2xl:grid-cols-6 gap-4 p-4 bg-gray-50 rounded-lg">
+      {/* Existing Items */}
       {sortedTypes.map((type) => {
         const imageUrl = CLOTHING_IMAGE_MAP[type.name] || type.image_url;
         return (
@@ -95,6 +113,25 @@ const ClothingGrid: React.FC<ClothingGridProps> = ({ clothingTypes, addItemByTyp
           </button>
         );
       })}
+
+      {/* Custom Ad-hoc Item Button */}
+      <button
+        onClick={onAddCustomItem}
+        className={`
+          flex flex-col items-center justify-center 
+          p-2 bg-indigo-50 border-2 border-dashed border-indigo-300 rounded-xl shadow-sm 
+          hover:shadow-md hover:bg-indigo-100 hover:border-indigo-400
+          transition-all duration-200 ease-in-out
+          h-32 font-semibold text-sm 
+          active:scale-[0.98] text-indigo-700
+        `}
+      >
+        <div className="w-10 h-10 flex items-center justify-center bg-indigo-200 rounded-full mb-2">
+          <PenTool className="w-5 h-5 text-indigo-700" />
+        </div>
+        <span className="text-sm font-bold text-center w-full px-1">Custom Item</span>
+        <span className="text-xs text-indigo-500 mt-1">Add New</span>
+      </button>
     </div>
   );
 };
@@ -108,7 +145,6 @@ export default function DropOff() {
   const [newCustomer, setNewCustomer] = useState({ first_name: '', last_name: '', phone: '', email: '', address: '' });
   const [clothingTypes, setClothingTypes] = useState<ClothingType[]>([]);
 
-  // Use ExtendedTicketItem to support instruction_charge
   const [items, setItems] = useState<ExtendedTicketItem[]>([]);
 
   const [specialInstructions, setSpecialInstructions] = useState('');
@@ -127,6 +163,10 @@ export default function DropOff() {
   const [plantHtmlState, setPlantHtmlState] = useState('');
   const [tagHtmlState, setTagHtmlState] = useState('');
 
+  // --- NEW STATE FOR CUSTOM ITEM MODAL (Now includes margin) ---
+  const [showCustomItemModal, setShowCustomItemModal] = useState(false);
+  const [customItemForm, setCustomItemForm] = useState({ name: '', price: '', margin: '' });
+
   const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => {
     if (typeof window !== 'undefined') {
       const savedMode = localStorage.getItem(VIEW_MODE_STORAGE_KEY);
@@ -134,9 +174,6 @@ export default function DropOff() {
     }
     return 'grid';
   });
-
-  const [additionalChargeInputIndex, setAdditionalChargeInputIndex] = useState<number | null>(null);
-  const [instructionChargeInputIndex, setInstructionChargeInputIndex] = useState<number | null>(null);
 
   const INSTRUCTION_OPTIONS = [
     { value: '', label: 'No Special Instructions' },
@@ -168,6 +205,18 @@ export default function DropOff() {
   useEffect(() => {
     fetchClothingTypes();
   }, []);
+
+  // --- HELPER: RESET STATE AFTER TICKET CREATION ---
+  const resetTicketState = () => {
+    setStep('customer');
+    setSelectedCustomer(null);
+    setItems([]);
+    setSpecialInstructions('');
+    setPaidAmount(0);
+    setCustomerSearch('');
+    setCustomers([]);
+    setPickupDate(new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().substring(0, 16));
+  };
 
   const saveViewMode = (mode: 'grid' | 'list') => {
     setViewMode(mode);
@@ -265,7 +314,8 @@ export default function DropOff() {
       plant_price: ct?.plant_price || 0,
       margin: ct?.margin || 0,
       item_total: (ct?.plant_price || 0) + (ct?.margin || 0),
-      alteration_behavior: 'none'
+      alteration_behavior: 'none',
+      is_custom: false
     }]);
     saveViewMode('list');
   };
@@ -287,8 +337,36 @@ export default function DropOff() {
       plant_price: ct.plant_price,
       margin: ct.margin,
       item_total: ct.plant_price + ct.margin,
-      alteration_behavior: 'none'
+      alteration_behavior: 'none',
+      is_custom: false
     }]);
+  };
+
+  // --- NEW FUNCTION: Handle Custom Item Addition (With Price AND Margin) ---
+  const handleAddCustomItem = () => {
+    const name = customItemForm.name.trim() || 'Custom Item';
+    const price = parseFloat(customItemForm.price) || 0;
+    const margin = parseFloat(customItemForm.margin) || 0;
+
+    setItems([...items, {
+      clothing_type_id: -1, // Special ID for Custom items
+      clothing_name: name,
+      quantity: 1,
+      starch_level: 'no_starch',
+      crease: 'no_crease',
+      additional_charge: 0,
+      instruction_charge: 0,
+      alterations: '',
+      item_instructions: '',
+      plant_price: price,
+      margin: margin,
+      item_total: price + margin, // Total includes margin
+      alteration_behavior: 'none',
+      is_custom: true
+    }]);
+
+    setCustomItemForm({ name: '', price: '', margin: '' });
+    setShowCustomItemModal(false);
   };
 
   const updateItem = (index: number, updates: any) => {
@@ -296,26 +374,37 @@ export default function DropOff() {
     const oldItem = newItems[index];
     newItems[index] = { ...oldItem, ...updates };
 
-    const clothingType = clothingTypes.find(ct => ct.id === newItems[index].clothing_type_id);
-
-    if (clothingType) {
-      let basePrice = clothingType.plant_price + clothingType.margin;
-      
-      if (newItems[index].alteration_behavior === 'alteration_only') {
-        basePrice = 0;
-      }
-
-      const quantity = newItems[index].quantity || 0;
-      const altCharge = newItems[index].additional_charge || 0;
-      const instCharge = newItems[index].instruction_charge || 0;
-
-      newItems[index].plant_price = clothingType.plant_price;
-      newItems[index].margin = clothingType.margin;
-      
-      newItems[index].item_total = (basePrice * quantity) + altCharge + instCharge;
-    } else if ('clothing_type_id' in updates) {
-      newItems[index].item_total = 0;
+    // Update Totals Logic
+    const item = newItems[index];
+    
+    // Check if it's a standard DB item
+    const clothingType = clothingTypes.find(ct => ct.id === item.clothing_type_id);
+    
+    // Determine Base Price
+    let basePrice = 0;
+    if (item.is_custom) {
+       // For custom items, base price is price + margin
+       basePrice = (item.plant_price || 0) + (item.margin || 0);
+    } else if (clothingType) {
+       // For DB items
+       basePrice = clothingType.plant_price + clothingType.margin;
     }
+
+    if (item.alteration_behavior === 'alteration_only') {
+      basePrice = 0;
+    }
+
+    const quantity = item.quantity || 0;
+    const altCharge = item.additional_charge || 0;
+    const instCharge = item.instruction_charge || 0;
+
+    // Persist standard prices for non-custom items to avoid accidental drift
+    if (clothingType && !item.is_custom) {
+       item.plant_price = clothingType.plant_price;
+       item.margin = clothingType.margin;
+    }
+    
+    item.item_total = (basePrice * quantity) + altCharge + instCharge;
 
     setItems(newItems);
   };
@@ -470,7 +559,15 @@ export default function DropOff() {
       const ticketData = {
         customer_id: Number(selectedCustomer!.id),
         items: itemsWithValidQuantity.map(item => ({
-          clothing_type_id: Number(item.clothing_type_id),
+          // IF custom, send null for clothing_type_id
+          clothing_type_id: item.is_custom || item.clothing_type_id === -1 ? null : Number(item.clothing_type_id),
+          
+          // Send name and price for custom items (and potentially mapped for others)
+          custom_name: item.is_custom ? item.clothing_name : null,
+          unit_price: Number(item.plant_price) || 0.0, 
+          // ✅ SEND MARGIN FOR CUSTOM ITEMS
+          margin: item.is_custom ? Number(item.margin) : 0.0,
+
           quantity: Number(item.quantity) || 0,
           starch_level: mapStarchLevel(item.starch_level),
           crease: item.crease === 'crease', 
@@ -516,6 +613,9 @@ export default function DropOff() {
       setShowPrintPreview(true);
       setModal({ isOpen: true, title: 'Ticket Created', type: 'success', message: 'Ticket created successfully.' });
       setLoading(false);
+      
+      // ✅ RESET STATE HERE to make it ready for the next customer
+      resetTicketState();
 
     } catch (error: any) {
       setLoading(false);
@@ -562,11 +662,11 @@ export default function DropOff() {
     setShowPrintPreview(false);
   }
 
-
   return (
     <div className="w-full max-w-full mx-auto px-4 py-4 min-h-screen bg-gray-100 font-sans">
       <div className="mb-8">
         <h2 className="text-2xl font-bold text-gray-900">Drop Off Clothes</h2>
+        
         <div className="flex items-center mt-2 space-x-4">
           <div className={`flex items-center ${step === 'customer' ? 'text-blue-600' : 'text-gray-400'}`}>
             <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${step === 'customer' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100'}`}>1</div>
@@ -577,8 +677,8 @@ export default function DropOff() {
             <span className="ml-2">Items</span>
           </div>
           <div className={`flex items-center ${step === 'review' ? 'text-blue-600' : 'text-gray-400'}`}>
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${step === 'review' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100'}`}>3</div>
-            <span className="ml-2">Review</span>
+             <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${step === 'review' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100'}`}>3</div>
+             <span className="ml-2">Review</span>
           </div>
         </div>
       </div>
@@ -586,6 +686,7 @@ export default function DropOff() {
       {step === 'customer' && (
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
           <h3 className="text-lg font-semibold mb-4">Select or Create Customer</h3>
+          
           {!showNewCustomerForm ? (
             <div>
               <div className="mb-4">
@@ -603,6 +704,7 @@ export default function DropOff() {
                   />
                 </div>
               </div>
+
               {customers.length > 0 && (
                 <div className="mb-4">
                   <h4 className="font-medium mb-2">Existing Customers</h4>
@@ -610,434 +712,381 @@ export default function DropOff() {
                     {customers.map((customer) => (
                       <div
                         key={customer.id}
-                        onClick={() => { setSelectedCustomer(customer); setStep('items'); }}
+                        onClick={() => {
+                          setSelectedCustomer(customer);
+                          setStep('items');
+                        }}
                         className="p-3 border border-gray-200 rounded-lg hover:bg-blue-50 cursor-pointer transition-colors"
                       >
-                        <div className="flex items-center">
-                          <User className="h-4 w-4 text-gray-400 mr-2" />
-                          <span className="font-medium">{customer.first_name} {customer.last_name}</span>
-                          <Mail className="h-4 w-4 text-gray-400 ml-4 mr-2" />
-                          <span className="text-gray-600">{customer.email}</span>
-                        </div>
+                         <div className="flex items-center">
+                            <User className="h-4 w-4 text-gray-400 mr-2" />
+                            <span className="font-medium">{customer.first_name} {customer.last_name}</span>
+                            <Mail className="h-4 w-4 text-gray-400 ml-4 mr-2" />
+                            <span className="text-gray-600">{customer.email}</span>
+                         </div>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
+
               {customerSearch.length >= 2 && customers.length === 0 && !loading && (
-                <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-                  <div className="flex items-center text-amber-800">
-                    <User className="h-5 w-5 mr-2" />
-                    <span className="font-medium">No existing customer found</span>
-                  </div>
-                  <p className="text-amber-700 text-sm mt-1">No customer found with "{customerSearch}". Please create a new customer below.</p>
-                </div>
+                 <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                    <div className="flex items-center text-amber-800">
+                        <User className="h-5 w-5 mr-2" />
+                        <span className="font-medium">No existing customer found</span>
+                    </div>
+                    <p className="text-amber-700 text-sm mt-1">No customer found with "{customerSearch}". Please create a new customer below.</p>
+                 </div>
               )}
-              <button onClick={() => setShowNewCustomerForm(true)} className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors">Create New Customer</button>
+
+              <button
+                onClick={() => setShowNewCustomerForm(true)}
+                className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Create New Customer
+              </button>
             </div>
           ) : (
             <div>
               <h4 className="font-medium mb-4">New Customer Information</h4>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-4">
-                <input type="text" placeholder="First Name *" value={newCustomer.first_name} onChange={(e) => setNewCustomer({ ...newCustomer, first_name: e.target.value })} className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
-                <input type="text" placeholder="Last Name" value={newCustomer.last_name} onChange={(e) => setNewCustomer({ ...newCustomer, last_name: e.target.value })} className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
-                <input type="tel" placeholder="Phone Number *" value={newCustomer.phone} onChange={(e) => setNewCustomer({ ...newCustomer, phone: e.target.value })} className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
-                <input type="email" placeholder="Email *" value={newCustomer.email} onChange={(e) => setNewCustomer({ ...newCustomer, email: e.target.value })} className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
-                <input type="text" placeholder="Address" value={newCustomer.address} onChange={(e) => setNewCustomer({ ...newCustomer, address: e.target.value })} className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent md:col-span-2 lg:col-span-4" />
+                <input
+                  type="text"
+                  placeholder="First Name *"
+                  value={newCustomer.first_name}
+                  onChange={(e) => setNewCustomer({ ...newCustomer, first_name: e.target.value })}
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                <input
+                  type="text"
+                  placeholder="Last Name"
+                  value={newCustomer.last_name}
+                  onChange={(e) => setNewCustomer({ ...newCustomer, last_name: e.target.value })}
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                 <input
+                  type="tel"
+                  placeholder="Phone Number *"
+                  value={newCustomer.phone}
+                  onChange={(e) => setNewCustomer({ ...newCustomer, phone: e.target.value })}
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                <input
+                  type="email"
+                  placeholder="Email *"
+                  value={newCustomer.email}
+                  onChange={(e) => setNewCustomer({ ...newCustomer, email: e.target.value })}
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                <input
+                  type="text"
+                  placeholder="Address"
+                  value={newCustomer.address}
+                  onChange={(e) => setNewCustomer({ ...newCustomer, address: e.target.value })}
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent md:col-span-2 lg:col-span-4"
+                />
               </div>
-              <div className="flex space-x-4">
-                <button onClick={() => setShowNewCustomerForm(false)} className="flex-1 bg-gray-200 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-300 transition-colors">Cancel</button>
-                <button onClick={createCustomer} disabled={!newCustomer.first_name || !newCustomer.phone || !newCustomer.email} className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">Create Customer</button>
+              <div className="flex justify-end gap-4">
+                 <button
+                    onClick={() => setShowNewCustomerForm(false)}
+                    className="px-4 py-2 text-gray-600 hover:text-gray-800"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={createCustomer}
+                    className="bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
+                    disabled={!newCustomer.first_name || !newCustomer.email || !newCustomer.phone}
+                  >
+                    Create Customer
+                  </button>
               </div>
             </div>
           )}
         </div>
       )}
 
-      {step === 'items' && selectedCustomer && (
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-lg font-semibold">Add Clothing Items</h3>
-            <div className="flex items-center space-x-2">
-              <span className="text-sm text-gray-600">Customer: <span className="font-medium">{selectedCustomer.first_name} {selectedCustomer.last_name}</span></span>
-              <button onClick={() => saveViewMode('grid')} className={`p-2 rounded-lg transition-colors ${viewMode === 'grid' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`} title="Grid View"><Grid className="h-5 w-5" /></button>
-              <button onClick={() => saveViewMode('list')} className={`p-2 rounded-lg transition-colors ${viewMode === 'list' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`} title="List View"><List className="h-5 w-5" /></button>
-            </div>
+      {step === 'items' && (
+        <div className="flex flex-col lg:flex-row gap-6">
+          <div className="lg:w-2/3">
+             <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-semibold">Select Clothing Items</h3>
+                <div className="flex space-x-2">
+                    <button onClick={() => saveViewMode('grid')} className={`p-2 rounded ${viewMode === 'grid' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'}`}><Grid size={20}/></button>
+                    <button onClick={() => saveViewMode('list')} className={`p-2 rounded ${viewMode === 'list' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'}`}><List size={20}/></button>
+                </div>
+             </div>
+
+             {/* CLOTHING GRID/LIST */}
+             {viewMode === 'grid' ? (
+                <ClothingGrid 
+                  clothingTypes={clothingTypes} 
+                  addItemByTypeId={addItemByTypeId} 
+                  onAddCustomItem={() => setShowCustomItemModal(true)} 
+                />
+             ) : (
+                <div className="space-y-2">
+                  <div className="p-4 bg-white rounded-lg shadow-sm border border-gray-200">
+                      <button onClick={addItem} className="flex items-center text-blue-600 hover:text-blue-700 font-medium mb-4">
+                         <Plus className="h-4 w-4 mr-2" /> Add Default Item
+                      </button>
+                      <button onClick={() => setShowCustomItemModal(true)} className="flex items-center text-indigo-600 hover:text-indigo-700 font-medium">
+                         <PenTool className="h-4 w-4 mr-2" /> Add Custom Item
+                      </button>
+                  </div>
+                  {/* List mode rendering of types could go here if requested, keeping it simple for now */}
+                </div>
+             )}
           </div>
 
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-            <div className="xl:col-span-1 lg:order-1">
-              {viewMode === 'grid' && clothingTypes.length > 0 && (
-                <div>
-                  <ClothingGrid clothingTypes={clothingTypes} addItemByTypeId={addItemByTypeId} />
-                  <div className="mt-4 text-center text-sm text-gray-500">Click on an item above to add it to the ticket list on the right.</div>
+          <div className="lg:w-1/3">
+             <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 sticky top-4">
+                <div className="flex justify-between items-center mb-4">
+                   <h3 className="text-lg font-semibold">Current Ticket</h3>
+                   <span className="text-sm text-gray-500">{items.length} Items</span>
                 </div>
-              )}
-              {viewMode === 'list' && (
-                <button onClick={addItem} className="w-full border-2 border-dashed border-gray-300 py-4 rounded-lg hover:border-blue-400 hover:bg-blue-50 transition-colors mb-4">
-                  <Plus className="h-5 w-5 mx-auto mb-1 text-gray-400" />
-                  <span className="text-gray-600">Add Clothing Item (Manual)</span>
-                </button>
-              )}
-            </div>
+                
+                {/* ITEMS LIST IN CART */}
+                <div className="space-y-4 mb-6 max-h-[500px] overflow-y-auto">
+                   {items.map((item, index) => (
+                      <div key={index} className={`p-4 border rounded-lg ${item.is_custom ? 'border-indigo-200 bg-indigo-50' : 'border-gray-200 bg-gray-50'}`}>
+                         <div className="flex justify-between items-start mb-2">
+                            <div>
+                               <h4 className="font-medium">{item.clothing_name}</h4>
+                               {item.is_custom && <span className="text-[10px] uppercase font-bold text-indigo-600 bg-indigo-100 px-1 rounded">Custom</span>}
+                            </div>
+                            <button onClick={() => removeItem(index)} className="text-red-500 hover:text-red-700"><Trash2 className="h-4 w-4" /></button>
+                         </div>
 
-            <div className="xl:col-span-1 lg:order-2">
-              <h4 className="text-md font-semibold mb-2">Current Ticket ({items.length} Items)</h4>
-              {items.length === 0 && <div className="p-4 text-center text-gray-500 border border-dashed rounded-lg">No items added yet. Select or add an item.</div>}
-
-              {items.length > 0 && (
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-4 p-2 mb-2 text-sm font-semibold text-gray-700 border-b border-gray-300">
-                  <div className="col-span-4">Item Type</div> {/* Extended from 3 to 4 */}
-                  <div className="col-span-1 text-center">Qty</div>
-                  <div className="col-span-3 text-center">Starch</div>
-                  <div className="col-span-2 text-center">Crease</div>
-                  {/* Removed separate Alt $ column from main row */}
-                  <div className="col-span-1 text-center">Total</div>
-                  <div className="col-span-1"></div>
-                </div>
-              )}
-
-              <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-2">
-                {items.map((item, index) => (
-                  <div key={index} className="grid grid-cols-1 md:grid-cols-12 gap-3 p-3 border border-gray-200 rounded-lg items-center bg-white">
-                    {/* Item Type (Extended Width) */}
-                    <div className="col-span-4 flex flex-col">
-                      <span className="font-medium text-sm truncate">{item.clothing_name}</span>
-                      <span className="text-xs text-gray-500">${((getClothingTypeById(item.clothing_type_id)?.total_price) || item.item_total).toFixed(2)}</span>
-                    </div>
-
-                    {/* Quantity */}
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      value={String(item.quantity || '')}
-                      onChange={(e) => {
-                        const digits = e.target.value.replace(/\D/g, '');
-                        const val = digits === '' ? 0 : parseInt(digits, 10);
-                        updateItem(index, { quantity: val });
-                      }}
-                      className="px-2 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 col-span-1 text-center"
-                      required
-                      placeholder="Qty"
-                    />
-
-                    {/* Starch Buttons */}
-                    <div className="flex space-x-1 col-span-3">
-                      {['no_starch', 'light', 'medium', 'heavy'].map(level => (
-                        <button
-                          key={level}
-                          onClick={() => updateItem(index, { starch_level: level as any })}
-                          title={level.replace('_', ' ')}
-                          className={`flex-1 text-xs py-2 rounded-md transition-colors font-medium border ${item.starch_level === level ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}
-                        >
-                          {level === 'no_starch' ? 'None' : (level === 'light' ? 'Lt' : level === 'medium' ? 'Med' : 'Hvy')}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Crease Toggle */}
-                    <button
-                      onClick={() => updateItem(index, { crease: item.crease === 'crease' ? 'no_crease' : 'crease' as any })}
-                      className={`w-full text-xs py-2 rounded-md transition-colors font-medium col-span-2 border ${item.crease === 'crease' ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}
-                    >
-                      {item.crease === 'crease' ? 'Crease' : 'No Crease'}
-                    </button>
-
-                    {/* Total */}
-                    <div className="px-1 py-2 bg-gray-50 rounded-lg text-center font-medium text-sm col-span-1">
-                      ${item.item_total.toFixed(2)}
-                    </div>
-
-                    {/* Trash */}
-                    <button onClick={() => removeItem(index)} className="px-2 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors col-span-1 flex justify-center">
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-
-                    {/* --- EXPANDED ROW FOR ALTERATIONS & INSTRUCTIONS --- */}
-                    <div className="col-span-1 md:col-span-12 mt-1">
-                      <div className="col-span-1 md:col-span-12 mt-2 bg-gray-50 p-2 rounded border border-gray-200 grid grid-cols-1 md:grid-cols-2 gap-3">
-
-                        {/* LEFT: Behavior Toggles & Alteration Dropdown + Price */}
-                        <div className="flex flex-col gap-2">
-                           <div className="flex items-center space-x-1">
-                            <button
-                                onClick={() => updateItem(index, { alteration_behavior: 'none' })}
-                                className={`flex-1 py-1.5 text-xs font-bold rounded border transition-colors ${item.alteration_behavior === 'none' || !item.alteration_behavior
-                                    ? 'bg-gray-600 text-white border-gray-600'
-                                    : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-100'
-                                }`}
-                            >
-                                Standard
-                            </button>
-
-                            <button
-                                onClick={() => updateItem(index, { alteration_behavior: 'alteration_only' })}
-                                className={`flex-1 py-1.5 text-xs font-bold rounded border transition-colors ${item.alteration_behavior === 'alteration_only'
-                                    ? 'bg-pink-600 text-white border-pink-600'
-                                    : 'bg-white text-pink-700 border-pink-200 hover:bg-pink-50'
-                                }`}
-                            >
-                                Alt Only
-                            </button>
-                          </div>
-                          
-                          <div className="flex gap-2">
-                              {/* Alteration Dropdown */}
-                              <div className="relative flex-grow">
-                                <select
-                                    value={item.alterations || ''}
-                                    onChange={(e) => updateItem(index, { alterations: e.target.value })}
-                                    className={`w-full pl-3 pr-8 py-2 text-sm border rounded-md appearance-none font-medium transition-colors focus:ring-1 focus:ring-purple-500 focus:outline-none ${item.alterations ? 'bg-purple-50 border-purple-300 text-purple-900' : 'bg-white border-gray-300 text-gray-500'}`}
-                                >
-                                    <option value="">No Alteration...</option>
-                                    {ALTERATION_OPTIONS.map((opt) => (
-                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                    ))}
-                                </select>
-                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-500">
-                                    <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
-                                    <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
-                                    </svg>
-                                </div>
-                              </div>
-
-                              {/* Alteration Price Input (Moved here) */}
-                              <div className="w-20 relative">
-                                {additionalChargeInputIndex === index ? (
-                                    <input
-                                    type="text"
-                                    inputMode="decimal"
-                                    value={item.additional_charge === 0 ? '' : String(item.additional_charge)}
-                                    onChange={(e) => {
-                                        const cleaned = e.target.value.replace(/[^0-9.]/g, '');
-                                        updateItem(index, { additional_charge: parseFloat(cleaned) || 0 });
-                                    }}
-                                    onBlur={() => {
-                                        if (!item.additional_charge || item.additional_charge === 0) {
-                                        setAdditionalChargeInputIndex(null);
-                                        }
-                                    }}
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                        setAdditionalChargeInputIndex(null);
-                                        updateItem(index, { additional_charge: parseFloat((e.target as HTMLInputElement).value) || 0 });
-                                        }
-                                    }}
-                                    placeholder="Amt"
-                                    autoFocus
-                                    className="w-full px-1 py-2 border border-purple-300 rounded-md text-sm text-center"
-                                    />
-                                ) : (
-                                    <button
-                                    onClick={() => setAdditionalChargeInputIndex(index)}
-                                    className={`w-full h-full text-xs rounded transition-colors font-medium truncate flex items-center justify-center ${item.additional_charge && item.additional_charge > 0 ? 'bg-purple-600 text-white shadow-md' : 'bg-white text-gray-400 border border-gray-300 hover:bg-gray-50'}`}
-                                    >
-                                    {item.additional_charge && item.additional_charge > 0 ? `$${item.additional_charge.toFixed(2)}` : 'Alt $'}
-                                    </button>
-                                )}
-                              </div>
-                           </div>
-                        </div>
-
-                        {/* RIGHT: Instructions & Instruction Charge */}
-                        <div className="flex flex-col gap-2">
-                           {/* Label to align with toggles on the left */}
-                           <div className="h-[34px] flex items-center text-xs font-bold text-gray-500 uppercase tracking-wider">
-                              Special Instructions
-                           </div>
-
-                           <div className="flex gap-2">
-                               {/* Instruction Dropdown */}
-                               <div className="relative flex-grow">
-                                    <select
-                                        value={item.item_instructions || ''}
-                                        onChange={(e) => updateItem(index, { item_instructions: e.target.value })}
-                                        className={`w-full px-3 py-2 text-sm border rounded-md focus:ring-1 focus:ring-blue-500 appearance-none cursor-pointer ${item.item_instructions ? 'bg-blue-100 border-blue-300 text-blue-800 font-medium' : 'bg-white border-gray-300 text-gray-500'}`}
-                                    >
-                                        {INSTRUCTION_OPTIONS.map((opt) => (
-                                        <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                        ))}
-                                    </select>
-                                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-500">
-                                        <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" /></svg>
-                                    </div>
+                         <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div>
+                               <label className="block text-gray-500 text-xs mb-1">Quantity</label>
+                               <input 
+                                  type="number" 
+                                  min="1" 
+                                  value={item.quantity} 
+                                  onChange={(e) => updateItem(index, { quantity: parseInt(e.target.value) || 0 })}
+                                  className="w-full px-2 py-1 border rounded"
+                               />
+                            </div>
+                            <div>
+                               <label className="block text-gray-500 text-xs mb-1">Starch</label>
+                               <select 
+                                  value={item.starch_level} 
+                                  onChange={(e) => updateItem(index, { starch_level: e.target.value })}
+                                  className="w-full px-2 py-1 border rounded"
+                               >
+                                  <option value="no_starch">None</option>
+                                  <option value="light">Light</option>
+                                  <option value="medium">Medium</option>
+                                  <option value="heavy">Heavy</option>
+                               </select>
+                            </div>
+                         </div>
+                         
+                         <div className="mt-2">
+                             <label className="flex items-center space-x-2">
+                                <input 
+                                  type="checkbox" 
+                                  checked={item.crease === 'crease'} 
+                                  onChange={(e) => updateItem(index, { crease: e.target.checked ? 'crease' : 'no_crease' })}
+                                  className="rounded text-blue-600"
+                                />
+                                <span className="text-sm">Crease</span>
+                             </label>
+                         </div>
+                         
+                         {/* Additional Options Collapsible or Always Visible */}
+                         <div className="mt-3 space-y-2 border-t pt-2">
+                            <div className="grid grid-cols-2 gap-2">
+                               <div>
+                                  <label className="block text-gray-500 text-xs mb-1">Alt. Charge ($)</label>
+                                  <input 
+                                    type="number" 
+                                    step="0.01"
+                                    value={item.additional_charge || ''}
+                                    placeholder="0.00"
+                                    onChange={(e) => updateItem(index, { additional_charge: parseFloat(e.target.value) || 0 })}
+                                    className="w-full px-2 py-1 border rounded text-xs"
+                                  />
                                </div>
-
-                               {/* Instruction Charge Input */}
-                               <div className="w-20 relative">
-                                    {instructionChargeInputIndex === index ? (
-                                        <input
-                                        type="text"
-                                        inputMode="decimal"
-                                        value={item.instruction_charge === 0 ? '' : String(item.instruction_charge)}
-                                        onChange={(e) => {
-                                            const cleaned = e.target.value.replace(/[^0-9.]/g, '');
-                                            updateItem(index, { instruction_charge: parseFloat(cleaned) || 0 });
-                                        }}
-                                        onBlur={() => {
-                                            if (!item.instruction_charge || item.instruction_charge === 0) {
-                                            setInstructionChargeInputIndex(null);
-                                            }
-                                        }}
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter') {
-                                            setInstructionChargeInputIndex(null);
-                                            updateItem(index, { instruction_charge: parseFloat((e.target as HTMLInputElement).value) || 0 });
-                                            }
-                                        }}
-                                        placeholder="Cost"
-                                        autoFocus
-                                        className="w-full px-1 py-2 border border-blue-300 rounded-md text-sm text-center"
-                                        />
-                                    ) : (
-                                        <button
-                                        onClick={() => setInstructionChargeInputIndex(index)}
-                                        className={`w-full h-full text-xs rounded transition-colors font-medium truncate flex items-center justify-center ${item.instruction_charge && item.instruction_charge > 0 ? 'bg-blue-500 text-white shadow-md' : 'bg-white text-gray-400 border border-gray-300 hover:bg-gray-50'}`}
-                                        >
-                                        {item.instruction_charge && item.instruction_charge > 0 ? `$${item.instruction_charge.toFixed(2)}` : 'Inst $'}
-                                        </button>
-                                    )}
+                               <div>
+                                  <label className="block text-gray-500 text-xs mb-1">Inst. Charge ($)</label>
+                                  <input 
+                                    type="number" 
+                                    step="0.01"
+                                    value={item.instruction_charge || ''}
+                                    placeholder="0.00"
+                                    onChange={(e) => updateItem(index, { instruction_charge: parseFloat(e.target.value) || 0 })}
+                                    className="w-full px-2 py-1 border rounded text-xs"
+                                  />
                                </div>
-                           </div>
-                        </div>
+                            </div>
+                            
+                            <div>
+                               <label className="block text-gray-500 text-xs mb-1">Alterations</label>
+                               <select 
+                                  value={item.alterations || ''} 
+                                  onChange={(e) => updateItem(index, { alterations: e.target.value })}
+                                  className="w-full px-2 py-1 border rounded text-xs"
+                               >
+                                  {ALTERATION_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                               </select>
+                            </div>
+                            
+                            <div>
+                               <label className="block text-gray-500 text-xs mb-1">Instructions</label>
+                               <select 
+                                  value={item.item_instructions || ''} 
+                                  onChange={(e) => updateItem(index, { item_instructions: e.target.value })}
+                                  className="w-full px-2 py-1 border rounded text-xs"
+                               >
+                                  {INSTRUCTION_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                               </select>
+                            </div>
 
+                            <div className="flex justify-between items-center pt-2 font-medium">
+                               <span className="text-xs text-gray-500">Item Total:</span>
+                               <span>${item.item_total.toFixed(2)}</span>
+                            </div>
+                         </div>
                       </div>
-                    </div>
-                    {/* ------------------------------------------- */}
-
-                  </div>
-                ))}
-              </div>
-
-              {items.length > 0 && (
-                <div className="flex justify-end mt-4">
-                  <div className="w-full max-w-xs p-4 bg-gray-50 rounded-lg shadow-inner border border-gray-200">
-                    <div className="flex justify-between mb-1">
-                      <div className="text-sm text-gray-700">SubTotal:</div>
-                      <div className="text-sm font-medium text-gray-800">${totalAmount.toFixed(2)}</div>
-                    </div>
-                    <div className="flex justify-between mb-1">
-                      <div className="text-sm text-gray-700">Env Charge (4.7%):</div>
-                      <div className="text-sm font-medium text-gray-800">${envCharge.toFixed(2)}</div>
-                    </div>
-                    <div className="flex justify-between border-b pb-2 mb-2">
-                      <div className="text-sm text-gray-700">Tax (8.25%):</div>
-                      <div className="text-sm font-medium text-gray-800">${tax.toFixed(2)}</div>
-                    </div>
-                    <div className="flex justify-between">
-                      <div className="text-xl font-bold text-blue-600">TOTAL:</div>
-                      <div className="text-xl font-bold text-blue-600">${finalTotal.toFixed(2)}</div>
-                    </div>
-                  </div>
+                   ))}
+                   
+                   {items.length === 0 && (
+                      <div className="text-center py-8 text-gray-500">
+                         No items added yet
+                      </div>
+                   )}
                 </div>
-              )}
-            </div>
+
+                <div className="border-t pt-4 space-y-2">
+                   <div className="flex justify-between"><span>Subtotal:</span><span>${totalAmount.toFixed(2)}</span></div>
+                   <div className="flex justify-between text-gray-500 text-sm"><span>Env. Charge (4.7%):</span><span>${envCharge.toFixed(2)}</span></div>
+                   <div className="flex justify-between text-gray-500 text-sm"><span>Tax (8.25%):</span><span>${tax.toFixed(2)}</span></div>
+                   <div className="flex justify-between font-bold text-lg pt-2 border-t"><span>Total:</span><span>${finalTotal.toFixed(2)}</span></div>
+                </div>
+
+                <div className="mt-6 flex gap-3">
+                   <button onClick={() => setStep('customer')} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Back</button>
+                   <button onClick={() => setStep('review')} className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700" disabled={items.length === 0}>Review</button>
+                </div>
+             </div>
           </div>
+        </div>
+      )}
 
-          <div className="mt-6">
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Special Instructions</label>
-              <textarea value={specialInstructions} onChange={(e) => setSpecialInstructions(e.target.value)} rows={3} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="Any special handling instructions..." />
-            </div>
+      {step === 'review' && (
+        <div className="max-w-2xl mx-auto bg-white p-8 rounded-lg shadow-sm border border-gray-200">
+           <h3 className="text-xl font-bold mb-6">Review Ticket</h3>
+           
+           <div className="mb-6 space-y-2">
+              <div className="flex justify-between"><span className="text-gray-600">Customer:</span><span className="font-medium">{selectedCustomer?.first_name} {selectedCustomer?.last_name}</span></div>
+              <div className="flex justify-between"><span className="text-gray-600">Phone:</span><span className="font-medium">{selectedCustomer?.phone}</span></div>
+              <div className="flex justify-between"><span className="text-gray-600">Pickup Date:</span><input type="datetime-local" value={pickupDate} onChange={(e) => setPickupDate(e.target.value)} className="border rounded px-2 py-1" /></div>
+           </div>
+           
+           <div className="mb-6">
+              <label className="block text-gray-700 font-medium mb-2">Special Instructions (Ticket Level)</label>
+              <textarea 
+                value={specialInstructions} 
+                onChange={(e) => setSpecialInstructions(e.target.value)} 
+                className="w-full px-3 py-2 border rounded-lg h-24"
+                placeholder="Any general notes for this order..."
+              />
+           </div>
 
-            <div className="flex justify-between items-center">
-              <button onClick={() => setStep('customer')} className="bg-gray-200 text-gray-700 py-2 px-6 rounded-lg hover:bg-gray-300 transition-colors">Back</button>
-              <button
-                onClick={() => {
-                  const isValid = items.every(item => item.quantity > 0);
-                  if (isValid) {
-                    setStep('review');
-                  } else {
-                    setModal({ isOpen: true, title: 'Required Fields Missing', message: 'Please ensure all items have a quantity greater than zero.', type: 'error' });
-                  }
-                }}
-                disabled={items.length === 0 || loading}
-                className="bg-blue-600 text-white py-2 px-6 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                Review Order
+           <div className="mb-6">
+               <label className="block text-gray-700 font-medium mb-2">Amount Paid Today ($)</label>
+               <input 
+                 type="number" 
+                 step="0.01"
+                 value={paidAmount} 
+                 onChange={(e) => setPaidAmount(parseFloat(e.target.value))} 
+                 className="w-full px-3 py-2 border rounded-lg font-mono"
+               />
+           </div>
+
+           <div className="flex gap-4">
+              <button onClick={() => setStep('items')} className="flex-1 px-4 py-3 border border-gray-300 rounded-lg font-medium hover:bg-gray-50">Back to Items</button>
+              <button onClick={createTicket} disabled={loading} className="flex-1 px-4 py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 flex justify-center items-center">
+                 {loading ? <Loader2 className="animate-spin mr-2" /> : 'Create Ticket'}
               </button>
-            </div>
-          </div>
+           </div>
         </div>
       )}
 
-      {step === 'review' && selectedCustomer && (
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <h3 className="text-lg font-semibold mb-4">Review Order</h3>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-            <div className="p-4 bg-gray-50 rounded-lg">
-              <h4 className="font-medium mb-2">Customer Information</h4>
-              <p><strong>Name:</strong> {selectedCustomer.first_name} {selectedCustomer.last_name}</p>
-              <p><strong>Phone:</strong> {selectedCustomer.phone}</p>
-              {selectedCustomer.email && <p><strong>Email:</strong> {selectedCustomer.email}</p>}
-            </div>
-            <div className="p-4 bg-gray-50 rounded-lg">
-              <label htmlFor="pickup-date" className="block font-medium mb-2">**Scheduled Pickup Date & Time**</label>
-              <input type="datetime-local" id="pickup-date" value={pickupDate} onChange={(e) => setPickupDate(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white" required />
-            </div>
-          </div>
+      {/* MODAL FOR ALERTS */}
+      <Modal 
+        isOpen={modal.isOpen} 
+        onClose={() => setModal({ ...modal, isOpen: false })} 
+        title={modal.title}
+      >
+        {modal.type === 'success' ? <div className="text-green-600 font-medium">{modal.message}</div> : <div className="text-red-600">{modal.message}</div>}
+      </Modal>
 
-          <div className="mb-6">
-            <h4 className="font-medium mb-2">Items</h4>
-            <div className="space-y-2">
-              {items.map((item, index) => {
-                const clothingType = getClothingTypeById(item.clothing_type_id);
-                return (
-                  <div key={index} className="flex justify-between items-center p-3 border border-gray-200 rounded-lg">
-                    <div>
-                      <span className="font-medium">{clothingType?.name || item.clothing_name}</span>
-                      <span className="text-gray-600 ml-2">×{item.quantity}</span>
-                      <div className="text-sm text-gray-500">
-                        {item.starch_level !== 'no_starch' && item.starch_level !== 'none' && `${item.starch_level} starch`}
-                        {item.starch_level !== 'no_starch' && item.crease === 'crease' && item.starch_level !== 'none' && ', '}
-                        {item.crease === 'crease' && 'with crease'}
-                        {/* Display both charges if present */}
-                        {(item.additional_charge || 0) > 0 && `, Alt: $${item.additional_charge?.toFixed(2)}`}
-                        {(item.instruction_charge || 0) > 0 && `, Inst: $${item.instruction_charge?.toFixed(2)}`}
-                        
-                        {item.alterations &&
-                          <div className="text-purple-600 italic mt-1">Alterations: {item.alterations}</div>
-                        }
-                        {item.item_instructions &&
-                          <div className="text-blue-600 italic mt-1">Instr: {item.item_instructions}</div>
-                        }
-                      </div>
-                    </div>
-                    <span className="font-medium">${item.item_total.toFixed(2)}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {specialInstructions && (
-            <div className="mb-6 p-4 bg-amber-50 rounded-lg">
-              <h4 className="font-medium mb-2">Special Instructions</h4>
-              <p className="text-gray-700">{specialInstructions}</p>
-            </div>
-          )}
-
-          <div className="flex justify-between items-center pt-4 border-t border-gray-200">
-            <button onClick={() => setStep('items')} className="bg-gray-200 text-gray-700 py-2 px-6 rounded-lg hover:bg-gray-300 transition-colors">Back to Items</button>
+      {/* NEW: CUSTOM ITEM MODAL - WITH MARGIN */}
+      <Modal
+        isOpen={showCustomItemModal}
+        onClose={() => setShowCustomItemModal(false)}
+        title="Add Custom Item"
+      >
+        <div className="space-y-4">
+            <p className="text-sm text-gray-500">
+                Enter details for an item not in the database.
+            </p>
             <div>
-              <div className="text-sm text-gray-600 mb-1">SubTotal: ${totalAmount.toFixed(2)}</div>
-              <div className="text-sm text-gray-600 mb-1">Env Charge (4.7%): ${envCharge.toFixed(2)}</div>
-              <div className="text-sm text-gray-600 mb-1">Tax (8.25%): ${tax.toFixed(2)}</div>
-              <div className="text-2xl font-bold text-blue-600 mb-2">Total: ${finalTotal.toFixed(2)}</div>
-              <div className="text-sm text-gray-600 mb-1">
-                <label className="block mb-1">Paid Amount:</label>
-                <input type="number" min="0" step="0.01" max={finalTotal} value={paidAmount} onChange={(e) => setPaidAmount(Number(e.target.value))} className="w-32 px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500" />
-              </div>
-              <div className="text-lg font-semibold text-gray-800">Balance: ${(finalTotal - paidAmount).toFixed(2)}</div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Item Name</label>
+                <input 
+                    type="text" 
+                    className="w-full border rounded-lg p-2" 
+                    placeholder="e.g., Vintage Scarf"
+                    value={customItemForm.name}
+                    onChange={(e) => setCustomItemForm({...customItemForm, name: e.target.value})}
+                    autoFocus
+                />
             </div>
-            <button onClick={createTicket} disabled={loading} className="bg-green-600 text-white py-2 px-6 rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">{loading ? 'Generating...' : 'Generate Ticket'}</button>
-          </div>
-        </div>
-      )}
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Base Price ($)</label>
+                    <input 
+                        type="number" 
+                        step="0.01"
+                        className="w-full border rounded-lg p-2" 
+                        placeholder="0.00"
+                        value={customItemForm.price}
+                        onChange={(e) => setCustomItemForm({...customItemForm, price: e.target.value})}
+                    />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Margin ($)</label>
+                    <input 
+                        type="number" 
+                        step="0.01"
+                        className="w-full border rounded-lg p-2" 
+                        placeholder="0.00"
+                        value={customItemForm.margin}
+                        onChange={(e) => setCustomItemForm({...customItemForm, margin: e.target.value})}
+                    />
+                </div>
+            </div>
+            
+            <div className="text-right text-sm font-semibold text-gray-700 mt-2">
+                Total: ${((parseFloat(customItemForm.price) || 0) + (parseFloat(customItemForm.margin) || 0)).toFixed(2)}
+            </div>
 
-      <Modal isOpen={modal.isOpen} onClose={() => { setModal({ isOpen: false, message: '', title: '', type: 'error' }); if (modal.type === 'success') { setSelectedCustomer(null); setItems([]); setSpecialInstructions(''); setPaidAmount(0); setStep('customer'); setCustomerSearch(''); setCustomers([]); setPickupDate(new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().substring(0, 16)); } }} title={modal.title}>
-        {modal.type === 'success' ? <div dangerouslySetInnerHTML={{ __html: plantHtmlState || modal.message }} /> : <div>{modal.message}</div>}
+            <div className="flex justify-end gap-2 pt-2">
+                <button onClick={() => setShowCustomItemModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
+                <button 
+                    onClick={handleAddCustomItem}
+                    disabled={!customItemForm.name || !customItemForm.price} 
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+                >
+                    Add Item
+                </button>
+            </div>
+        </div>
       </Modal>
 
       <PrintPreviewModal 
@@ -1063,7 +1112,7 @@ export default function DropOff() {
               <Printer size={18} /> Print All
             </button>
           </>
-        )} 
+        )}
       />
     </div>
   );

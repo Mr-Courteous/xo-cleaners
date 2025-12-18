@@ -123,8 +123,9 @@ async def login_organization_owner(
     """
     email = form_data.username.strip().lower()
 
+    # 1. UPDATE: Added 'is_active' to the SELECT statement
     query = text("""
-        SELECT id, name, owner_email, owner_password_hash, role
+        SELECT id, name, owner_email, owner_password_hash, role, is_active
         FROM organizations
         WHERE LOWER(owner_email) = :email
         LIMIT 1
@@ -147,16 +148,24 @@ async def login_organization_owner(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # 1. ENCODE data inside the token
+    # 2. NEW CHECK: Check if the store is active
+    # We do this AFTER verifying the password to ensure only the actual owner
+    # sees the specific "Deactivated" message (security best practice).
+    if not org["is_active"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your store has been deactivated. Please contact platform administration."
+        )
+
+    # 3. ENCODE data inside the token
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     user_role = org.get("role", "STORE_OWNER").upper()
+    
     token_data = {
         "sub": org["owner_email"],
         "organization_id": org["id"],
         "organization_name": org["name"],
         "role": user_role,
-        # Add any other data you want *in the token* here
-        # "owner_email": org["owner_email"], 
     }
     
     access_token = create_access_token(
@@ -164,14 +173,13 @@ async def login_organization_owner(
         expires_delta=access_token_expires,
     )
 
-    # 2. RETURN data in the "non-coded" JSON response
+    # 4. RETURN data
     return TokenResponse(
         access_token=access_token,
         user_role=user_role,
         organization_id=org["id"],
         organization_name=org["name"],
     )
-
 
 # =======================
 # 1. WORKER / STAFF LOGIN (org_owner, staff)

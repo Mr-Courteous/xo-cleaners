@@ -165,6 +165,9 @@ class TicketItemCreate(BaseModel):
     alterations: Optional[str] = None  # <--- ADD THIS
     item_instructions: Optional[str] = None  # <--- ADD THIS
     instruction_charge: Optional[float] = 0.0 # New field for Instruction Charge
+    clothing_type_id: Optional[int] = None # ✅ Made Optional
+    custom_name: Optional[str] = None      # ✅ New Field
+    unit_price: Optional[float] = None     # ✅ New Field (for custom price)
 
 
     
@@ -173,7 +176,13 @@ class TicketItemResponse(BaseModel):
     """Schema for individual items inside a ticket response."""
     id: int
     ticket_id: int
-    clothing_type_id: int
+    
+    # ✅ FIX 1: Changed to Optional[int] because Custom Items will be None
+    clothing_type_id: Optional[int] = None
+    
+    # ✅ FIX 2: Added to support Ad-hoc item names
+    custom_name: Optional[str] = None 
+
     clothing_name: str
     quantity: int
     
@@ -193,12 +202,10 @@ class TicketItemResponse(BaseModel):
     additional_charge: float = 0.0
     pieces: int = 1
     
-    
-    
     instruction_charge: float = 0.0  # Instruction Charge
+    
     class Config:
         from_attributes = True
-
 
 class TicketCreate(BaseModel):
     customer_id: int
