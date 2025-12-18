@@ -168,6 +168,7 @@ class TicketItemCreate(BaseModel):
     clothing_type_id: Optional[int] = None # ✅ Made Optional
     custom_name: Optional[str] = None      # ✅ New Field
     unit_price: Optional[float] = None     # ✅ New Field (for custom price)
+    starch_charge: float = 0.0  # ✅ Receive Calculated Charge
 
 
     
@@ -203,6 +204,7 @@ class TicketItemResponse(BaseModel):
     pieces: int = 1
     
     instruction_charge: float = 0.0  # Instruction Charge
+    starch_charge: float = 0.0 # ✅ Return it
     
     class Config:
         from_attributes = True
@@ -277,6 +279,7 @@ class TicketItemCreate(BaseModel):
     alterations: Optional[str] = None  # <--- ADD THIS
     item_instructions: Optional[str] = None  # <--- ADD THIS
     instruction_charge: Optional[float] = 0.0 # New field for Instruction Charge
+    starch_charge: float = 0.0  # ✅ Receive Calculated Charge
     
     
     

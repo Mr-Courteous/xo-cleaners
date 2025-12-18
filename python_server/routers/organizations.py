@@ -36,6 +36,16 @@ class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None
     role: Optional[str] = None
     
+class OrganizationSettingsResponse(BaseModel):
+    # ... existing fields ...
+    receipt_header: Optional[str] = None
+    receipt_footer: Optional[str] = None
+    
+    # ✅ Starch Pricing Fields
+    starch_price_light: float = 0.0
+    starch_price_medium: float = 0.0
+    starch_price_heavy: float = 0.0
+    starch_price_extra_heavy: float = 0.0
     
 router = APIRouter()
 
@@ -395,3 +405,35 @@ async def reactivate_user(
         db.rollback()
         print("Error reactivating user:", e)
         raise HTTPException(status_code=500, detail="Failed to reactivate user.")
+    
+    
+@router.get("/settings", response_model=OrganizationSettingsResponse)
+def get_organization_settings(
+    db: Session = Depends(get_db),
+    payload: Dict[str, Any] = Depends(get_current_user_payload)
+):
+    org_id = payload.get("organization_id")
+    
+    query = text("""
+        SELECT 
+            receipt_header, receipt_footer,
+            COALESCE(starch_price_light, 0.00) as starch_price_light,
+            COALESCE(starch_price_medium, 0.00) as starch_price_medium,
+            COALESCE(starch_price_heavy, 0.00) as starch_price_heavy,
+            COALESCE(starch_price_extra_heavy, 0.00) as starch_price_extra_heavy
+        FROM organization_settings 
+        WHERE organization_id = :org_id
+    """)
+    
+    settings = db.execute(query, {"org_id": org_id}).fetchone()
+    
+    # Return defaults if settings haven't been created yet
+    if not settings:
+        return {
+            "starch_price_light": 0.0,
+            "starch_price_medium": 0.0,
+            "starch_price_heavy": 0.0,
+            "starch_price_extra_heavy": 0.0
+        }
+        
+    return dict(settings._mapping)

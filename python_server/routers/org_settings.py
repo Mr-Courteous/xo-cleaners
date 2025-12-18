@@ -8,10 +8,9 @@ from utils.common import get_db, get_current_user_payload
 # =======================
 # Role Definitions
 # =======================
-# We define these here to ensure they exist without relying on utils.common
 ORG_OWNER_ROLE = "org_owner"
 STORE_ADMIN_ROLE = "store_admin"
-STORE_OWNER_ROLE = "STORE_OWNER"  # Case-sensitive check depending on how you stored it
+STORE_OWNER_ROLE = "STORE_OWNER"
 
 # Allowed roles for changing settings
 ALLOWED_ADMIN_ROLES = [ORG_OWNER_ROLE, STORE_ADMIN_ROLE, STORE_OWNER_ROLE]
@@ -34,7 +33,7 @@ class BranchCreate(BaseModel):
     address: str
     phone: str
     timezone: str = "UTC"
-    location_type: str  # 'Plant' or 'Drop-off'
+    location_type: str
     is_plant: bool = False
 
 class TagConfigUpdate(BaseModel):
@@ -45,6 +44,12 @@ class TagConfigUpdate(BaseModel):
 class PaymentMethodUpdate(BaseModel):
     branch_id: int
     methods: Dict[str, bool]
+
+class StarchPriceUpdate(BaseModel):
+    starch_price_light: Optional[float] = None
+    starch_price_medium: Optional[float] = None
+    starch_price_heavy: Optional[float] = None
+    starch_price_extra_heavy: Optional[float] = None
 
 # =======================
 # Helper: Permission Check
@@ -60,16 +65,18 @@ def check_admin_permissions(role: str):
         )
 
 # =======================
-# 1. Branding Endpoints
+# 1. Branding / General Settings
 # =======================
 
-@router.get("/branding")
-async def get_branding(
+# ✅ CHANGED: Route is now "/" so frontend calls to /api/settings work
+@router.get("/")
+async def get_organization_settings(
     db: Session = Depends(get_db),
     payload: Dict[str, Any] = Depends(get_current_user_payload)
 ):
     org_id = payload.get("organization_id")
     
+    # This returns all settings, including starch prices
     query = text("SELECT * FROM organization_settings WHERE organization_id = :org_id")
     result = db.execute(query, {"org_id": org_id}).fetchone()
     
@@ -176,7 +183,6 @@ async def update_payment_methods(
     
     check_admin_permissions(role)
     
-    # Security Check: Verify branch ownership
     check_branch = db.execute(text("SELECT id FROM branches WHERE id=:bid AND organization_id=:oid"), 
                               {"bid": config.branch_id, "oid": org_id}).fetchone()
     if not check_branch:
@@ -234,3 +240,75 @@ async def update_tag_config(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+
+# =======================
+# 5. Starch Pricing
+# =======================
+
+@router.put("/starch-prices")
+async def update_starch_prices(
+    data: StarchPriceUpdate,
+    db: Session = Depends(get_db),
+    payload: Dict[str, Any] = Depends(get_current_user_payload)
+):
+    org_id = payload.get("organization_id")
+    role = payload.get("role")
+    
+    # ✅ CHANGED: Use the standard permission helper
+    check_admin_permissions(role)
+
+    # Dynamic query to update only provided fields
+    update_fields = {}
+    if data.starch_price_light is not None:
+        update_fields["light"] = data.starch_price_light
+    if data.starch_price_medium is not None:
+        update_fields["medium"] = data.starch_price_medium
+    if data.starch_price_heavy is not None:
+        update_fields["heavy"] = data.starch_price_heavy
+    if data.starch_price_extra_heavy is not None:
+        update_fields["extra"] = data.starch_price_extra_heavy
+
+    if not update_fields:
+        raise HTTPException(status_code=400, detail="No fields provided to update")
+
+    set_clauses = []
+    params = {"org_id": org_id}
+    
+    if "light" in update_fields:
+        set_clauses.append("starch_price_light = :light")
+        params["light"] = update_fields["light"]
+        
+    if "medium" in update_fields:
+        set_clauses.append("starch_price_medium = :medium")
+        params["medium"] = update_fields["medium"]
+        
+    if "heavy" in update_fields:
+        set_clauses.append("starch_price_heavy = :heavy")
+        params["heavy"] = update_fields["heavy"]
+        
+    if "extra" in update_fields:
+        set_clauses.append("starch_price_extra_heavy = :extra")
+        params["extra"] = update_fields["extra"]
+
+    # Always update the 'updated_at' timestamp
+    set_clauses.append("updated_at = NOW()")
+
+    stmt = text(f"""
+        UPDATE organization_settings
+        SET {", ".join(set_clauses)}
+        WHERE organization_id = :org_id
+    """)
+
+    try:
+        db.execute(stmt, params)
+        db.commit()
+        
+        return {"message": "Starch prices updated successfully"}
+
+    except Exception as e:
+        db.rollback()
+        print(f"Error updating starch prices: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update starch prices."
+        )

@@ -242,6 +242,7 @@ async def register_organization_and_admin(
     - The store owner
     - 500 racks
     - 2 default clothing types
+    - Default organization settings (Branding & Starch Prices)
     """
     owner_email = data.admin_email.strip().lower()
 
@@ -304,15 +305,12 @@ async def register_organization_and_admin(
             racks
         )
 
-        # ✅ 6️⃣ Insert default clothing types (UPDATED PATHS)
-        # These URLs must match the mount path in index.py (/static/images)
-        # AND the actual filenames in your folder.
+        # ✅ 6️⃣ Insert default clothing types
         clothing_types = [
             {
                 "name": "Shirt",
                 "plant_price": 1000.0,
                 "margin": 200.0,
-                # 👇 Ensure you have a file named 'shirt.jpg' or change this string
                 "image_url": "/static/images/shirt.jpg", 
                 "organization_id": organization_id
             },
@@ -320,7 +318,6 @@ async def register_organization_and_admin(
                 "name": "Trousers",
                 "plant_price": 1200.0,
                 "margin": 300.0,
-                # 👇 Ensure you have a file named 'trousers.jpg' or change this string
                 "image_url": "/static/images/trousers.jpg",
                 "organization_id": organization_id
             }
@@ -335,7 +332,36 @@ async def register_organization_and_admin(
             clothing_types
         )
 
-        # ✅ 7️⃣ Commit all
+        # ✅ 7️⃣ Insert Default Organization Settings (Branding & Starch)
+        # We insert defaults so the user doesn't start with empty settings
+        db.execute(text("""
+            INSERT INTO organization_settings (
+                organization_id,
+                primary_color,
+                secondary_color,
+                receipt_header,
+                receipt_footer,
+                starch_price_light,
+                starch_price_medium,
+                starch_price_heavy,
+                starch_price_extra_heavy,
+                updated_at
+            )
+            VALUES (
+                :org_id,
+                '#000000',              -- Default Primary
+                '#FFFFFF',              -- Default Secondary
+                'Welcome to our Store', -- Default Header
+                'Thank you for visiting!', -- Default Footer
+                100.00,                 -- Starch Light
+                200.00,                 -- Starch Medium
+                300.00,                 -- Starch Heavy
+                400.00,                 -- Starch Extra Heavy
+                NOW()
+            )
+        """), {"org_id": organization_id})
+
+        # ✅ 8️⃣ Commit all
         db.commit()
 
         return RegistrationSuccess(

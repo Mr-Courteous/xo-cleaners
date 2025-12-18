@@ -1289,7 +1289,7 @@ def create_ticket(
         total_amount = decimal.Decimal('0.00')
         ticket_items_to_insert = []
         
-        # ✅ Filter out None values so SQL doesn't crash
+        # Filter out None values so SQL doesn't crash
         type_ids = [item.clothing_type_id for item in ticket_data.items if item.clothing_type_id is not None]
         
         type_prices = {}
@@ -1325,10 +1325,15 @@ def create_ticket(
                     raise HTTPException(status_code=400, detail="Custom items requires a name and price.")
                 
                 clothing_name = item_create.custom_name
-                # Treat the manual price as the 'plant_price' (base price)
+                
+                # Treat unit_price as plant_price
                 plant_price = decimal.Decimal(str(item_create.unit_price))
-                margin = decimal.Decimal('0.00')
-                base_wash_price = plant_price 
+                
+                # ✅ Allow Frontend to set Margin for Custom Items
+                margin_input = getattr(item_create, 'margin', 0.0)
+                margin = decimal.Decimal(str(margin_input))
+                
+                base_wash_price = plant_price + margin
                 pieces = 1 # Default for custom
             else:
                 # ✅ STANDARD ITEM LOGIC
@@ -1347,7 +1352,11 @@ def create_ticket(
             # --- COMMON CALCULATION ---
             alteration_charge = decimal.Decimal(str(item_create.additional_charge or 0.0))
             instruction_charge = decimal.Decimal(str(getattr(item_create, 'instruction_charge', 0.0)))
-            total_extra_charges = alteration_charge + instruction_charge
+            
+            # ✅ STARCH CHARGE (Passed from Frontend Calculation)
+            starch_charge = decimal.Decimal(str(getattr(item_create, 'starch_charge', 0.0)))
+
+            total_extra_charges = alteration_charge + instruction_charge + starch_charge
 
             behavior = getattr(item_create, 'alteration_behavior', 'none')
             
@@ -1361,9 +1370,10 @@ def create_ticket(
             # Prepare the item dictionary
             ticket_items_to_insert.append({
                 "clothing_type_id": item_create.clothing_type_id, # Can be None now
-                "custom_name": clothing_name if item_create.clothing_type_id is None else None, # ✅ Store custom name
+                "custom_name": clothing_name if item_create.clothing_type_id is None else None, 
                 "quantity": item_create.quantity,
                 "starch_level": item_create.starch_level,
+                "starch_charge": float(starch_charge), # ✅ Save to DB
                 "crease": item_create.crease,
                 "alterations": item_create.alterations,
                 "item_instructions": item_create.item_instructions,
@@ -1429,15 +1439,15 @@ def create_ticket(
         for item in ticket_items_to_insert:
             item["ticket_id"] = ticket_id
 
-        # ✅ UPDATED INSERT QUERY: Added custom_name
+        # ✅ UPDATED INSERT QUERY: Added custom_name and starch_charge
         item_insert_query = text("""
             INSERT INTO ticket_items (
-                ticket_id, clothing_type_id, custom_name, quantity, starch_level, crease, 
+                ticket_id, clothing_type_id, custom_name, quantity, starch_level, starch_charge, crease, 
                 alterations, item_instructions, additional_charge, instruction_charge,
                 plant_price, margin, item_total, organization_id, alteration_behavior
             )
             VALUES (
-                :ticket_id, :clothing_type_id, :custom_name, :quantity, :starch_level, :crease, 
+                :ticket_id, :clothing_type_id, :custom_name, :quantity, :starch_level, :starch_charge, :crease, 
                 :alterations, :item_instructions, :additional_charge, :instruction_charge,
                 :plant_price, :margin, :item_total, :organization_id, :alteration_behavior
             )
@@ -1472,9 +1482,11 @@ def create_ticket(
                     id=i, 
                     ticket_id=ticket_id,
                     clothing_type_id=item['clothing_type_id'],
+                    custom_name=item['custom_name'], # ✅ Return custom name
                     clothing_name=final_name,
                     quantity=item['quantity'],
                     starch_level=item['starch_level'],
+                    starch_charge=item.get('starch_charge', 0.0), # ✅ Return starch charge
                     crease=item['crease'],
                     alterations=item['alterations'],
                     item_instructions=item['item_instructions'],
@@ -1517,7 +1529,7 @@ def create_ticket(
         db.rollback()
         print(f"Error during ticket creation: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred during ticket processing.")
-
+    
 @router.get("/tickets", response_model=List[TicketSummaryResponse], summary="Get all tickets for *your* organization")
 async def get_tickets_for_organization(
     db: Session = Depends(get_db),

@@ -1,19 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  Plus, 
-  Search, 
-  Trash2, 
-  User, 
-  Phone, 
-  Calendar, 
-  Grid, 
-  List, 
-  Shirt, 
-  ImageOf, 
-  Mail, 
-  Printer, 
-  PenTool,
-  Loader2 
+  Plus, Search, Trash2, User, Phone, Calendar, Grid, List, Shirt, 
+  Image as LucideImage, Mail, Printer, PenTool, Loader2, Settings 
 } from 'lucide-react';
 import axios from "axios";
 import baseURL from "../lib/config";
@@ -25,13 +13,14 @@ import renderPlantReceiptHtml from '../lib/plantReceiptTemplate';
 
 // --- NEW CENTRAL IMAGE MAP FOR CORRELATION AND BETTER IMAGES ---
 const CLOTHING_IMAGE_MAP: { [key: string]: string } = {
-  // Add your item images here
+  // Add your item images here if needed
 };
 // -------------------------------------------------------------
 
 // --- TYPE EXTENSIONS FOR MERGED LOGIC ---
 interface ExtendedTicketItem extends TicketItem {
   instruction_charge?: number;
+  starch_charge?: number;
   alteration_behavior?: string;
   is_custom?: boolean; 
 }
@@ -72,7 +61,6 @@ const ClothingGrid: React.FC<ClothingGridProps> = ({ clothingTypes, addItemByTyp
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-5 2xl:grid-cols-6 gap-4 p-4 bg-gray-50 rounded-lg">
-      {/* Existing Items */}
       {sortedTypes.map((type) => {
         const imageUrl = CLOTHING_IMAGE_MAP[type.name] || type.image_url;
         return (
@@ -114,7 +102,6 @@ const ClothingGrid: React.FC<ClothingGridProps> = ({ clothingTypes, addItemByTyp
         );
       })}
 
-      {/* Custom Ad-hoc Item Button */}
       <button
         onClick={onAddCustomItem}
         className={`
@@ -146,24 +133,29 @@ export default function DropOff() {
   const [clothingTypes, setClothingTypes] = useState<ClothingType[]>([]);
 
   const [items, setItems] = useState<ExtendedTicketItem[]>([]);
+  
+  // Track selected item for Quick Starch Panel
+  const [selectedTicketIndex, setSelectedTicketIndex] = useState<number | null>(null);
+
+  // STARCH PRICES STATE
+  const [starchPrices, setStarchPrices] = useState({
+    no_starch: 0.00,
+    light: 0.00,
+    medium: 0.00,
+    heavy: 0.00,
+    extra_heavy: 0.00 
+  });
 
   const [specialInstructions, setSpecialInstructions] = useState('');
   const [paidAmount, setPaidAmount] = useState<number>(0);
   const [pickupDate, setPickupDate] = useState<string>(new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().substring(0, 16));
   const [showNewCustomerForm, setShowNewCustomerForm] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [modal, setModal] = useState({
-    isOpen: false,
-    message: '',
-    title: '',
-    type: 'error' as 'error' | 'success'
-  });
+  const [modal, setModal] = useState({ isOpen: false, message: '', title: '', type: 'error' as 'error' | 'success' });
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [printContent, setPrintContent] = useState('');
   const [plantHtmlState, setPlantHtmlState] = useState('');
   const [tagHtmlState, setTagHtmlState] = useState('');
-
-  // --- NEW STATE FOR CUSTOM ITEM MODAL (Now includes margin) ---
   const [showCustomItemModal, setShowCustomItemModal] = useState(false);
   const [customItemForm, setCustomItemForm] = useState({ name: '', price: '', margin: '' });
 
@@ -175,71 +167,38 @@ export default function DropOff() {
     return 'grid';
   });
 
-  const INSTRUCTION_OPTIONS = [
-    { value: '', label: 'No Special Instructions' },
-    { value: 'Check Pockets', label: 'Check Pockets' },
-    { value: 'Stain: Collar', label: 'Stain: Collar' },
-    { value: 'Stain: Front', label: 'Stain: Front' },
-    { value: 'Missing Button', label: 'Missing Button' },
-    { value: 'Delicate / Hand Wash', label: 'Delicate / Hand Wash' },
-    { value: 'Repair Needed', label: 'Repair Needed' },
-    { value: 'Press Only', label: 'Press Only' },
-    { value: 'Do Not Crease', label: 'Do Not Crease' },
-  ];
-
-  const ALTERATION_OPTIONS = [
-    { value: '', label: 'No Alteration' },
-    { value: 'Hem Pants', label: 'Hem Pants' },
-    { value: 'Hem Skirt/Dress', label: 'Hem Skirt/Dress' },
-    { value: 'Taper Legs', label: 'Taper Legs' },
-    { value: 'Take In Waist', label: 'Take In Waist' },
-    { value: 'Let Out Waist', label: 'Let Out Waist' },
-    { value: 'Shorten Sleeves', label: 'Shorten Sleeves' },
-    { value: 'Lengthen Sleeves', label: 'Lengthen Sleeves' },
-    { value: 'Replace Zipper', label: 'Replace Zipper' },
-    { value: 'Sew Button', label: 'Sew Button' },
-    { value: 'Patch Repair', label: 'Patch Repair' },
-    { value: 'See Special Note', label: 'See Special Note' },
-  ];
-
   useEffect(() => {
     fetchClothingTypes();
+    fetchOrganizationSettings();
   }, []);
 
-  // --- HELPER: RESET STATE AFTER TICKET CREATION ---
-  const resetTicketState = () => {
-    setStep('customer');
-    setSelectedCustomer(null);
-    setItems([]);
-    setSpecialInstructions('');
-    setPaidAmount(0);
-    setCustomerSearch('');
-    setCustomers([]);
-    setPickupDate(new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().substring(0, 16));
-  };
-
-  const saveViewMode = (mode: 'grid' | 'list') => {
-    setViewMode(mode);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(VIEW_MODE_STORAGE_KEY, mode);
+  const fetchOrganizationSettings = async () => {
+    try {
+        const token = localStorage.getItem("accessToken");
+        const res = await axios.get(`${baseURL}/api/settings`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.data) {
+            setStarchPrices({
+                no_starch: 0.00,
+                light: parseFloat(res.data.starch_price_light) || 0.00,
+                medium: parseFloat(res.data.starch_price_medium) || 0.00,
+                heavy: parseFloat(res.data.starch_price_heavy) || 0.00,
+                extra_heavy: parseFloat(res.data.starch_price_extra_heavy) || 0.00 
+            });
+        }
+    } catch (err) {
+        console.error("Failed to fetch organization settings:", err);
     }
   };
 
   const fetchClothingTypes = async () => {
     try {
-      const organizationId = localStorage.getItem("organizationId");
       const token = localStorage.getItem("accessToken");
-
-      if (!organizationId || !token) {
-        console.error("Missing Auth details");
-        return;
-      }
-
       const url = `${baseURL}/api/organizations/clothing-types`;
       const response = await axios.get(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
-
       if (response.data && Array.isArray(response.data.clothing_types)) {
         setClothingTypes(response.data.clothing_types);
       } else {
@@ -299,13 +258,26 @@ export default function DropOff() {
     }
   };
 
+  const resetTicketState = () => {
+    setStep('customer');
+    setSelectedCustomer(null);
+    setItems([]);
+    setSelectedTicketIndex(null); 
+    setSpecialInstructions('');
+    setPaidAmount(0);
+    setCustomerSearch('');
+    setCustomers([]);
+    setPickupDate(new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().substring(0, 16));
+  };
+
   const addItem = () => {
     const ct = clothingTypes[0];
-    setItems([...items, {
+    const newItem = {
       clothing_type_id: ct?.id || 1,
       clothing_name: ct?.name || 'Select Item',
       quantity: 1,
       starch_level: 'no_starch',
+      starch_charge: 0,
       crease: 'no_crease',
       additional_charge: 0,
       instruction_charge: 0,
@@ -316,19 +288,25 @@ export default function DropOff() {
       item_total: (ct?.plant_price || 0) + (ct?.margin || 0),
       alteration_behavior: 'none',
       is_custom: false
-    }]);
-    saveViewMode('list');
+    };
+    
+    setItems(prev => {
+        const newItems = [...prev, newItem];
+        setSelectedTicketIndex(newItems.length - 1);
+        return newItems;
+    });
   };
 
   const addItemByTypeId = (clothingTypeId: number) => {
     const ct = clothingTypes.find(type => type.id === clothingTypeId);
     if (!ct) return;
 
-    setItems([...items, {
+    const newItem = {
       clothing_type_id: ct.id,
       clothing_name: ct.name,
       quantity: 1,
       starch_level: 'no_starch',
+      starch_charge: 0,
       crease: 'no_crease',
       additional_charge: 0,
       instruction_charge: 0,
@@ -339,20 +317,26 @@ export default function DropOff() {
       item_total: ct.plant_price + ct.margin,
       alteration_behavior: 'none',
       is_custom: false
-    }]);
+    };
+
+    setItems(prev => {
+        const newItems = [...prev, newItem];
+        setSelectedTicketIndex(newItems.length - 1);
+        return newItems;
+    });
   };
 
-  // --- NEW FUNCTION: Handle Custom Item Addition (With Price AND Margin) ---
   const handleAddCustomItem = () => {
     const name = customItemForm.name.trim() || 'Custom Item';
     const price = parseFloat(customItemForm.price) || 0;
     const margin = parseFloat(customItemForm.margin) || 0;
 
-    setItems([...items, {
-      clothing_type_id: -1, // Special ID for Custom items
+    const newItem = {
+      clothing_type_id: -1, 
       clothing_name: name,
       quantity: 1,
       starch_level: 'no_starch',
+      starch_charge: 0, 
       crease: 'no_crease',
       additional_charge: 0,
       instruction_charge: 0,
@@ -360,57 +344,71 @@ export default function DropOff() {
       item_instructions: '',
       plant_price: price,
       margin: margin,
-      item_total: price + margin, // Total includes margin
+      item_total: price + margin, 
       alteration_behavior: 'none',
       is_custom: true
-    }]);
+    };
+
+    setItems(prev => {
+        const newItems = [...prev, newItem];
+        setSelectedTicketIndex(newItems.length - 1);
+        return newItems;
+    });
 
     setCustomItemForm({ name: '', price: '', margin: '' });
     setShowCustomItemModal(false);
   };
 
+  const handleQuickStarchUpdate = (levelKey: string) => {
+    if (selectedTicketIndex === null) return;
+    updateItem(selectedTicketIndex, { starch_level: levelKey });
+  };
+
   const updateItem = (index: number, updates: any) => {
     const newItems = [...items];
     const oldItem = newItems[index];
-    newItems[index] = { ...oldItem, ...updates };
+    const updatedItem = { ...oldItem, ...updates };
+    newItems[index] = updatedItem;
+    
+    // 1. Calculate Starch Charge
+    const selectedStarch = updatedItem.starch_level as keyof typeof starchPrices;
+    const unitStarchPrice = starchPrices[selectedStarch] || 0;
+    const qty = updatedItem.quantity || 0;
+    
+    updatedItem.starch_charge = unitStarchPrice * qty;
 
-    // Update Totals Logic
-    const item = newItems[index];
-    
-    // Check if it's a standard DB item
-    const clothingType = clothingTypes.find(ct => ct.id === item.clothing_type_id);
-    
-    // Determine Base Price
+    // 2. Base Price
+    const clothingType = clothingTypes.find(ct => ct.id === updatedItem.clothing_type_id);
     let basePrice = 0;
-    if (item.is_custom) {
-       // For custom items, base price is price + margin
-       basePrice = (item.plant_price || 0) + (item.margin || 0);
+    
+    if (updatedItem.is_custom) {
+       basePrice = (updatedItem.plant_price || 0) + (updatedItem.margin || 0);
     } else if (clothingType) {
-       // For DB items
        basePrice = clothingType.plant_price + clothingType.margin;
+       updatedItem.plant_price = clothingType.plant_price;
+       updatedItem.margin = clothingType.margin;
     }
 
-    if (item.alteration_behavior === 'alteration_only') {
+    if (updatedItem.alteration_behavior === 'alteration_only') {
       basePrice = 0;
     }
 
-    const quantity = item.quantity || 0;
-    const altCharge = item.additional_charge || 0;
-    const instCharge = item.instruction_charge || 0;
+    // 3. Final Total
+    const altCharge = updatedItem.additional_charge || 0;
+    const instCharge = updatedItem.instruction_charge || 0;
+    const starchCharge = updatedItem.starch_charge || 0;
 
-    // Persist standard prices for non-custom items to avoid accidental drift
-    if (clothingType && !item.is_custom) {
-       item.plant_price = clothingType.plant_price;
-       item.margin = clothingType.margin;
-    }
-    
-    item.item_total = (basePrice * quantity) + altCharge + instCharge;
+    updatedItem.item_total = (basePrice * qty) + altCharge + instCharge + starchCharge;
 
     setItems(newItems);
   };
 
-  const removeItem = (index: number) => {
-    setItems(items.filter((_, i) => i !== index));
+  const removeItem = (index: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const newItems = items.filter((_, i) => i !== index);
+    setItems(newItems);
+    if (selectedTicketIndex === index) setSelectedTicketIndex(null);
+    if (selectedTicketIndex !== null && index < selectedTicketIndex) setSelectedTicketIndex(selectedTicketIndex - 1);
   };
 
   const generateTagHtml = (ticket: TicketWithItems) => {
@@ -424,7 +422,12 @@ export default function DropOff() {
     ticket.items.forEach((item) => {
       const preferences = [];
       if (item.starch_level && item.starch_level !== 'no_starch' && item.starch_level !== 'none') {
-        preferences.push(`${item.starch_level} starch`);
+        let starchDisplay = item.starch_level;
+        if (starchDisplay === 'extra_heavy') starchDisplay = 'Ex. Heavy';
+        else if (starchDisplay === 'heavy') starchDisplay = 'Heavy';
+        else if (starchDisplay === 'medium') starchDisplay = 'Medium';
+        else if (starchDisplay === 'light') starchDisplay = 'Light';
+        preferences.push(`${starchDisplay} starch`);
       }
       if (item.crease === 'crease') {
         preferences.push('Crease');
@@ -546,34 +549,42 @@ export default function DropOff() {
 
     try {
       setLoading(true);
+
+      // ✅ FIXED: Mapping to match Backend Enums ('none', 'low', 'medium', 'high')
       const mapStarchLevel = (val: any) => {
         if (!val) return 'none';
         const s = String(val).toLowerCase();
+        
+        // Map common frontend terms to backend expectations
         if (s === 'no_starch' || s === 'none') return 'none';
-        if (s === 'light' || s === 'low') return 'light'; 
+        
+        if (s === 'light' || s === 'low') return 'low'; // Backend expects 'low'
+        
         if (s === 'medium' || s === 'med') return 'medium';
-        if (s === 'heavy' || s === 'high') return 'heavy'; 
+        
+        if (s === 'heavy' || s === 'high') return 'high'; // Backend expects 'high'
+        
+        if (s === 'extra_heavy') return 'high'; // Map extra heavy to high to avoid 500 error
+        
         return 'none';
       };
 
       const ticketData = {
         customer_id: Number(selectedCustomer!.id),
         items: itemsWithValidQuantity.map(item => ({
-          // IF custom, send null for clothing_type_id
           clothing_type_id: item.is_custom || item.clothing_type_id === -1 ? null : Number(item.clothing_type_id),
-          
-          // Send name and price for custom items (and potentially mapped for others)
           custom_name: item.is_custom ? item.clothing_name : null,
           unit_price: Number(item.plant_price) || 0.0, 
-          // ✅ SEND MARGIN FOR CUSTOM ITEMS
           margin: item.is_custom ? Number(item.margin) : 0.0,
 
           quantity: Number(item.quantity) || 0,
-          starch_level: mapStarchLevel(item.starch_level),
+          
+          starch_level: mapStarchLevel(item.starch_level), // ✅ Using fixed mapper
           crease: item.crease === 'crease', 
           
           additional_charge: Number(item.additional_charge) || 0.0, 
-          instruction_charge: Number(item.instruction_charge) || 0.0, 
+          instruction_charge: Number(item.instruction_charge) || 0.0,
+          starch_charge: Number(item.starch_charge) || 0.0,
           
           alterations: item.alterations || null, 
           item_instructions: item.item_instructions || null,
@@ -600,8 +611,6 @@ export default function DropOff() {
           newTicket.items = ticketDetails.data.items || [];
       }
       
-      console.log('Ticket created successfully:', newTicket);
-
       const customerHtml = renderReceiptHtml(newTicket as any);
       const plantHtml = renderPlantReceiptHtml(newTicket as any);
       const tagHtml = generateTagHtml(newTicket); 
@@ -614,14 +623,22 @@ export default function DropOff() {
       setModal({ isOpen: true, title: 'Ticket Created', type: 'success', message: 'Ticket created successfully.' });
       setLoading(false);
       
-      // ✅ RESET STATE HERE to make it ready for the next customer
       resetTicketState();
 
     } catch (error: any) {
       setLoading(false);
       console.error('Failed to create ticket:', error);
-      const errorMessage = error.response?.data?.detail ||
-        (error instanceof Error ? error.message : 'Failed to create ticket. Please try again.');
+      
+      let errorMessage = 'Failed to create ticket. Please try again.';
+      if (error.response && error.response.data) {
+          if (typeof error.response.data.detail === 'string') {
+              errorMessage = error.response.data.detail;
+          } else if (Array.isArray(error.response.data.detail)) {
+              errorMessage = error.response.data.detail.map((err: any) => `${err.loc[1]}: ${err.msg}`).join('. ');
+          }
+      } else if (error.message) {
+          errorMessage = error.message;
+      }
 
       setModal({ isOpen: true, title: 'Error', message: errorMessage, type: 'error' });
     }
@@ -634,8 +651,6 @@ export default function DropOff() {
     const final = sum + env + t;
     return { totalAmount: sum, envCharge: env, tax: t, finalTotal: final };
   }, [items]);
-
-  const getClothingTypeById = (id: number) => clothingTypes.find(ct => ct.id === id);
 
   const handlePrintAll = () => {
     const combinedHtml = `
@@ -664,6 +679,7 @@ export default function DropOff() {
 
   return (
     <div className="w-full max-w-full mx-auto px-4 py-4 min-h-screen bg-gray-100 font-sans">
+      {/* HEADER & TITLE */}
       <div className="mb-8">
         <h2 className="text-2xl font-bold text-gray-900">Drop Off Clothes</h2>
         
@@ -683,6 +699,7 @@ export default function DropOff() {
         </div>
       </div>
 
+      {/* STEP 1: CUSTOMER SELECTION */}
       {step === 'customer' && (
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
           <h3 className="text-lg font-semibold mb-4">Select or Create Customer</h3>
@@ -806,19 +823,12 @@ export default function DropOff() {
           )}
         </div>
       )}
-
+      
+      {/* STEP 2: ITEMS SELECTION */}
       {step === 'items' && (
         <div className="flex flex-col lg:flex-row gap-6">
           <div className="lg:w-2/3">
-             <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-semibold">Select Clothing Items</h3>
-                <div className="flex space-x-2">
-                    <button onClick={() => saveViewMode('grid')} className={`p-2 rounded ${viewMode === 'grid' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'}`}><Grid size={20}/></button>
-                    <button onClick={() => saveViewMode('list')} className={`p-2 rounded ${viewMode === 'list' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'}`}><List size={20}/></button>
-                </div>
-             </div>
-
-             {/* CLOTHING GRID/LIST */}
+             {/* ... Grid/List View ... */}
              {viewMode === 'grid' ? (
                 <ClothingGrid 
                   clothingTypes={clothingTypes} 
@@ -835,121 +845,126 @@ export default function DropOff() {
                          <PenTool className="h-4 w-4 mr-2" /> Add Custom Item
                       </button>
                   </div>
-                  {/* List mode rendering of types could go here if requested, keeping it simple for now */}
                 </div>
              )}
           </div>
 
           <div className="lg:w-1/3">
              <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 sticky top-4">
+                {/* ... Cart Header ... */}
                 <div className="flex justify-between items-center mb-4">
                    <h3 className="text-lg font-semibold">Current Ticket</h3>
                    <span className="text-sm text-gray-500">{items.length} Items</span>
                 </div>
+
+                {/* ✅ QUICK STARCH PANEL */}
+                <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200 mb-4">
+                   <div className="flex items-center justify-between mb-2">
+                      <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                         Starch Level
+                      </h3>
+                      {selectedTicketIndex !== null ? (
+                         <span className="text-xs text-blue-600 font-medium animate-pulse">
+                            Editing Item #{selectedTicketIndex + 1}
+                         </span>
+                      ) : (
+                         <span className="text-xs text-gray-400 italic">
+                            Select an item to edit
+                         </span>
+                      )}
+                   </div>
+                   
+                   <div className="grid grid-cols-5 gap-1">
+                      {['no_starch', 'light', 'medium', 'heavy', 'extra_heavy'].map((key) => {
+                          const levelDisplay = key.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()).replace('No Starch', 'None').replace('Extra Heavy', 'Ex. Heavy');
+                          const isActive = selectedTicketIndex !== null && items[selectedTicketIndex]?.starch_level === key;
+                          
+                          return (
+                            <button
+                              key={key}
+                              onClick={() => handleQuickStarchUpdate(key)}
+                              disabled={selectedTicketIndex === null}
+                              className={`
+                                px-1 py-2 text-[10px] font-semibold rounded transition-all
+                                ${isActive 
+                                  ? 'bg-indigo-600 text-white shadow-md scale-105' 
+                                  : 'bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100'
+                                }
+                                disabled:opacity-40 disabled:cursor-not-allowed
+                              `}
+                            >
+                              {levelDisplay}
+                            </button>
+                          );
+                      })}
+                   </div>
+                   {/* Show Price Hint */}
+                   {selectedTicketIndex !== null && items[selectedTicketIndex]?.starch_charge > 0 && (
+                      <div className="text-right text-[10px] text-blue-600 mt-1 font-medium">
+                         +${items[selectedTicketIndex].starch_charge.toFixed(2)} added
+                      </div>
+                   )}
+                </div>
                 
-                {/* ITEMS LIST IN CART */}
                 <div className="space-y-4 mb-6 max-h-[500px] overflow-y-auto">
                    {items.map((item, index) => (
-                      <div key={index} className={`p-4 border rounded-lg ${item.is_custom ? 'border-indigo-200 bg-indigo-50' : 'border-gray-200 bg-gray-50'}`}>
+                      <div 
+                        key={index} 
+                        // ✅ Click to Select
+                        onClick={() => setSelectedTicketIndex(index)}
+                        className={`
+                          p-4 border rounded-lg cursor-pointer transition-all duration-200
+                          ${selectedTicketIndex === index 
+                             ? 'border-indigo-500 ring-1 ring-indigo-500 bg-indigo-50' 
+                             : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
+                          }
+                        `}
+                      >
                          <div className="flex justify-between items-start mb-2">
                             <div>
-                               <h4 className="font-medium">{item.clothing_name}</h4>
+                               <h4 className="font-medium text-gray-900">{item.clothing_name}</h4>
                                {item.is_custom && <span className="text-[10px] uppercase font-bold text-indigo-600 bg-indigo-100 px-1 rounded">Custom</span>}
                             </div>
-                            <button onClick={() => removeItem(index)} className="text-red-500 hover:text-red-700"><Trash2 className="h-4 w-4" /></button>
+                            <button onClick={(e) => removeItem(index, e)} className="text-red-400 hover:text-red-600 hover:bg-red-50 p-1 rounded"><Trash2 className="h-4 w-4" /></button>
                          </div>
 
-                         <div className="grid grid-cols-2 gap-4 text-sm">
-                            <div>
-                               <label className="block text-gray-500 text-xs mb-1">Quantity</label>
+                         <div className="flex flex-col gap-2 text-sm" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center justify-between">
+                               <label className="text-gray-500 text-xs">Quantity</label>
                                <input 
                                   type="number" 
                                   min="1" 
                                   value={item.quantity} 
                                   onChange={(e) => updateItem(index, { quantity: parseInt(e.target.value) || 0 })}
-                                  className="w-full px-2 py-1 border rounded"
+                                  className="w-16 px-2 py-1 border rounded text-right"
+                                  onClick={(e) => {
+                                      // Optional: Auto-select row when clicking input
+                                      setSelectedTicketIndex(index);
+                                  }}
                                />
-                            </div>
-                            <div>
-                               <label className="block text-gray-500 text-xs mb-1">Starch</label>
-                               <select 
-                                  value={item.starch_level} 
-                                  onChange={(e) => updateItem(index, { starch_level: e.target.value })}
-                                  className="w-full px-2 py-1 border rounded"
-                               >
-                                  <option value="no_starch">None</option>
-                                  <option value="light">Light</option>
-                                  <option value="medium">Medium</option>
-                                  <option value="heavy">Heavy</option>
-                               </select>
                             </div>
                          </div>
                          
-                         <div className="mt-2">
-                             <label className="flex items-center space-x-2">
+                         {/* Status Tags */}
+                         <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                             <span className={`px-2 py-1 rounded border ${item.starch_level !== 'no_starch' ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-gray-100 text-gray-500 border-gray-200'}`}>
+                                {item.starch_level === 'no_starch' ? 'No Starch' : item.starch_level.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                             </span>
+
+                             <label className="flex items-center space-x-1 cursor-pointer bg-white px-2 py-1 rounded border border-gray-200 hover:border-blue-300" onClick={(e) => e.stopPropagation()}>
                                 <input 
                                   type="checkbox" 
                                   checked={item.crease === 'crease'} 
                                   onChange={(e) => updateItem(index, { crease: e.target.checked ? 'crease' : 'no_crease' })}
                                   className="rounded text-blue-600"
                                 />
-                                <span className="text-sm">Crease</span>
+                                <span className="text-gray-600">Crease</span>
                              </label>
                          </div>
-                         
-                         {/* Additional Options Collapsible or Always Visible */}
-                         <div className="mt-3 space-y-2 border-t pt-2">
-                            <div className="grid grid-cols-2 gap-2">
-                               <div>
-                                  <label className="block text-gray-500 text-xs mb-1">Alt. Charge ($)</label>
-                                  <input 
-                                    type="number" 
-                                    step="0.01"
-                                    value={item.additional_charge || ''}
-                                    placeholder="0.00"
-                                    onChange={(e) => updateItem(index, { additional_charge: parseFloat(e.target.value) || 0 })}
-                                    className="w-full px-2 py-1 border rounded text-xs"
-                                  />
-                               </div>
-                               <div>
-                                  <label className="block text-gray-500 text-xs mb-1">Inst. Charge ($)</label>
-                                  <input 
-                                    type="number" 
-                                    step="0.01"
-                                    value={item.instruction_charge || ''}
-                                    placeholder="0.00"
-                                    onChange={(e) => updateItem(index, { instruction_charge: parseFloat(e.target.value) || 0 })}
-                                    className="w-full px-2 py-1 border rounded text-xs"
-                                  />
-                               </div>
-                            </div>
-                            
-                            <div>
-                               <label className="block text-gray-500 text-xs mb-1">Alterations</label>
-                               <select 
-                                  value={item.alterations || ''} 
-                                  onChange={(e) => updateItem(index, { alterations: e.target.value })}
-                                  className="w-full px-2 py-1 border rounded text-xs"
-                               >
-                                  {ALTERATION_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                               </select>
-                            </div>
-                            
-                            <div>
-                               <label className="block text-gray-500 text-xs mb-1">Instructions</label>
-                               <select 
-                                  value={item.item_instructions || ''} 
-                                  onChange={(e) => updateItem(index, { item_instructions: e.target.value })}
-                                  className="w-full px-2 py-1 border rounded text-xs"
-                               >
-                                  {INSTRUCTION_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                               </select>
-                            </div>
 
-                            <div className="flex justify-between items-center pt-2 font-medium">
-                               <span className="text-xs text-gray-500">Item Total:</span>
-                               <span>${item.item_total.toFixed(2)}</span>
-                            </div>
+                         <div className="mt-3 pt-2 border-t border-gray-200/50 flex justify-between items-center font-medium">
+                            <span className="text-xs text-gray-500">Item Total:</span>
+                            <span>${item.item_total.toFixed(2)}</span>
                          </div>
                       </div>
                    ))}
@@ -976,7 +991,8 @@ export default function DropOff() {
           </div>
         </div>
       )}
-
+      
+      {/* STEP 3: REVIEW */}
       {step === 'review' && (
         <div className="max-w-2xl mx-auto bg-white p-8 rounded-lg shadow-sm border border-gray-200">
            <h3 className="text-xl font-bold mb-6">Review Ticket</h3>
@@ -1026,7 +1042,7 @@ export default function DropOff() {
         {modal.type === 'success' ? <div className="text-green-600 font-medium">{modal.message}</div> : <div className="text-red-600">{modal.message}</div>}
       </Modal>
 
-      {/* NEW: CUSTOM ITEM MODAL - WITH MARGIN */}
+      {/* CUSTOM ITEM MODAL */}
       <Modal
         isOpen={showCustomItemModal}
         onClose={() => setShowCustomItemModal(false)}
@@ -1092,7 +1108,7 @@ export default function DropOff() {
       <PrintPreviewModal 
         isOpen={showPrintPreview} 
         onClose={() => setShowPrintPreview(false)} 
-        onPrint={() => {}} // Empty default print action as we have custom ones
+        onPrint={() => {}} 
         content={printContent} 
         hideDefaultButton={true} 
         extraActions={(

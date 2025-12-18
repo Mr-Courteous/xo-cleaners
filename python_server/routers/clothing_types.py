@@ -260,7 +260,7 @@ async def update_clothing_type(
         )
     allowed_roles = ["cashier", "store_admin", "org_owner", "STORE_OWNER", "owner"]
         
-    if user_role not in allowed_roles:
+    if role not in allowed_roles:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Access Denied: Role '{role}' is not authorized."
