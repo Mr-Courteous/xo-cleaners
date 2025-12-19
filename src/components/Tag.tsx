@@ -36,9 +36,11 @@ const generateEscPosCommands = (ticket: Ticket, item: any): Array<number> => {
   // Hex codes for ESC/POS commands (represented as decimal numbers)
   const ESC_INIT = [0x1B, 0x40]; // ESC @: Initialize printer
   const ESC_FONT_STANDARD = [0x1B, 0x21, 0x00]; // ESC ! 0: Select standard font (dotted)
-
-  const LF = [0x0A]; // Line Feed (0A hex) - CRITICAL for 15mm height control
   const CUT_PARTIAL = [0x1D, 0x56, 0x01]; // GS V 1: Partial Cut command
+  const LINE_SPACING_DOTS = 30; // 1/6" for TM-U220B (180 dpi) - tune if needed
+  const ESC_SET_LINE_SPACING = [0x1B, 0x33, LINE_SPACING_DOTS]; // ESC 3 n
+  const ESC_FEED_LINES = (lines: number): Array<number> => [0x1B, 0x64, lines]; // ESC d n
+  const TAG_FEED_LINES = 4; // Tune to hit the desired tag height
 
   // --- Dynamic Data Assembly ---
   const ticketId = (ticket.ticket_number || '').trim().slice(0, 15);
@@ -76,6 +78,7 @@ const generateEscPosCommands = (ticket: Ticket, item: any): Array<number> => {
   for (let i = 0; i < item.quantity; i++) {
     const singleTagCommands = [
       ...ESC_INIT,
+      ...ESC_SET_LINE_SPACING,
       ...ESC_FONT_STANDARD,
 
       // Line 1: Ticket ID + Newline (\n)
@@ -84,9 +87,8 @@ const generateEscPosCommands = (ticket: Ticket, item: any): Array<number> => {
       // Line 2: Date + Customer Name/Prefs + Newline (\n)
       ...textToBytes(detailsLine + '\n'),
       
-      // --- CRITICAL: LINE FEEDS FOR 15MM HEIGHT ---
-      // 4 LFs (0A hex) are needed to advance the paper to ~15mm.
-      ...LF, ...LF, ...LF, ...LF, 
+      // --- CRITICAL: CONTROLLED FEED FOR TAG HEIGHT ---
+      ...ESC_FEED_LINES(TAG_FEED_LINES),
 
       // --- CRITICAL: CUT COMMAND ---
       ...CUT_PARTIAL,
@@ -101,23 +103,25 @@ const generateEscPosCommands = (ticket: Ticket, item: any): Array<number> => {
  * Sends the raw ESC/POS byte array to the local printer via QZ Tray.
  */
 const printTagEscPos = async (rawBytes: Array<number>) => {
-  // Access the global qz object
-  if (!qz.websocket.isActive()) {
-    alert("QZ Tray is not running. Please start the QZ Tray application first.");
+  if (!rawBytes || rawBytes.length === 0) {
+    alert("Nothing to print. Please try again.");
     return;
   }
 
+  const shouldDisconnect = !qz.websocket.isActive();
+
   try {
-    await qz.websocket.connect();
+    if (shouldDisconnect) {
+      await qz.websocket.connect();
+    }
 
     const data = [
       { type: 'raw', data: rawBytes } // Send the raw byte array
     ];
 
-    await qz.print(
-      { printer: PRINTER_NAME },
-      data
-    );
+    const config = qz.configs.create(PRINTER_NAME);
+
+    await qz.print(config, data);
     
     console.log("ESC/POS tag commands sent to QZ Tray successfully.");
 
@@ -125,7 +129,7 @@ const printTagEscPos = async (rawBytes: Array<number>) => {
     console.error("QZ Tray Printing Error:", error);
     alert("An error occurred during printing. Ensure QZ Tray is running and the printer name is correct.");
   } finally {
-    if (qz.websocket.isActive()) {
+    if (shouldDisconnect && qz.websocket.isActive()) {
       qz.websocket.disconnect();
     }
   }
