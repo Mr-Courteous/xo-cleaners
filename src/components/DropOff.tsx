@@ -880,10 +880,9 @@ export default function DropOff() {
                     prefill.first_name = part ? part.charAt(0).toUpperCase() + part.slice(1) : '';
                   }
 
-                  // If we have only a phone and no name, use the phone as the first_name placeholder so the form is populated
-                  if (!prefill.first_name && prefill.phone) {
-                    prefill.first_name = prefill.phone;
-                  }
+                  // IMPORTANT: If the input is a phone, don't stuff the phone value into the first name.
+                  // We want phone-only creation to populate only the phone field and leave name empty so there
+                  // is no visual/name/number clash.
 
                   setNewCustomer(prefill);
                   setShowNewCustomerForm(true);
@@ -899,7 +898,7 @@ export default function DropOff() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-4">
                 <input
                   type="text"
-                  placeholder="First Name *"
+                  placeholder="First Name"
                   value={newCustomer.first_name}
                   onChange={(e) => setNewCustomer({ ...newCustomer, first_name: e.target.value })}
                   className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -913,7 +912,7 @@ export default function DropOff() {
                 />
                 <input
                   type="tel"
-                  placeholder="Phone Number *"
+                  placeholder="Phone Number"
                   value={newCustomer.phone}
                   onChange={(e) => setNewCustomer({ ...newCustomer, phone: e.target.value })}
                   className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -943,8 +942,8 @@ export default function DropOff() {
                   <button
                     onClick={createCustomer}
                     className="bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
-                    // Require first name and at least one of phone OR email
-                    disabled={!newCustomer.first_name || (!newCustomer.email && !newCustomer.phone)}
+                    // Allow creation when either phone OR email is present; first_name is optional (can be filled later)
+                    disabled={!(newCustomer.email || newCustomer.phone)}
                   >
                     Create Customer
                   </button>
