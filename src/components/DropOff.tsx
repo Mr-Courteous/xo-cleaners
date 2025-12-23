@@ -344,7 +344,7 @@ export default function DropOff() {
         password: "1234567890",
       };
 
-      const response = await axios.post(`${baseURL}/api/organizations/register-customer`, payload, {
+      const response = await axios.post(`${baseURL}/api/organizations/register-customers`, payload, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
@@ -848,7 +848,46 @@ export default function DropOff() {
               )}
 
               <button
-                onClick={() => setShowNewCustomerForm(true)}
+                onClick={() => {
+                  // AUTO-POPULATE LOGIC
+                  const term = customerSearch.trim();
+                  const prefill = { first_name: '', last_name: '', phone: '', email: '', address: '' };
+
+                  if (term) {
+                      const isEmail = term.includes('@');
+                      // Simple phone check: allowed chars and at least 3 digits
+                      const isPhone = /^[\d\-\+\(\)\s\.]+$/.test(term) && (term.match(/\d/g) || []).length > 3;
+
+                      if (isEmail) {
+                          prefill.email = term;
+                      } else if (isPhone) {
+                          prefill.phone = term;
+                      } else {
+                          // Assume Name
+                          const nameParts = term.split(' ');
+                          prefill.first_name = nameParts[0];
+                          if (nameParts.length > 1) {
+                              prefill.last_name = nameParts.slice(1).join(' ');
+                          }
+                      }
+                  }
+                  
+                  // If we have an email but no first name, derive a friendly first name from the email local-part
+                  if (!prefill.first_name && prefill.email) {
+                    const local = prefill.email.split('@')[0] || '';
+                    // Capitalize first segment
+                    const part = local.split(/[\.\-_]/)[0] || local;
+                    prefill.first_name = part ? part.charAt(0).toUpperCase() + part.slice(1) : '';
+                  }
+
+                  // If we have only a phone and no name, use the phone as the first_name placeholder so the form is populated
+                  if (!prefill.first_name && prefill.phone) {
+                    prefill.first_name = prefill.phone;
+                  }
+
+                  setNewCustomer(prefill);
+                  setShowNewCustomerForm(true);
+                }}
                 className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
               >
                 Create New Customer
@@ -872,7 +911,7 @@ export default function DropOff() {
                   onChange={(e) => setNewCustomer({ ...newCustomer, last_name: e.target.value })}
                   className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
-                 <input
+                <input
                   type="tel"
                   placeholder="Phone Number *"
                   value={newCustomer.phone}
@@ -881,7 +920,7 @@ export default function DropOff() {
                 />
                 <input
                   type="email"
-                  placeholder="Email *"
+                  placeholder="Email"
                   value={newCustomer.email}
                   onChange={(e) => setNewCustomer({ ...newCustomer, email: e.target.value })}
                   className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -904,7 +943,8 @@ export default function DropOff() {
                   <button
                     onClick={createCustomer}
                     className="bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
-                    disabled={!newCustomer.first_name || !newCustomer.email || !newCustomer.phone}
+                    // Require first name and at least one of phone OR email
+                    disabled={!newCustomer.first_name || (!newCustomer.email && !newCustomer.phone)}
                   >
                     Create Customer
                   </button>

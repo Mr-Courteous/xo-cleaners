@@ -68,9 +68,11 @@ def calculate_tenure(joined_at: datetime) -> str:
 
  
 class NewCustomerRequest(BaseModel):
+    # Require email; phone and address are optional
     email: EmailStr
     first_name: str
     last_name: Optional[str] = None
+    phone: Optional[str] = None
     address: Optional[str] = None
     password: str
 
@@ -284,8 +286,8 @@ def get_customers(
         raise HTTPException(status_code=500, detail="Failed to fetch customers.")
         
         
-# ✅ CHANGED to @router.post to match the frontend
-@router.post("/register-customer", summary="Create a new customer for the organization")
+# Route name: use plural to match frontend (/register-customers)
+@router.post("/register-customers", summary="Create a new customer for the organization")
 async def register_customer(
     data: NewCustomerRequest, # ✅ This is the request body
     db: Session = Depends(get_db),
@@ -323,14 +325,15 @@ async def register_customer(
         # 5. Create the new user in the database
         insert_stmt = text("""
             INSERT INTO allUsers 
-                (email, first_name, last_name, address, password_hash, role, organization_id)
+                (email, phone, first_name, last_name, address, password_hash, role, organization_id)
             VALUES 
-                (:email, :first_name, :last_name, :address, :password_hash, :role, :org_id)
-            RETURNING id, email, first_name, last_name, role, organization_id, address
+                (:email, :phone, :first_name, :last_name, :address, :password_hash, :role, :org_id)
+            RETURNING id, email, phone, first_name, last_name, role, organization_id, address
         """)
         
         new_user = db.execute(insert_stmt, {
             "email": data.email.lower(),
+            "phone": data.phone,
             "first_name": data.first_name,
             "last_name": data.last_name,
             "address": data.address,
@@ -347,6 +350,7 @@ async def register_customer(
     except Exception as e:
         db.rollback()
         if "unique constraint" in str(e).lower():
+             # Conflict likely about email uniqueness
              raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"A user with the email {data.email} already exists."
@@ -1564,6 +1568,8 @@ def create_ticket(
         print(f"Error during ticket creation: {e}")
         # Return the actual error message during debugging to make it easier to see what happened
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Database Error: {str(e)}")
+       
+       
         
 @router.get("/tickets", response_model=List[TicketSummaryResponse], summary="Get all tickets for *your* organization")
 async def get_tickets_for_organization(
