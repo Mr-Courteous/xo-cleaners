@@ -68,12 +68,11 @@ def calculate_tenure(joined_at: datetime) -> str:
 
  
 class NewCustomerRequest(BaseModel):
-    # Require email; phone and address are optional
-    email: EmailStr
     first_name: str
-    last_name: Optional[str] = None
-    phone: Optional[str] = None
-    address: Optional[str] = None
+    last_name: Optional[str] = "" 
+    email: Optional[str] = None  # ✅ Changed from EmailStr to Optional[str]
+    phone: str
+    address: Optional[str] = ""   
     password: str
 
 router = APIRouter(prefix="/api/organizations", tags=["Organization Resources"])
@@ -287,22 +286,25 @@ def get_customers(
         
         
 # Route name: use plural to match frontend (/register-customers)
+# =======================
+# Register Customer Route
+# =======================
 @router.post("/register-customers", summary="Create a new customer for the organization")
 async def register_customer(
-    data: NewCustomerRequest, # ✅ This is the request body
+    data: NewCustomerRequest, 
     db: Session = Depends(get_db),
-    payload: Dict[str, Any] = Depends(get_current_user_payload) # ✅ This is the token data
+    payload: Dict[str, Any] = Depends(get_current_user_payload)
 ):
     """
     Creates a new customer within the logged-in user's organization.
+    Email is now optional.
     """
     
     # 1. SECURELY get info from the logged-in user's TOKEN
     admin_role = payload.get("role")
     organization_id = payload.get("organization_id")
 
-    # 2. Authorization: Check if the logged-in user has permission
-    # (e.g., a customer can't create another customer)
+    # 2. Authorization
     allowed_roles = ["cashier", "store_admin", "org_owner", "STORE_OWNER"]
     if admin_role not in allowed_roles:
         raise HTTPException(
@@ -310,16 +312,19 @@ async def register_customer(
             detail="You do not have permission to create a new customer."
         )
 
-    # 3. SECURELY assign the new user to the token's organization
+    # 3. Check Org ID
     if not organization_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid user token: Missing organization ID."
         )
 
-    # 4. Hash the password and set the new user's role
+    # 4. Hash the password
     hashed_password = hash_password(data.password)
-    new_customer_role = "customer" # We securely set the role on the backend
+    new_customer_role = "customer"
+
+    # ✅ Handle Email Logic: Convert empty string to None to allow multiple customers without email (if DB allows NULL unique)
+    email_to_insert = data.email.lower().strip() if data.email and data.email.strip() else None
 
     try:
         # 5. Create the new user in the database
@@ -332,35 +337,40 @@ async def register_customer(
         """)
         
         new_user = db.execute(insert_stmt, {
-            "email": data.email.lower(),
+            "email": email_to_insert, # ✅ Pass None if empty
             "phone": data.phone,
             "first_name": data.first_name,
-            "last_name": data.last_name,
-            "address": data.address,
+            "last_name": data.last_name or "",
+            "address": data.address or "",
             "password_hash": hashed_password,
             "role": new_customer_role,
-            "org_id": organization_id # ✅ We use the secure organization_id from the token
+            "org_id": organization_id
         }).fetchone()
         
         db.commit()
 
-        # Return the newly created customer
         return dict(new_user._mapping)
 
     except Exception as e:
         db.rollback()
-        if "unique constraint" in str(e).lower():
-             # Conflict likely about email uniqueness
+        error_msg = str(e).lower()
+        if "unique constraint" in error_msg:
+             if "email" in error_msg and email_to_insert is not None:
+                 detail_msg = f"A user with the email {email_to_insert} already exists."
+             elif "phone" in error_msg:
+                 detail_msg = f"A user with the phone number {data.phone} already exists."
+             else:
+                 detail_msg = "Duplicate user detected."
+                 
              raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"A user with the email {data.email} already exists."
+                detail=detail_msg
             )
         print("Error creating customer:", e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create new customer."
-        )
-        
+        ) 
         
         
 # TICKET ROUTES
