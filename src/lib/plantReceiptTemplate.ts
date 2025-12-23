@@ -65,14 +65,14 @@ export function renderPlantReceiptHtml(ticket: Ticket, organizationName: string 
     }
 
     const detailsHtml = details.length > 0
-      ? `<div style="font-size:9pt; color:#000; margin-top:2px; padding-left:0px; line-height:1.2; font-weight:700;">
-           ${details.map(d => `&bull; ${d}`).join('<br>')}
-         </div>`
+        ? `<div style="font-size:9pt; color:#000; margin-top:2px; padding-left:0px; line-height:1.2; font-weight:700;">
+             ${details.map(d => `&bull; ${d}`).join('<br>')}
+           </div>`
       : '';
 
     return `
       <div style="margin-bottom: 6px; padding-bottom: 6px; border-bottom: 1px solid #000;">
-         <div style="display:flex; justify-content:space-between; align-items:flex-start; font-size:11pt; font-weight: 700; color: #000; line-height:1.1;">
+         <div style="display:flex; justify-content:space-between; align-items:flex-start; font-size:11pt; font-weight:700; color: #000; line-height:1.1;">
             <div style="flex:1; text-transform: uppercase;">${item.clothing_name}</div>
             <div style="text-align: right; min-width: 65px;">
                 <span style="margin-right: 2px;">${quantity}</span>
@@ -85,18 +85,18 @@ export function renderPlantReceiptHtml(ticket: Ticket, organizationName: string 
   }).join('');
 
   return `
-    <div style="width:58mm; margin:0 auto; font-family: 'Arial', 'Helvetica', sans-serif; font-weight: 700; color:#000; background: white; padding: 2px;">
+    <div style="width:58mm; margin:0 auto; font-family: 'Arial', 'Helvetica', sans-serif; font-weight:700; color:#000; background: white; padding: 2px;">
       
       <div style="text-align:center; margin-bottom: 10px;">
-        <div style="font-size:20pt; font-weight:900; letter-spacing: -1px;">${ticket.ticket_number}</div>
-        <div style="font-size:10pt; font-weight:700;">${dateStr} ${timeStr}</div>
+        <div style="font-size:20pt; font-weight:700; letter-spacing: -1px;">${ticket.ticket_number}</div>
+        <div style="font-size:10pt; font-weight:500;">${dateStr} ${timeStr}</div>
       </div>
 
       <div style="border-bottom: 1px solid #000; margin-bottom: 10px; padding-bottom: 4px;">
-        <div style="font-weight:800; font-size:14pt; text-transform: uppercase; line-height:1.1;">
+        <div style="font-weight:500; font-size:12pt; text-transform: uppercase; line-height:1.1;">
             ${ticket.customer_name}
         </div>
-        ${ticket.rack_number ? `<div style="font-size:14pt; font-weight:800; margin-top:4px;'>RACK: ${ticket.rack_number}</div>` : ''}
+        ${ticket.rack_number ? `<div style="font-size:12pt; font-weight:500; margin-top:4px;">RACK: ${ticket.rack_number}</div>` : ''}
       </div>
 
       ${ticket.special_instructions ? `
@@ -109,7 +109,7 @@ export function renderPlantReceiptHtml(ticket: Ticket, organizationName: string 
         ${itemsHtml}
       </div>
 
-      <div style="font-size:11pt; font-weight:700; line-height: 1.4;">
+      <div style="font-size:11pt; font-weight:600; line-height: 1.4;">
         <div style="display:flex; justify-content:space-between;"> 
           <div>Subtotal:</div> <div>$${plantSubtotal.toFixed(2)}</div> 
         </div>
@@ -122,20 +122,20 @@ export function renderPlantReceiptHtml(ticket: Ticket, organizationName: string 
 
         <div style="border-top: 3px solid #000; margin-top: 6px; padding-top: 4px;"></div>
 
-        <div style="display:flex; justify-content:space-between; align-items:center; font-size:15pt; font-weight:900; margin-top:2px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; font-size:13pt; font-weight:600; margin-top:2px;">
           <div>TOTAL:</div>
           <div>$${finalPlantTotal.toFixed(2)}</div>
         </div>
 
-        <div style="display:flex; justify-content:space-between; margin-top:6px; font-size:12pt; font-weight:700;">
+        <div style="display:flex; justify-content:space-between; margin-top:6px; font-size:11pt; font-weight:600;">
           <div>Paid:</div>
           <div>$${paid.toFixed(2)}</div>
         </div>
 
         ${isPaid ? `
-          <div style="text-align:center; margin-top:8px; border: 3px solid #000; padding: 4px; font-weight:900; font-size:14pt;">PAID IN FULL</div>
+          <div style="text-align:center; margin-top:8px; border: 3px solid #000; padding: 4px; font-weight:700; font-size:12pt;">PAID IN FULL</div>
         ` : `
-          <div style="display:flex; justify-content:space-between; font-weight:900; margin-top:8px; font-size:13pt; border-top: 2px solid #000; border-bottom: 2px solid #000; padding: 6px 0;"> 
+          <div style="display:flex; justify-content:space-between; font-weight:600; margin-top:8px; font-size:11pt; border-top: 2px solid #000; border-bottom: 2px solid #000; padding: 6px 0;"> 
             <div>BALANCE:</div> 
             <div>$${balance.toFixed(2)}</div> 
           </div>
@@ -143,7 +143,7 @@ export function renderPlantReceiptHtml(ticket: Ticket, organizationName: string 
       </div>
       
       <div style="margin-top:15px; text-align:center;">
-        <div style=" display:inline-block; padding: 4px 10px; font-weight:900; font-size:14pt; text-transform:uppercase;">
+        <div style=" display:inline-block; padding: 4px 10px; font-weight:600; font-size:12pt; text-transform:uppercase;">
             PIECES: ${totalPieces}
         </div>
       </div>

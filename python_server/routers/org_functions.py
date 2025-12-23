@@ -1361,14 +1361,25 @@ def create_ticket(
             # Add size_charge to the total extras
             total_extra_charges = alteration_charge + instruction_charge + starch_charge + size_charge
 
-            behavior = getattr(item_create, 'alteration_behavior', 'none')
+            # Extract Alteration Behavior (Handle Enum -> String)
+            raw_behavior = getattr(item_create, 'alteration_behavior', 'none')
+            behavior_val = raw_behavior.value if hasattr(raw_behavior, 'value') else raw_behavior
             
-            if behavior == 'alteration_only':
+            if behavior_val == 'alteration_only':
                 item_total_price = total_extra_charges
             else:
                 item_total_price = (base_wash_price * quantity) + total_extra_charges
             
             total_amount += item_total_price
+
+            # Extract Starch Level (Handle Enum -> String)
+            # This fixes the SQL Insert Error
+            raw_starch = item_create.starch_level
+            starch_val = raw_starch.value if hasattr(raw_starch, 'value') else raw_starch
+
+            # Extract Clothing Size (Handle Enum -> String just in case)
+            raw_size = getattr(item_create, 'clothing_size', 'standard')
+            size_val = raw_size.value if hasattr(raw_size, 'value') else raw_size
 
             # Prepare the item dictionary
             ticket_items_to_insert.append({
@@ -1377,17 +1388,21 @@ def create_ticket(
                 "custom_name": clothing_name if item_create.clothing_type_id is None else None, 
                 "quantity": item_create.quantity,
                 
-                "starch_level": item_create.starch_level,
+                # ✅ FIXED: Sending string value instead of Enum Object
+                "starch_level": starch_val, 
                 "starch_charge": float(starch_charge),
 
-                # ✅ NEW: SIZE DATA
-                "clothing_size": getattr(item_create, 'clothing_size', 'standard'),
+                # ✅ FIXED: Ensuring string value
+                "clothing_size": size_val,
                 "size_charge": float(size_charge),
 
                 "crease": item_create.crease,
                 "alterations": item_create.alterations,
                 "item_instructions": item_create.item_instructions,
-                "alteration_behavior": behavior, 
+                
+                # ✅ FIXED: Ensuring string value
+                "alteration_behavior": behavior_val, 
+                
                 "additional_charge": float(alteration_charge),
                 "instruction_charge": float(instruction_charge),
                 "plant_price": float(plant_price),
@@ -1547,10 +1562,8 @@ def create_ticket(
     except Exception as e:
         db.rollback()
         print(f"Error during ticket creation: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred during ticket processing.")
-    
-    
-    
+        # Return the actual error message during debugging to make it easier to see what happened
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Database Error: {str(e)}")
         
 @router.get("/tickets", response_model=List[TicketSummaryResponse], summary="Get all tickets for *your* organization")
 async def get_tickets_for_organization(
