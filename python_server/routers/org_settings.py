@@ -11,9 +11,10 @@ from utils.common import get_db, get_current_user_payload
 ORG_OWNER_ROLE = "org_owner"
 STORE_ADMIN_ROLE = "store_admin"
 STORE_OWNER_ROLE = "STORE_OWNER"
+CASHIER = "cashier"
 
 # Allowed roles for changing settings
-ALLOWED_ADMIN_ROLES = [ORG_OWNER_ROLE, STORE_ADMIN_ROLE, STORE_OWNER_ROLE]
+ALLOWED_ADMIN_ROLES = [ORG_OWNER_ROLE, STORE_ADMIN_ROLE, STORE_OWNER_ROLE, CASHIER]
 
 router = APIRouter(prefix="/api/settings", tags=["Organization Settings"])
 
@@ -50,6 +51,13 @@ class StarchPriceUpdate(BaseModel):
     starch_price_medium: Optional[float] = None
     starch_price_heavy: Optional[float] = None
     starch_price_extra_heavy: Optional[float] = None
+
+class SizePriceUpdate(BaseModel):
+    size_price_s: Optional[float] = None
+    size_price_m: Optional[float] = None
+    size_price_l: Optional[float] = None
+    size_price_xl: Optional[float] = None
+    size_price_xxl: Optional[float] = None
 
 # =======================
 # Helper: Permission Check
@@ -311,4 +319,83 @@ async def update_starch_prices(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update starch prices."
+        )
+        
+ # =======================
+# 6. Clothing Size Pricing
+# =======================
+
+@router.put("/size-prices")
+async def update_size_prices(
+    data: SizePriceUpdate,
+    db: Session = Depends(get_db),
+    payload: Dict[str, Any] = Depends(get_current_user_payload)
+):
+    org_id = payload.get("organization_id")
+    role = payload.get("role")
+    
+    # Check Admin Permissions
+    check_admin_permissions(role)
+
+    # Dynamic query to update only provided fields
+    update_fields = {}
+    if data.size_price_s is not None:
+        update_fields["s"] = data.size_price_s
+    if data.size_price_m is not None:
+        update_fields["m"] = data.size_price_m
+    if data.size_price_l is not None:
+        update_fields["l"] = data.size_price_l
+    if data.size_price_xl is not None:
+        update_fields["xl"] = data.size_price_xl
+    if data.size_price_xxl is not None:
+        update_fields["xxl"] = data.size_price_xxl
+
+    if not update_fields:
+        raise HTTPException(status_code=400, detail="No fields provided to update")
+
+    set_clauses = []
+    params = {"org_id": org_id}
+    
+    # Build SQL dynamically based on what was sent
+    if "s" in update_fields:
+        set_clauses.append("size_price_s = :s")
+        params["s"] = update_fields["s"]
+        
+    if "m" in update_fields:
+        set_clauses.append("size_price_m = :m")
+        params["m"] = update_fields["m"]
+        
+    if "l" in update_fields:
+        set_clauses.append("size_price_l = :l")
+        params["l"] = update_fields["l"]
+        
+    if "xl" in update_fields:
+        set_clauses.append("size_price_xl = :xl")
+        params["xl"] = update_fields["xl"]
+        
+    if "xxl" in update_fields:
+        set_clauses.append("size_price_xxl = :xxl")
+        params["xxl"] = update_fields["xxl"]
+
+    # Always update the 'updated_at' timestamp
+    set_clauses.append("updated_at = NOW()")
+
+    stmt = text(f"""
+        UPDATE organization_settings
+        SET {", ".join(set_clauses)}
+        WHERE organization_id = :org_id
+    """)
+
+    try:
+        db.execute(stmt, params)
+        db.commit()
+        
+        return {"message": "Clothing size prices updated successfully"}
+
+    except Exception as e:
+        db.rollback()
+        print(f"Error updating size prices: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update clothing size prices."
         )

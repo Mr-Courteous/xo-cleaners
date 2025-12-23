@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { 
   Search, Package, User, Calendar, MapPin, 
   Eye, Printer, Edit3, 
-  Ban, RefreshCcw, RotateCcw, DollarSign 
+  Ban, RefreshCcw, RotateCcw, DollarSign, Loader2
 } from 'lucide-react';
 import axios from 'axios'; 
 import baseURL from '../lib/config'; 
@@ -28,12 +28,98 @@ export default function TicketManagement() {
   
   // Printing States
   const [showPrintPreview, setShowPrintPreview] = useState(false);
-  const [printContent, setPrintContent] = useState('');      
+  const [customerPrintContent, setCustomerPrintContent] = useState('');      
   const [plantPrintContent, setPlantPrintContent] = useState(''); 
+  const [tagPrintContent, setTagPrintContent] = useState(''); 
 
   // Edit Modal State
   const [showEditModal, setShowEditModal] = useState(false);
   const [editedItems, setEditedItems] = useState<EditableItem[]>([]);
+
+  // --- HELPER: Generate Tag HTML (Same as DropOff) ---
+  const generateTagHtml = (ticket: Ticket) => {
+    let combinedHtml = '';
+    const rawName = ticket.customer_name || ticket.customer_phone || 'Guest';
+    const fullName = rawName;
+    const ticketId = ticket.ticket_number || '';
+    const dateIssued = ticket.created_at ? new Date(ticket.created_at).toLocaleDateString() : '';
+    
+    // Ensure items exist
+    const items = ticket.items || [];
+
+    items.forEach((item) => {
+      const preferences = [];
+      if (item.starch_level && item.starch_level !== 'no_starch' && item.starch_level !== 'none') {
+        let starchDisplay = item.starch_level;
+        if (starchDisplay === 'extra_heavy') starchDisplay = 'Ex. Heavy';
+        else if (starchDisplay === 'heavy') starchDisplay = 'Heavy';
+        else if (starchDisplay === 'medium') starchDisplay = 'Medium';
+        else if (starchDisplay === 'light') starchDisplay = 'Light';
+        preferences.push(`${starchDisplay} starch`);
+      }
+      if (item.crease === 'crease') {
+        preferences.push('Crease');
+      }
+      if (item.alterations) {
+        preferences.push(`Alt: ${item.alterations}`);
+      }
+      if (item.item_instructions) {
+         preferences.push(`Note: ${item.item_instructions}`);
+      }
+      const preferencesText = preferences.join(' / ');
+      
+      // Loop for quantity to create individual tags
+      const qty = item.quantity || 1;
+      const tags = Array.from({ length: qty });
+      
+      const nameLen = fullName.length || 0;
+      const nameFontSize = nameLen > 50 ? '9pt' : nameLen > 35 ? '10pt' : '11pt';
+      const prefFontSize = '9pt';
+      
+      const itemTagsHtml = tags.map(() => `
+          <div style="
+            border: 1.5px solid #000;
+            padding: 6px 8px;
+            width: 100%;
+            box-sizing: border-box;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+            font-size: 10pt;
+            line-height: 1.1;
+            margin-bottom: 8px; 
+            page-break-after: always;
+            font-family: sans-serif;
+          ">
+            <div style="font-size: 10pt; font-weight: 700; overflow-wrap: break-word; word-break: break-word;">
+              ${ticketId}
+            </div>
+            <div style="font-size: ${nameFontSize}; font-weight: 700; text-align: right; overflow-wrap: break-word; word-break: break-word;">
+              ${fullName}
+            </div>
+
+            <div style="font-size: 9pt;">
+              Issued: ${dateIssued}
+            </div>
+            <div style="font-size: ${prefFontSize}; text-align: right; overflow-wrap: break-word; word-break: break-word;">
+              ${preferencesText}
+            </div>
+            
+            <div style="grid-column: 1 / span 2; text-align: center; font-size: 11pt; font-weight: 900; padding: 2px 0; border-top: 1px dashed #ccc; margin-top: 4px;">
+                ${item.clothing_name}
+            </div>
+          </div>
+      `).join('');
+      
+      combinedHtml += itemTagsHtml;
+    });
+
+    return `
+      <div style="display: flex; flex-direction: column; gap: 8px; padding: 6px;">
+        ${combinedHtml}
+      </div>
+    `;
+  };
 
   // --- Search Tickets ---
   const searchTickets = async () => {
@@ -49,7 +135,6 @@ export default function TicketManagement() {
         { headers }
       );
       setTickets(response.data);
-      console.log('Search Results:', response.data);
     } catch (error) {
       console.error(error);
       alert('Failed to search tickets.');
@@ -58,7 +143,7 @@ export default function TicketManagement() {
     }
   };
 
-  // --- View Modal ---
+  // --- View Details Modal ---
   const openViewModal = async (ticketId: number) => {
     setLoading(true);
     try {
@@ -75,7 +160,7 @@ export default function TicketManagement() {
     }
   };
 
-  // --- Print Logic ---
+  // --- Printing Logic ---
   const handlePrintJob = (htmlContent: string) => {
     const printFrame = document.createElement('iframe');
     printFrame.style.display = 'none';
@@ -88,12 +173,9 @@ export default function TicketManagement() {
             @page { size: 55mm auto; margin: 0; }
             @media print {
               html, body { margin: 0; padding: 0; }
-              .page-break { 
-                page-break-before: always; 
-                break-before: page;
-                display: block; 
-                height: 0; 
-                overflow: hidden;
+              .page-break-receipt { 
+                page-break-after: always; 
+                break-after: page;
               }
             }
             body { font-family: sans-serif; }
@@ -123,20 +205,52 @@ export default function TicketManagement() {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const fullTicket: Ticket = response.data; 
-      console.log('Fetched Ticket for Printing:', fullTicket);
+      console.log('Full Ticket for Printing:', fullTicket);
       
+      // Generate all versions
       const customerHtml = fullTicket.status === 'picked_up' 
         ? renderPickupReceiptHtml(fullTicket) 
         : renderReceiptHtml(fullTicket);
       
-      setPrintContent(customerHtml);
-      setPlantPrintContent(renderPlantReceiptHtml(fullTicket));
+      const plantHtml = renderPlantReceiptHtml(fullTicket);
+      const tagsHtml = generateTagHtml(fullTicket);
+
+      setCustomerPrintContent(customerHtml);
+      setPlantPrintContent(plantHtml);
+      setTagPrintContent(tagsHtml);
+      
       setShowPrintPreview(true);
     } catch (error) {
       alert('Failed to fetch ticket for printing.');
     } finally {
       setLoading(false);
     }
+  };
+
+  // Specific Print Handlers
+  const handlePrintCustomer = () => {
+    handlePrintJob(customerPrintContent);
+    setShowPrintPreview(false);
+  };
+
+  const handlePrintPlant = () => {
+    handlePrintJob(plantPrintContent);
+    setShowPrintPreview(false);
+  };
+
+  const handlePrintTags = () => {
+    handlePrintJob(tagPrintContent);
+    setShowPrintPreview(false);
+  };
+
+  const handlePrintAll = () => {
+    const combinedHtml = `
+      <div class="page-break-receipt">${customerPrintContent}</div>
+      <div class="page-break-receipt">${plantPrintContent}</div>
+      <div>${tagPrintContent}</div>
+    `;
+    handlePrintJob(combinedHtml);
+    setShowPrintPreview(false);
   };
 
   // --- Edit Logic ---
@@ -267,7 +381,10 @@ export default function TicketManagement() {
 
       {/* Loading State */}
       {loading && !selectedTicket && !showEditModal && (
-        <div className="text-center p-6 text-gray-500">Loading...</div>
+        <div className="text-center p-6 text-gray-500">
+            <Loader2 className="h-8 w-8 animate-spin mx-auto text-blue-500" />
+            Loading...
+        </div>
       )}
 
       {/* No Results */}
@@ -388,7 +505,7 @@ export default function TicketManagement() {
       )}
 
       {/* --- MODAL: View Details --- */}
-      {selectedTicket && !showEditModal && (
+      {selectedTicket && !showEditModal && !showPrintPreview && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60">
             <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl p-6 m-4 relative overflow-y-auto max-h-[90vh]">
                 <button onClick={() => setSelectedTicket(null)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
@@ -509,24 +626,41 @@ export default function TicketManagement() {
         isOpen={showPrintPreview} 
         onClose={() => setShowPrintPreview(false)} 
         onPrint={() => {}} 
-        content={printContent} 
+        content={customerPrintContent} 
         hideDefaultButton={true}
-        extraActions={(
-          <>\
+        extraActions={
+          <>
             <button 
-                onClick={() => handlePrintJob(`${printContent}<div class="page-break"></div>${plantPrintContent}`)} 
-                className="px-4 py-2 bg-purple-600 text-white rounded flex items-center gap-2 hover:bg-purple-700"
+                onClick={handlePrintCustomer} 
+                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-2"
             >
-                <Printer size={18} /> All Receipts
+              <Printer size={18} /> Customer Only
             </button>
+            
             <button 
-                onClick={() => handlePrintJob(plantPrintContent)} 
-                className="px-4 py-2 bg-green-600 text-white rounded flex items-center gap-2 hover:bg-green-700"
+                onClick={handlePrintPlant} 
+                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 flex items-center gap-2"
             >
-                <Printer size={18} /> Plant Only
+              <Printer size={18} /> Plant Only
+            </button>
+
+            {/* ✅ ADDED TAGS BUTTON */}
+            <button 
+                onClick={handlePrintTags} 
+                className="px-4 py-2 bg-amber-600 text-white rounded hover:bg-amber-700 flex items-center gap-2"
+            >
+              <Printer size={18} /> Tags Only
+            </button>
+
+            {/* ✅ ADDED ALL BUTTON */}
+            <button 
+                onClick={handlePrintAll} 
+                className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 flex items-center gap-2"
+            >
+              <Printer size={18} /> Print All
             </button>
           </>
-        )}
+        }
       />
     </div>
   );

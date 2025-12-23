@@ -3,150 +3,153 @@ import { Ticket } from '../types';
 export function renderPlantReceiptHtml(ticket: Ticket, organizationName: string = "Your Cleaners") {
   const items = ticket.items || [];
 
-  // --- 1. CALCULATIONS ---
-  const totalPlantPrice = items.reduce((sum, item) => {
+  // --- CALCULATIONS (Plant Specific - NO MARGIN) ---
+  // 1. Calculate Subtotal using PLANT PRICE + Extras
+  const plantSubtotal = items.reduce((sum, item) => {
     const quantity = Number(item.quantity) || 0;
     const plantPrice = Number(item.plant_price) || 0;
     const additional = Number(item.additional_charge) || 0;
-    const instructionCharge = Number(item.instruction_charge) || 0; // Added
+    const instructionCharge = Number(item.instruction_charge) || 0;
+    const starchCharge = Number(item.starch_charge) || 0;
+    const sizeCharge = Number(item.size_charge) || 0;
 
-    return sum + (plantPrice * quantity) + additional + instructionCharge;
+    return sum + ((plantPrice * quantity) + additional + instructionCharge + starchCharge + sizeCharge);
   }, 0);
 
-  const envCharge = totalPlantPrice * 0.047;
-  const tax = totalPlantPrice * 0.0825;
-  const finalPlantTotal = totalPlantPrice + envCharge + tax;
+  // 2. Calculate Tax/Env based on this PLANT COST (excluding margin)
+  const envCharge = plantSubtotal * 0.047;
+  const tax = plantSubtotal * 0.0825;
+  const finalPlantTotal = plantSubtotal + envCharge + tax;
+
+  const paid = Number(ticket.paid_amount) || 0;
+  const balance = finalPlantTotal - paid;
+  const isPaid = balance <= 0.05;
 
   const totalPieces = items.reduce((sum, item) => sum + (Number(item.quantity) * (Number(item.pieces) || 1)), 0);
+  const dateStr = new Date(ticket.created_at || Date.now()).toLocaleDateString();
+  const timeStr = new Date(ticket.created_at || Date.now()).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
 
-  const isPickedUp = ticket.status === 'picked_up';
-
-  const statusDate = isPickedUp
-    ? `${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`
-    : new Date(ticket.created_at || Date.now()).toLocaleDateString();
-
-  // --- 2. PAYMENT LOGIC ---
-  const rawPaid = Number(ticket.paid_amount) || 0;
-  const displayPaid = rawPaid >= finalPlantTotal ? finalPlantTotal : rawPaid;
-  const balance = finalPlantTotal - displayPaid;
-  const isPaid = balance <= 0.01;
-
-  // --- 3. HEADER INFO ---
-  const greetingText = ticket.receipt_header 
-    ? ticket.receipt_header.replace(/\n/g, '<br>') 
-    : `Welcome! We appreciate your business.`;
-
-  const footerText = ticket.receipt_footer
-    ? ticket.receipt_footer.replace(/\n/g, '<br>')
-    : `Thank you for choosing us!`;
-
-  // --- 4. ITEMS LIST ---
+  // --- ITEMS LIST ---
   const itemsHtml = items.map(item => {
     const quantity = Number(item.quantity) || 0;
-    const plantPrice = Number(item.plant_price) || 0;
-    const additional = Number(item.additional_charge) || 0;
-    const instructionCharge = Number(item.instruction_charge) || 0; // Added
     
-    // Updated calculation
-    const plantLineTotal = (plantPrice * quantity) + additional + instructionCharge;
+    // Plant Line Total calculation (matches subtotal logic)
+    const plantBase = Number(item.plant_price) || 0;
+    const extras = (Number(item.additional_charge) || 0) + 
+                   (Number(item.instruction_charge) || 0) + 
+                   (Number(item.starch_charge) || 0) + 
+                   (Number(item.size_charge) || 0);
+    const plantLineTotal = (plantBase * quantity) + extras;
 
     const details = [];
-    if (item.starch_level && item.starch_level !== 'none' && item.starch_level !== 'no_starch') details.push(`STARCH: ${item.starch_level.toUpperCase()}`);
-    if (item.crease) details.push('CREASE: YES');
-    if (item.alterations) details.push(`ALT: ${item.alterations.toUpperCase()}`);
-    if (additional > 0) details.push(`ADD'L: $${additional.toFixed(2)}`);
-    // Added instruction charge display
-    if (instructionCharge > 0) details.push(`INST CHG: $${instructionCharge.toFixed(2)}`);
-    if (item.item_instructions) details.push(`NOTE: ${item.item_instructions.toUpperCase()}`);
+
+    if (item.starch_level && item.starch_level !== 'none' && item.starch_level !== 'no_starch') {
+        const cost = item.starch_charge ? `(+$${Number(item.starch_charge).toFixed(2)})` : '';
+        details.push(`STARCH: ${item.starch_level.toUpperCase()} ${cost}`);
+    }
+    if (item.size_charge > 0 || (item.clothing_size && item.clothing_size !== 'm' && item.clothing_size !== 'standard')) {
+        const sizeName = (item.clothing_size || 'Std').toUpperCase();
+        const cost = item.size_charge ? `(+$${Number(item.size_charge).toFixed(2)})` : '';
+        details.push(`SIZE: ${sizeName} ${cost}`);
+    }
+    if (item.crease === true || item.crease === 'true' || item.crease === 'crease') {
+        details.push('CREASE INCLUDED');
+    }
+    if (item.alterations) {
+        const cost = item.additional_charge ? `(+$${Number(item.additional_charge).toFixed(2)})` : '';
+        details.push(`ALT: ${item.alterations} ${cost}`);
+    }
+    if (item.item_instructions) {
+        const cost = item.instruction_charge ? `(+$${Number(item.instruction_charge).toFixed(2)})` : '';
+        details.push(`NOTE: ${item.item_instructions} ${cost}`);
+    }
 
     const detailsHtml = details.length > 0
-      // Reduced to 9.5pt
-      ? `<div style="font-size:9.5pt; color:#000; margin-left:8px; font-weight:700; line-height:1.2;">+ ${details.join(', ')}</div>`
+      ? `<div style="font-size:9pt; color:#000; margin-top:2px; padding-left:0px; line-height:1.2; font-weight:700;">
+           ${details.map(d => `&bull; ${d}`).join('<br>')}
+         </div>`
       : '';
 
     return `
-      <div style="margin:5px 0; border-bottom: 2px solid #000;">
-         <div style="display:flex; justify-content:space-between; align-items:flex-end; font-size:11pt; font-weight: 900; color: #000; line-height: 1.2;">
-            
-            <div style="flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding-right:5px;">
-                ${item.clothing_name.toUpperCase()}
+      <div style="margin-bottom: 6px; padding-bottom: 6px; border-bottom: 1px solid #000;">
+         <div style="display:flex; justify-content:space-between; align-items:flex-start; font-size:11pt; font-weight: 800; color: #000; line-height:1.1;">
+            <div style="flex:1; text-transform: uppercase;">${item.clothing_name}</div>
+            <div style="text-align: right; min-width: 65px;">
+                <span style="margin-right: 2px;">${quantity}</span>
+                <span>$${plantLineTotal.toFixed(2)}</span>
             </div>
-
-            <div style="display:flex; align-items:center; flex-shrink:0;">
-                <div style="min-width:28px; text-align:right;">x${quantity}</div>
-                <div style="text-align:right; margin-left:8px;">$${plantLineTotal.toFixed(2)}</div>
-            </div>
-
         </div>
         ${detailsHtml}
       </div>
     `;
   }).join('');
 
-  // --- 5. FINAL HTML TEMPLATE ---
   return `
-    <div style="width:58mm; margin:0 auto; font-family: 'Courier New', Courier, monospace; color:#000; background: white; padding:5px;">
+    <div style="width:58mm; margin:0 auto; font-family: 'Arial', 'Helvetica', sans-serif; font-weight: 700; color:#000; background: white; padding: 2px;">
       
-      <div style="text-align:center;">
-        <div style="font-size:15pt; font-weight:900; font-family: Arial, sans-serif; margin-bottom: 5px; text-transform:uppercase;">
-          ${ticket.organization_name || organizationName}
-        </div>
-        
-        ${greetingText ? `<div style="font-size:10pt; font-weight:800; margin-bottom:10px;">${greetingText}</div>` : ''}
+      <div style="text-align:center; margin-bottom: 10px;">
+        <div style="font-size:20pt; font-weight:900; letter-spacing: -1px;">${ticket.ticket_number}</div>
+        <div style="font-size:10pt; font-weight:700;">${dateStr} ${timeStr}</div>
       </div>
 
-      <div style="text-align:center; border-top:2px solid #000; padding-top:6px; margin-top:8px;">
-        <div style="font-size:25px; font-weight:900; font-family: Arial, sans-serif; letter-spacing:1px;">
-          ${ticket.ticket_number}
+      <div style="border-bottom: 3px solid #000; margin-bottom: 10px; padding-bottom: 4px;">
+        <div style="font-weight:900; font-size:14pt; text-transform: uppercase; line-height:1.1;">
+            ${ticket.customer_name}
         </div>
-        ${isPickedUp ? `<div style="font-size:14pt; font-weight:900; margin-top:2px;">PICKED UP</div>` : ''}
-        <div style="font-size:9pt; font-weight:800;">${statusDate}</div>
-      </div>
-
-      <div style="margin-top:12px; font-weight:900; font-size:12pt; border-bottom:3px solid #000; text-transform:uppercase;">
-        ${ticket.customer_name}
+        ${ticket.rack_number ? `<div style="font-size:14pt; font-weight:900; margin-top:4px;">RACK: ${ticket.rack_number}</div>` : ''}
       </div>
 
       ${ticket.special_instructions ? `
-        <div style="margin-top:8px; padding:6px; border:3px solid #000; background-color:#eee; font-weight:900; font-size:10pt;">
-          NOTE: ${ticket.special_instructions.toUpperCase()}
+        <div style="margin-bottom:10px; padding:4px; border:3px solid #000; font-weight:900; font-size:11pt; text-align:center; text-transform:uppercase;">
+          ${ticket.special_instructions}
         </div>
       ` : ''}
 
-      <div style="margin-top:10px;">
+      <div style="margin-bottom: 10px;">
         ${itemsHtml}
       </div>
 
-      <div style="margin-top: 12px; border-top: 3px dashed #000; padding-top: 8px; font-size:10pt; font-weight: 800;">
-        <div style="display:flex; justify-content:space-between;"> <div>Plant Sub:</div> <div>$${totalPlantPrice.toFixed(2)}</div> </div>
-        <div style="display:flex; justify-content:space-between;"> <div>Env (4.7%):</div> <div>$${envCharge.toFixed(2)}</div> </div>
-        <div style="display:flex; justify-content:space-between;"> <div>Tax (8.25%):</div> <div>$${tax.toFixed(2)}</div> </div>
-        
-        <div style="display:flex; justify-content:space-between; font-weight:900; font-size:13pt; margin-top:10px; border-top:3px solid #000; padding-top:4px;">
-          <div>COST TOTAL:</div> <div>$${finalPlantTotal.toFixed(2)}</div>
+      <div style="border-top: 2px dashed #000; margin-bottom: 8px;"></div>
+
+      <div style="font-size:11pt; font-weight:700; line-height: 1.4;">
+        <div style="display:flex; justify-content:space-between;"> 
+          <div>Subtotal:</div> <div>$${plantSubtotal.toFixed(2)}</div> 
+        </div>
+        <div style="display:flex; justify-content:space-between; font-size:10pt;"> 
+          <div>Env Fee (4.7%):</div> <div>$${envCharge.toFixed(2)}</div> 
+        </div>
+        <div style="display:flex; justify-content:space-between; font-size:10pt;"> 
+          <div>Tax (8.25%):</div> <div>$${tax.toFixed(2)}</div> 
         </div>
 
-        <div style="display:flex; justify-content:space-between; margin-top:4px; font-size:10pt;"> 
-            <div>Paid Amount:</div> 
-            <div>$${displayPaid.toFixed(2)}</div> 
+        <div style="border-top: 3px solid #000; margin-top: 6px; padding-top: 4px;"></div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; font-size:15pt; font-weight:900; margin-top:2px;">
+          <div>TOTAL:</div>
+          <div>$${finalPlantTotal.toFixed(2)}</div>
         </div>
 
-        ${isPaid 
-            ? `<div style="text-align:center; margin-top:12px; border: 4px solid #000; padding: 4px; font-weight:900; font-size: 16pt;">PAID IN FULL</div>`
-            : `<div style="display:flex; justify-content:space-between; font-weight:900; margin-top:10px; font-size:12pt; background: #ddd; padding: 4px;"> 
-                 <div>BALANCE DUE:</div> 
-                 <div>$${balance.toFixed(2)}</div> 
-               </div>`
-        }
+        <div style="display:flex; justify-content:space-between; margin-top:6px; font-size:12pt; font-weight:700;">
+          <div>Paid:</div>
+          <div>$${paid.toFixed(2)}</div>
+        </div>
+
+        ${isPaid ? `
+          <div style="text-align:center; margin-top:8px; border: 3px solid #000; padding: 4px; font-weight:900; font-size:14pt;">PAID IN FULL</div>
+        ` : `
+          <div style="display:flex; justify-content:space-between; font-weight:900; margin-top:8px; font-size:13pt; border-top: 2px solid #000; border-bottom: 2px solid #000; padding: 6px 0;"> 
+            <div>BALANCE:</div> 
+            <div>$${balance.toFixed(2)}</div> 
+          </div>
+        `}
       </div>
       
-      <div style="margin-top:12px; text-align:center; font-weight:900; font-size:12pt; border:3px solid #000; padding:6px;">
-        ${totalPieces} PIECES
+      <div style="margin-top:15px; text-align:center;">
+        <div style="border: 3px solid #000; display:inline-block; padding: 4px 10px; font-weight:900; font-size:14pt; text-transform:uppercase;">
+            PIECES: ${totalPieces}
+        </div>
       </div>
 
-      <div style="margin-top:15px; text-align:center; font-size:9pt; font-weight:800; border-top:1px dashed #000; padding-top:10px;">
-        ${footerText}
-      </div>
     </div>
   `;
 }

@@ -21,6 +21,8 @@ const CLOTHING_IMAGE_MAP: { [key: string]: string } = {
 interface ExtendedTicketItem extends TicketItem {
   instruction_charge?: number;
   starch_charge?: number;
+  size_charge?: number; // ✅ NEW FIELD
+  clothing_size?: string; // ✅ NEW FIELD
   alteration_behavior?: string;
   is_custom?: boolean; 
 }
@@ -29,6 +31,7 @@ interface TicketWithItems extends Ticket {
   items: Array<ExtendedTicketItem & {
     clothing_name: string;
     starch_level: string;
+    clothing_size: string; // ✅ NEW FIELD
     crease: string;
     quantity: number;
   }>;
@@ -46,6 +49,84 @@ const getAuthHeaders = () => {
 
 const RECEIPT_STORAGE_KEY = 'receiptConfig';
 const VIEW_MODE_STORAGE_KEY = 'dropOffViewMode';
+
+// --- HELPER COMPONENT: UPCHARGE BUTTONS (UPDATED) ---
+interface UpchargeProps {
+  currentCharge: number;
+  onUpdate: (amount: number) => void;
+}
+
+const UpchargeSelector = ({ currentCharge, onUpdate }: UpchargeProps) => {
+  
+  // Logic: Add to current, but don't go below 0
+  const handleAdd = (amount: number) => {
+    const newVal = Math.max(0, currentCharge + amount);
+    onUpdate(newVal);
+  };
+
+  return (
+    <div className="flex flex-col mt-2 pt-2 border-t border-gray-100" onClick={(e) => e.stopPropagation()}>
+      <div className="flex justify-between items-center mb-1">
+        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+            Upcharge: <span className="text-red-600">${currentCharge.toFixed(2)}</span>
+        </span>
+        {currentCharge > 0 && (
+             <button
+              onClick={() => onUpdate(0)}
+              className="text-[10px] text-red-400 hover:text-red-600 underline"
+            >
+              Reset
+            </button>
+        )}
+      </div>
+
+      <div className="flex flex-wrap gap-2 items-center">
+        {/* MINUS BUTTONS (2 Buttons) */}
+        <div className="flex gap-1 bg-red-50 p-1 rounded">
+            <button
+                type="button"
+                onClick={() => handleAdd(-1)}
+                className="px-2 py-1 text-[10px] font-bold rounded bg-white border border-red-200 text-red-700 hover:bg-red-100"
+            >
+                -$1
+            </button>
+            <button
+                type="button"
+                onClick={() => handleAdd(-5)}
+                className="px-2 py-1 text-[10px] font-bold rounded bg-white border border-red-200 text-red-700 hover:bg-red-100"
+            >
+                -$5
+            </button>
+        </div>
+
+        {/* ADD BUTTONS (3 Buttons) */}
+        <div className="flex gap-1 bg-green-50 p-1 rounded">
+            <button
+                type="button"
+                onClick={() => handleAdd(1)}
+                className="px-2 py-1 text-[10px] font-bold rounded bg-white border border-green-200 text-green-700 hover:bg-green-100"
+            >
+                +$1
+            </button>
+            <button
+                type="button"
+                onClick={() => handleAdd(5)}
+                className="px-2 py-1 text-[10px] font-bold rounded bg-white border border-green-200 text-green-700 hover:bg-green-100"
+            >
+                +$5
+            </button>
+            <button
+                type="button"
+                onClick={() => handleAdd(10)}
+                className="px-2 py-1 text-[10px] font-bold rounded bg-white border border-green-200 text-green-700 hover:bg-green-100"
+            >
+                +$10
+            </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // --- GRID VIEW COMPONENT ---
 interface ClothingGridProps {
@@ -137,13 +218,12 @@ export default function DropOff() {
   // Track selected item for Quick Starch Panel
   const [selectedTicketIndex, setSelectedTicketIndex] = useState<number | null>(null);
 
-  // STARCH PRICES STATE
+  // STARCH & SIZE PRICES STATE
   const [starchPrices, setStarchPrices] = useState({
-    no_starch: 0.00,
-    light: 0.00,
-    medium: 0.00,
-    heavy: 0.00,
-    extra_heavy: 0.00 
+    no_starch: 0.00, light: 0.00, medium: 0.00, heavy: 0.00, extra_heavy: 0.00 
+  });
+  const [sizePrices, setSizePrices] = useState({
+    s: 0.00, m: 0.00, l: 0.00, xl: 0.00, xxl: 0.00
   });
 
   const [specialInstructions, setSpecialInstructions] = useState('');
@@ -186,6 +266,14 @@ export default function DropOff() {
                 heavy: parseFloat(res.data.starch_price_heavy) || 0.00,
                 extra_heavy: parseFloat(res.data.starch_price_extra_heavy) || 0.00 
             });
+            // ✅ FETCH SIZE PRICES
+            setSizePrices({
+                s: parseFloat(res.data.size_price_s) || 0.00,
+                m: parseFloat(res.data.size_price_m) || 0.00,
+                l: parseFloat(res.data.size_price_l) || 0.00,
+                xl: parseFloat(res.data.size_price_xl) || 0.00,
+                xxl: parseFloat(res.data.size_price_xxl) || 0.00 
+            });
         }
     } catch (err) {
         console.error("Failed to fetch organization settings:", err);
@@ -227,6 +315,16 @@ export default function DropOff() {
     } catch (error: any) {
       console.error("Failed to search customers:", error);
       setCustomers([]);
+      
+      // Handle 401/403 Unauthorized errors
+      if (error.response && (error.response.status === 401 || error.response.status === 403)) {
+          setModal({
+            isOpen: true,
+            title: "Unauthorized",
+            message: "Your session has expired or you are unauthorized. Please log in again.",
+            type: "error"
+          });
+      }
     } finally {
       setLoading(false);
     }
@@ -276,18 +374,13 @@ export default function DropOff() {
       clothing_type_id: ct?.id || 1,
       clothing_name: ct?.name || 'Select Item',
       quantity: 1,
-      starch_level: 'no_starch',
-      starch_charge: 0,
-      crease: 'no_crease',
-      additional_charge: 0,
-      instruction_charge: 0,
-      alterations: '',
-      item_instructions: '',
-      plant_price: ct?.plant_price || 0,
-      margin: ct?.margin || 0,
+      starch_level: 'no_starch', starch_charge: 0,
+      clothing_size: 'm', size_charge: 0, // ✅ Defaults
+      crease: 'no_crease', additional_charge: 0, instruction_charge: 0,
+      alterations: '', item_instructions: '',
+      plant_price: ct?.plant_price || 0, margin: ct?.margin || 0,
       item_total: (ct?.plant_price || 0) + (ct?.margin || 0),
-      alteration_behavior: 'none',
-      is_custom: false
+      alteration_behavior: 'none', is_custom: false
     };
     
     setItems(prev => {
@@ -305,18 +398,13 @@ export default function DropOff() {
       clothing_type_id: ct.id,
       clothing_name: ct.name,
       quantity: 1,
-      starch_level: 'no_starch',
-      starch_charge: 0,
-      crease: 'no_crease',
-      additional_charge: 0,
-      instruction_charge: 0,
-      alterations: '',
-      item_instructions: '',
-      plant_price: ct.plant_price,
-      margin: ct.margin,
+      starch_level: 'no_starch', starch_charge: 0,
+      clothing_size: 'm', size_charge: 0, // ✅ Defaults
+      crease: 'no_crease', additional_charge: 0, instruction_charge: 0,
+      alterations: '', item_instructions: '',
+      plant_price: ct.plant_price, margin: ct.margin,
       item_total: ct.plant_price + ct.margin,
-      alteration_behavior: 'none',
-      is_custom: false
+      alteration_behavior: 'none', is_custom: false
     };
 
     setItems(prev => {
@@ -335,18 +423,13 @@ export default function DropOff() {
       clothing_type_id: -1, 
       clothing_name: name,
       quantity: 1,
-      starch_level: 'no_starch',
-      starch_charge: 0, 
-      crease: 'no_crease',
-      additional_charge: 0,
-      instruction_charge: 0,
-      alterations: '',
-      item_instructions: '',
-      plant_price: price,
-      margin: margin,
+      starch_level: 'no_starch', starch_charge: 0,
+      clothing_size: 'm', size_charge: 0, // ✅ Defaults
+      crease: 'no_crease', additional_charge: 0, instruction_charge: 0,
+      alterations: '', item_instructions: '',
+      plant_price: price, margin: margin,
       item_total: price + margin, 
-      alteration_behavior: 'none',
-      is_custom: true
+      alteration_behavior: 'none', is_custom: true
     };
 
     setItems(prev => {
@@ -364,20 +447,30 @@ export default function DropOff() {
     updateItem(selectedTicketIndex, { starch_level: levelKey });
   };
 
+  const handleQuickSizeUpdate = (sizeKey: string) => { // ✅ NEW HANDLER
+    if (selectedTicketIndex === null) return;
+    updateItem(selectedTicketIndex, { clothing_size: sizeKey });
+  };
+
   const updateItem = (index: number, updates: any) => {
     const newItems = [...items];
     const oldItem = newItems[index];
     const updatedItem = { ...oldItem, ...updates };
     newItems[index] = updatedItem;
     
-    // 1. Calculate Starch Charge
+    const qty = updatedItem.quantity || 0;
+
+    // 1. Starch Calculation
     const selectedStarch = updatedItem.starch_level as keyof typeof starchPrices;
     const unitStarchPrice = starchPrices[selectedStarch] || 0;
-    const qty = updatedItem.quantity || 0;
-    
     updatedItem.starch_charge = unitStarchPrice * qty;
 
-    // 2. Base Price
+    // 2. ✅ Size Calculation
+    const selectedSize = (updatedItem.clothing_size || 'm') as keyof typeof sizePrices;
+    const unitSizePrice = sizePrices[selectedSize] || 0;
+    updatedItem.size_charge = unitSizePrice * qty;
+
+    // 3. Base Price
     const clothingType = clothingTypes.find(ct => ct.id === updatedItem.clothing_type_id);
     let basePrice = 0;
     
@@ -393,12 +486,13 @@ export default function DropOff() {
       basePrice = 0;
     }
 
-    // 3. Final Total
+    // 4. Final Total
     const altCharge = updatedItem.additional_charge || 0;
     const instCharge = updatedItem.instruction_charge || 0;
     const starchCharge = updatedItem.starch_charge || 0;
+    const sizeCharge = updatedItem.size_charge || 0;
 
-    updatedItem.item_total = (basePrice * qty) + altCharge + instCharge + starchCharge;
+    updatedItem.item_total = (basePrice * qty) + altCharge + instCharge + starchCharge + sizeCharge;
 
     setItems(newItems);
   };
@@ -550,22 +644,15 @@ export default function DropOff() {
     try {
       setLoading(true);
 
-      // ✅ FIXED: Mapping to match Backend Enums ('none', 'low', 'medium', 'high')
       const mapStarchLevel = (val: any) => {
         if (!val) return 'none';
         const s = String(val).toLowerCase();
         
-        // Map common frontend terms to backend expectations
         if (s === 'no_starch' || s === 'none') return 'none';
-        
-        if (s === 'light' || s === 'low') return 'low'; // Backend expects 'low'
-        
+        if (s === 'light' || s === 'low') return 'low'; 
         if (s === 'medium' || s === 'med') return 'medium';
-        
-        if (s === 'heavy' || s === 'high') return 'high'; // Backend expects 'high'
-        
-        if (s === 'extra_heavy') return 'high'; // Map extra heavy to high to avoid 500 error
-        
+        if (s === 'heavy' || s === 'high') return 'high'; 
+        if (s === 'extra_heavy') return 'high'; 
         return 'none';
       };
 
@@ -579,7 +666,10 @@ export default function DropOff() {
 
           quantity: Number(item.quantity) || 0,
           
-          starch_level: mapStarchLevel(item.starch_level), // ✅ Using fixed mapper
+          starch_level: mapStarchLevel(item.starch_level),
+          clothing_size: item.clothing_size || 'm', // ✅ SEND SIZE
+          size_charge: item.size_charge || 0.0,     // ✅ SEND SIZE CHARGE
+
           crease: item.crease === 'crease', 
           
           additional_charge: Number(item.additional_charge) || 0.0, 
@@ -857,120 +947,190 @@ export default function DropOff() {
                    <span className="text-sm text-gray-500">{items.length} Items</span>
                 </div>
 
-                {/* ✅ QUICK STARCH PANEL */}
-                <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200 mb-4">
-                   <div className="flex items-center justify-between mb-2">
-                      <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
-                         Starch Level
-                      </h3>
-                      {selectedTicketIndex !== null ? (
-                         <span className="text-xs text-blue-600 font-medium animate-pulse">
-                            Editing Item #{selectedTicketIndex + 1}
-                         </span>
-                      ) : (
-                         <span className="text-xs text-gray-400 italic">
-                            Select an item to edit
-                         </span>
-                      )}
-                   </div>
-                   
-                   <div className="grid grid-cols-5 gap-1">
-                      {['no_starch', 'light', 'medium', 'heavy', 'extra_heavy'].map((key) => {
-                          const levelDisplay = key.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()).replace('No Starch', 'None').replace('Extra Heavy', 'Ex. Heavy');
-                          const isActive = selectedTicketIndex !== null && items[selectedTicketIndex]?.starch_level === key;
-                          
-                          return (
-                            <button
-                              key={key}
-                              onClick={() => handleQuickStarchUpdate(key)}
-                              disabled={selectedTicketIndex === null}
-                              className={`
-                                px-1 py-2 text-[10px] font-semibold rounded transition-all
-                                ${isActive 
-                                  ? 'bg-indigo-600 text-white shadow-md scale-105' 
-                                  : 'bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100'
-                                }
-                                disabled:opacity-40 disabled:cursor-not-allowed
-                              `}
-                            >
-                              {levelDisplay}
-                            </button>
-                          );
-                      })}
-                   </div>
-                   {/* Show Price Hint */}
-                   {selectedTicketIndex !== null && items[selectedTicketIndex]?.starch_charge > 0 && (
-                      <div className="text-right text-[10px] text-blue-600 mt-1 font-medium">
-                         +${items[selectedTicketIndex].starch_charge.toFixed(2)} added
-                      </div>
-                   )}
+                {/* ✅✅ CONTROL PANEL CONTAINER */}
+                <div className="space-y-3 mb-4">
+                    
+                    {/* 1. STARCH PANEL */}
+                    <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200">
+                        <div className="flex items-center justify-between mb-2">
+                            <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                                Starch Level
+                            </h3>
+                            {/* Show Price Hint */}
+                            {selectedTicketIndex !== null && items[selectedTicketIndex]?.starch_charge > 0 && (
+                                <span className="text-[10px] text-blue-600 font-bold">
+                                    +${items[selectedTicketIndex].starch_charge.toFixed(2)}
+                                </span>
+                            )}
+                        </div>
+                        
+                        <div className="grid grid-cols-5 gap-1">
+                            {['no_starch', 'light', 'medium', 'heavy', 'extra_heavy'].map((key) => {
+                                const levelDisplay = key.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()).replace('No Starch', 'None').replace('Extra Heavy', 'Ex.Hv');
+                                const isActive = selectedTicketIndex !== null && items[selectedTicketIndex]?.starch_level === key;
+                                
+                                return (
+                                    <button
+                                    key={key}
+                                    onClick={() => handleQuickStarchUpdate(key)}
+                                    disabled={selectedTicketIndex === null}
+                                    className={`
+                                        px-1 py-1.5 text-[9px] font-bold uppercase rounded border transition-all
+                                        ${isActive 
+                                        ? 'bg-blue-600 text-white border-blue-600 shadow-sm' 
+                                        : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
+                                        }
+                                        disabled:opacity-40 disabled:cursor-not-allowed
+                                    `}
+                                    >
+                                    {levelDisplay}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    {/* 2. ✅✅ CLOTHING SIZE PANEL */}
+                    <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200">
+                        <div className="flex items-center justify-between mb-2">
+                            <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                                Clothing Size
+                            </h3>
+                            {/* Show Price Hint */}
+                            {selectedTicketIndex !== null && items[selectedTicketIndex]?.size_charge > 0 && (
+                                <span className="text-[10px] text-purple-600 font-bold">
+                                    +${items[selectedTicketIndex].size_charge.toFixed(2)}
+                                </span>
+                            )}
+                        </div>
+                        
+                        <div className="grid grid-cols-5 gap-1">
+                            {['s', 'm', 'l', 'xl', 'xxl'].map((key) => {
+                                const isActive = selectedTicketIndex !== null && (items[selectedTicketIndex]?.clothing_size || 'm') === key;
+                                
+                                return (
+                                    <button
+                                    key={key}
+                                    onClick={() => handleQuickSizeUpdate(key)}
+                                    disabled={selectedTicketIndex === null}
+                                    className={`
+                                        px-1 py-1.5 text-[10px] font-bold uppercase rounded border transition-all
+                                        ${isActive 
+                                        ? 'bg-purple-600 text-white border-purple-600 shadow-sm' 
+                                        : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
+                                        }
+                                        disabled:opacity-40 disabled:cursor-not-allowed
+                                    `}
+                                    >
+                                    {key.toUpperCase()}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+
                 </div>
                 
-                <div className="space-y-4 mb-6 max-h-[500px] overflow-y-auto">
+                {/* ITEMS LIST (Reduced Height) */}
+                <div className="space-y-2 mb-6 max-h-[400px] overflow-y-auto">
                    {items.map((item, index) => (
                       <div 
                         key={index} 
                         // ✅ Click to Select
                         onClick={() => setSelectedTicketIndex(index)}
                         className={`
-                          p-4 border rounded-lg cursor-pointer transition-all duration-200
+                          p-2 border rounded-lg cursor-pointer transition-all duration-200
                           ${selectedTicketIndex === index 
                              ? 'border-indigo-500 ring-1 ring-indigo-500 bg-indigo-50' 
-                             : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
+                             : 'border-gray-200 bg-white hover:bg-gray-50'
                           }
                         `}
                       >
-                         <div className="flex justify-between items-start mb-2">
-                            <div>
-                               <h4 className="font-medium text-gray-900">{item.clothing_name}</h4>
-                               {item.is_custom && <span className="text-[10px] uppercase font-bold text-indigo-600 bg-indigo-100 px-1 rounded">Custom</span>}
+                         {/* Row 1: Name and Delete */}
+                         <div className="flex justify-between items-center mb-1">
+                            <h4 className="font-medium text-sm text-gray-900 truncate pr-2">
+                                {item.clothing_name}
+                                {item.is_custom && <span className="ml-1 text-[10px] font-bold text-indigo-600 bg-indigo-100 px-1 rounded">C</span>}
+                            </h4>
+                            <button onClick={(e) => removeItem(index, e)} className="text-gray-400 hover:text-red-600"><Trash2 className="h-3 w-3" /></button>
+                         </div>
+
+                         {/* Row 2: Controls (Qty, Tags, Total) - Compact Flex Row */}
+                         <div className="flex items-center justify-between text-xs" onClick={(e) => e.stopPropagation()}>
+                            
+                            <div className="flex items-center gap-2">
+                                {/* Compact Quantity */}
+                                <div className="flex items-center bg-gray-100 rounded px-1.5 py-0.5 border border-gray-200">
+                                   <span className="text-gray-500 text-[10px] mr-1">Qty</span>
+                                   <input 
+                                      type="number" 
+                                      min="1" 
+                                      value={item.quantity} 
+                                      onChange={(e) => updateItem(index, { quantity: parseInt(e.target.value) || 0 })}
+                                      className="w-6 bg-transparent border-none p-0 text-center font-semibold focus:ring-0 text-xs"
+                                      onClick={(e) => setSelectedTicketIndex(index)}
+                                   />
+                                </div>
+
+                                {/* Size Badge */}
+                                <span className={`
+                                    px-1.5 py-0.5 rounded text-[9px] font-bold uppercase border
+                                    ${item.clothing_size && item.clothing_size !== 'm' 
+                                        ? 'bg-purple-50 text-purple-700 border-purple-100' 
+                                        : 'bg-gray-50 text-gray-400 border-gray-200'}
+                                `}>
+                                   {(item.clothing_size || 'M').toUpperCase()}
+                                </span>
+
+                                {/* Starch Badge (Only show if not None) */}
+                                {item.starch_level !== 'no_starch' && (
+                                    <span className="px-1.5 py-0.5 rounded text-[9px] border bg-blue-50 text-blue-700 border-blue-100">
+                                        {item.starch_level.replace('_', ' ').substring(0, 3).toUpperCase()}
+                                    </span>
+                                )}
+
+                                {/* Crease Checkbox */}
+                                <label className="flex items-center gap-1 cursor-pointer ml-1">
+                                    <input 
+                                      type="checkbox" 
+                                      checked={item.crease === 'crease'} 
+                                      onChange={(e) => updateItem(index, { crease: e.target.checked ? 'crease' : 'no_crease' })}
+                                      className="rounded text-blue-600 w-3 h-3"
+                                    />
+                                    <span className="text-[9px] text-gray-500">Crease</span>
+                                </label>
                             </div>
-                            <button onClick={(e) => removeItem(index, e)} className="text-red-400 hover:text-red-600 hover:bg-red-50 p-1 rounded"><Trash2 className="h-4 w-4" /></button>
+
+                            {/* Total Price */}
+                            <span className="font-semibold text-gray-900">
+                                ${item.item_total.toFixed(2)}
+                            </span>
                          </div>
 
-                         <div className="flex flex-col gap-2 text-sm" onClick={(e) => e.stopPropagation()}>
-                            <div className="flex items-center justify-between">
-                               <label className="text-gray-500 text-xs">Quantity</label>
-                               <input 
-                                  type="number" 
-                                  min="1" 
-                                  value={item.quantity} 
-                                  onChange={(e) => updateItem(index, { quantity: parseInt(e.target.value) || 0 })}
-                                  className="w-16 px-2 py-1 border rounded text-right"
-                                  onClick={(e) => {
-                                      // Optional: Auto-select row when clicking input
-                                      setSelectedTicketIndex(index);
-                                  }}
-                               />
-                            </div>
-                         </div>
-                         
-                         {/* Status Tags */}
-                         <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                             <span className={`px-2 py-1 rounded border ${item.starch_level !== 'no_starch' ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-gray-100 text-gray-500 border-gray-200'}`}>
-                                {item.starch_level === 'no_starch' ? 'No Starch' : item.starch_level.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())}
-                             </span>
+                         {/* ROW 3: UPCHARGE BUTTONS */}
+                         <UpchargeSelector 
+                            currentCharge={item.additional_charge || 0}
+                            onUpdate={(newAmount) => {
+                                // 1. Remove ANY existing price tags like (+$5), (+$10)
+                                const cleanNote = (item.item_instructions || '').replace(/\s*\(\+\$\d+(\.\d+)?\)/g, '').trim();
+                                
+                                // 2. Add the single new total tag only if > 0
+                                const newNote = newAmount > 0 
+                                  ? `${cleanNote} (+$${newAmount})` 
+                                  : cleanNote;
 
-                             <label className="flex items-center space-x-1 cursor-pointer bg-white px-2 py-1 rounded border border-gray-200 hover:border-blue-300" onClick={(e) => e.stopPropagation()}>
-                                <input 
-                                  type="checkbox" 
-                                  checked={item.crease === 'crease'} 
-                                  onChange={(e) => updateItem(index, { crease: e.target.checked ? 'crease' : 'no_crease' })}
-                                  className="rounded text-blue-600"
-                                />
-                                <span className="text-gray-600">Crease</span>
-                             </label>
-                         </div>
+                                updateItem(index, { 
+                                    additional_charge: newAmount,
+                                    item_instructions: newNote
+                                });
+                            }} 
+                         />
 
-                         <div className="mt-3 pt-2 border-t border-gray-200/50 flex justify-between items-center font-medium">
-                            <span className="text-xs text-gray-500">Item Total:</span>
-                            <span>${item.item_total.toFixed(2)}</span>
-                         </div>
                       </div>
                    ))}
                    
                    {items.length === 0 && (
-                      <div className="text-center py-8 text-gray-500">
+                      <div className="text-center py-8 text-gray-500 text-sm">
                          No items added yet
                       </div>
                    )}

@@ -179,7 +179,7 @@ export default function StoreOwner() {
     { id: 'clothing', label: 'Clothing', icon: Shirt, category: 'Management' },
     { id: 'status', label: 'Status', icon: Activity, category: 'Management' },
     { id: 'tags', label: 'Tags', icon: Tag, category: 'Management' },
-    { id: 'directory', label: 'Directory', icon: BookUser, category: 'Management' },
+    // { id: 'directory', label: 'Directory', icon: BookUser, category: 'Management' },
     { id: 'settings', label: 'Settings', icon: Settings, category: 'System' },
     { id: 'analytics', label: 'Analytics', icon: BarChart3, category: 'Main' },
   ];

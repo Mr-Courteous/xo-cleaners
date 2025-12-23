@@ -341,68 +341,77 @@ async def get_ticket_details(
         if not ticket:
             raise HTTPException(status_code=404, detail="Ticket not found.")
 
-        # 2. Get Items (Updated to fetch instruction_charge)
+        # 2. Get Items
         items_stmt = text("""
             SELECT 
                 ti.id, ti.ticket_id, ti.clothing_type_id, ti.quantity, 
-                ti.item_total, ti.plant_price, ti.margin, ti.starch_level, ti.crease,
-                ti.alterations, ti.item_instructions, 
-                ti.additional_charge, ti.instruction_charge,  -- ✅ ADDED instruction_charge here
+                ti.item_total, ti.plant_price, ti.margin, 
+                ti.starch_level, ti.starch_charge, 
+                
+                ti.clothing_size, ti.size_charge,  -- ✅ Size Fields
+                
+                ti.crease, ti.alterations, ti.item_instructions, 
+                ti.additional_charge, ti.instruction_charge,
                 ti.alteration_behavior, 
+                ti.custom_name, -- ✅ ADDED: Needed for custom items to show names
+                
                 ct.name AS clothing_name,
                 ct.image_url AS clothing_image_url,
                 COALESCE(ct.pieces, 1) AS pieces
             FROM ticket_items ti
-            JOIN clothing_types ct ON ti.clothing_type_id = ct.id
+            LEFT JOIN clothing_types ct ON ti.clothing_type_id = ct.id 
             WHERE ti.ticket_id = :ticket_id
         """)
         
         items_results = db.execute(items_stmt, {"ticket_id": ticket_id}).fetchall()
 
-        items_list = [
-            TicketItemResponse(
-                id=item_row.id,
-                ticket_id=item_row.ticket_id,
-                clothing_type_id=item_row.clothing_type_id,
-                quantity=item_row.quantity,
-                starch_level=item_row.starch_level,
-                crease=item_row.crease,
-                alterations=item_row.alterations,
-                item_instructions=item_row.item_instructions,
-                alteration_behavior=item_row.alteration_behavior,
-                item_total=item_row.item_total,
-                plant_price=item_row.plant_price,
-                margin=item_row.margin,
-                
-                # ✅ Return both additional prices
-                additional_charge=item_row.additional_charge or 0.0,   # Alteration Charge
-                instruction_charge=item_row.instruction_charge or 0.0, # Instruction Charge
-                
-                clothing_name=item_row.clothing_name,
-                pieces=item_row.pieces
-            ) for item_row in items_results
-        ]
+        items_list = []
+        for item_row in items_results:
+            # Name Logic: Use DB clothing name, if null use custom_name from ticket_item
+            final_name = item_row.clothing_name 
+            if not final_name:
+                final_name = item_row.custom_name or "Custom Item"
 
-        # ===========================================================================
-        # 3. FETCH ORGANIZATION NAME & BRANDING (Header/Footer)
-        # ===========================================================================
-        
-        # A. Fetch Org Name
+            items_list.append(
+                TicketItemResponse(
+                    id=item_row.id,
+                    ticket_id=item_row.ticket_id,
+                    clothing_type_id=item_row.clothing_type_id,
+                    quantity=item_row.quantity,
+                    
+                    starch_level=item_row.starch_level,
+                    starch_charge=float(item_row.starch_charge or 0.0),
+
+                    # ✅ Size Data
+                    clothing_size=item_row.clothing_size,
+                    size_charge=float(item_row.size_charge or 0.0),
+
+                    crease=item_row.crease,
+                    alterations=item_row.alterations,
+                    item_instructions=item_row.item_instructions,
+                    alteration_behavior=item_row.alteration_behavior,
+                    item_total=float(item_row.item_total),
+                    plant_price=float(item_row.plant_price),
+                    margin=float(item_row.margin),
+                    
+                    additional_charge=float(item_row.additional_charge or 0.0),
+                    instruction_charge=float(item_row.instruction_charge or 0.0),
+                    
+                    clothing_name=final_name,
+                    # For custom items, image might be null
+                    pieces=item_row.pieces
+                )
+            )
+
+        # 3. Branding (Header/Footer)
         org_name_query = text("SELECT name FROM organizations WHERE id = :org_id")
         org_name_row = db.execute(org_name_query, {"org_id": org_id}).fetchone()
         org_name_val = org_name_row.name if org_name_row else "Your Cleaners"
 
-        # B. Fetch Settings (Header/Footer)
-        settings_query = text("""
-            SELECT receipt_header, receipt_footer 
-            FROM organization_settings 
-            WHERE organization_id = :org_id
-        """)
+        settings_query = text("SELECT receipt_header, receipt_footer FROM organization_settings WHERE organization_id = :org_id")
         settings_row = db.execute(settings_query, {"org_id": org_id}).fetchone()
-        
         receipt_header_val = settings_row.receipt_header if settings_row else None
-        receipt_footer_val = settings_row.receipt_footer if settings_row else None
-        # ===========================================================================
+        receipt_footer_val = settings_row.receipt_footer if settings_row else None 
 
         return TicketResponse(
             id=ticket.id,
@@ -410,8 +419,8 @@ async def get_ticket_details(
             customer_id=ticket.customer_id,
             customer_name=f"{ticket.first_name} {ticket.last_name or ''}".strip(),
             customer_phone=ticket.email,
-            total_amount=ticket.total_amount,
-            paid_amount=ticket.paid_amount,
+            total_amount=float(ticket.total_amount),
+            paid_amount=float(ticket.paid_amount),
             status=ticket.status,
             rack_number=ticket.rack_number,
             pickup_date=ticket.pickup_date,
@@ -419,8 +428,6 @@ async def get_ticket_details(
             special_instructions=ticket.special_instructions,
             items=items_list,
             organization_id=org_id,
-            
-            # ✅ Return Org Name & Branding
             organization_name=org_name_val,
             receipt_header=receipt_header_val,
             receipt_footer=receipt_footer_val
@@ -430,9 +437,7 @@ async def get_ticket_details(
         raise
     except Exception as e:
         print(f"Error: {e}")
-        raise HTTPException(status_code=500, detail="Error retrieving ticket.")
-
-    
+        raise HTTPException(status_code=500, detail="Error retrieving ticket.")    
 # --- END OF get_ticket_details FUNCTION ---
 
 

@@ -169,6 +169,7 @@ class TicketItemCreate(BaseModel):
     custom_name: Optional[str] = None      # ✅ New Field
     unit_price: Optional[float] = None     # ✅ New Field (for custom price)
     starch_charge: float = 0.0  # ✅ Receive Calculated Charge
+    size_charge: Optional[float] = 0.0
 
 
     
@@ -205,6 +206,9 @@ class TicketItemResponse(BaseModel):
     
     instruction_charge: float = 0.0  # Instruction Charge
     starch_charge: float = 0.0 # ✅ Return it
+    size_charge: float = 0.0 # ✅ Return it
+    
+
     
     class Config:
         from_attributes = True
@@ -280,6 +284,7 @@ class TicketItemCreate(BaseModel):
     item_instructions: Optional[str] = None  # <--- ADD THIS
     instruction_charge: Optional[float] = 0.0 # New field for Instruction Charge
     starch_charge: float = 0.0  # ✅ Receive Calculated Charge
+    size_charge: float = 0.0  # ✅ Receive Calculated Charge
     
     
     

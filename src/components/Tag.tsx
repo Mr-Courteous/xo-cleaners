@@ -11,7 +11,7 @@ declare const qz: any;
 // ----------------------------------------------------------------------
 
 // --- PRINTER CONFIGURATION (Update this to your exact printer name) ---
-const PRINTER_NAME = 'EPSON TM-U220 Receipt';
+const PRINTER_NAME = 'Epson TM_U220B M188B';
 // ----------------------------------------------------------------------
 
 interface TicketItem {
