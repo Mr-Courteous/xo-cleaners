@@ -361,8 +361,7 @@ class CustomerResponse(BaseModel):
     id: int
     first_name: str
     last_name: Optional[str] = None
-    email: EmailStr
-    phone: str
+    email: Optional[str] = None # <--- FIX: Allow None/Null    phone: str
     address: Optional[str] = None
     role: str
     organization_id: int
