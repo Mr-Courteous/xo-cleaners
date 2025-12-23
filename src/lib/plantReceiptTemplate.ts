@@ -72,7 +72,7 @@ export function renderPlantReceiptHtml(ticket: Ticket, organizationName: string 
 
     return `
       <div style="margin-bottom: 6px; padding-bottom: 6px; border-bottom: 1px solid #000;">
-         <div style="display:flex; justify-content:space-between; align-items:flex-start; font-size:11pt; font-weight: 800; color: #000; line-height:1.1;">
+         <div style="display:flex; justify-content:space-between; align-items:flex-start; font-size:11pt; font-weight: 700; color: #000; line-height:1.1;">
             <div style="flex:1; text-transform: uppercase;">${item.clothing_name}</div>
             <div style="text-align: right; min-width: 65px;">
                 <span style="margin-right: 2px;">${quantity}</span>
@@ -92,11 +92,11 @@ export function renderPlantReceiptHtml(ticket: Ticket, organizationName: string 
         <div style="font-size:10pt; font-weight:700;">${dateStr} ${timeStr}</div>
       </div>
 
-      <div style="border-bottom: 3px solid #000; margin-bottom: 10px; padding-bottom: 4px;">
-        <div style="font-weight:900; font-size:14pt; text-transform: uppercase; line-height:1.1;">
+      <div style="border-bottom: 1px solid #000; margin-bottom: 10px; padding-bottom: 4px;">
+        <div style="font-weight:800; font-size:14pt; text-transform: uppercase; line-height:1.1;">
             ${ticket.customer_name}
         </div>
-        ${ticket.rack_number ? `<div style="font-size:14pt; font-weight:900; margin-top:4px;">RACK: ${ticket.rack_number}</div>` : ''}
+        ${ticket.rack_number ? `<div style="font-size:14pt; font-weight:800; margin-top:4px;'>RACK: ${ticket.rack_number}</div>` : ''}
       </div>
 
       ${ticket.special_instructions ? `
@@ -108,8 +108,6 @@ export function renderPlantReceiptHtml(ticket: Ticket, organizationName: string 
       <div style="margin-bottom: 10px;">
         ${itemsHtml}
       </div>
-
-      <div style="border-top: 2px dashed #000; margin-bottom: 8px;"></div>
 
       <div style="font-size:11pt; font-weight:700; line-height: 1.4;">
         <div style="display:flex; justify-content:space-between;"> 
@@ -145,7 +143,7 @@ export function renderPlantReceiptHtml(ticket: Ticket, organizationName: string 
       </div>
       
       <div style="margin-top:15px; text-align:center;">
-        <div style="border: 3px solid #000; display:inline-block; padding: 4px 10px; font-weight:900; font-size:14pt; text-transform:uppercase;">
+        <div style=" display:inline-block; padding: 4px 10px; font-weight:900; font-size:14pt; text-transform:uppercase;">
             PIECES: ${totalPieces}
         </div>
       </div>

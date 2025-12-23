@@ -60,7 +60,7 @@ export function renderReceiptHtml(ticket: Ticket, organizationName: string = "Yo
 
     return `
       <div style="margin-bottom: 6px; padding-bottom: 6px; border-bottom: 1px solid #000;">
-         <div style="display:flex; justify-content:space-between; align-items:flex-start; font-size:11pt; font-weight: 800; color: #000; line-height:1.1;">
+         <div style="display:flex; justify-content:space-between; align-items:flex-start; font-size:11pt; font-weight: 700; color: #000; line-height:1.1;">
             <div style="flex:1; text-transform: uppercase;">${item.clothing_name}</div>
             <div style="text-align: right; min-width: 65px;">
                 <span style="margin-right: 4px;">${quantity}</span>
@@ -82,16 +82,14 @@ export function renderReceiptHtml(ticket: Ticket, organizationName: string = "Yo
         <div style="font-size:10pt; font-weight:700;">${greetingText}</div>
       </div>
       
-      <div style="border-top: 2px dashed #000; margin-bottom: 8px;"></div>
-
       <div style="text-align:center; margin-bottom: 8px;">
-        <div style="font-size:12pt; font-weight:900; margin-bottom: 6px; border: 2px solid black; display:inline-block; padding: 2px 6px;">CUSTOMER COPY</div>
+        <div style="font-size:12pt; font-weight:900; margin-bottom: 6px; display:inline-block; padding: 2px 6px;">CUSTOMER COPY</div>
         <div style="font-size:20pt; font-weight:900; letter-spacing: -1px;">${ticket.ticket_number}</div>
         <div style="font-size:10pt; font-weight:700;">${dateStr} ${timeStr}</div>
       </div>
 
-      <div style="border-bottom: 3px solid #000; margin-bottom: 10px; padding-bottom: 4px;">
-        <div style="font-weight:900; font-size:14pt; text-transform: uppercase; line-height:1.1;">
+      <div style="border-bottom: 1px solid #000; margin-bottom: 10px; padding-bottom: 4px;">
+        <div style="font-weight:800; font-size:14pt; text-transform: uppercase; line-height:1.1;">
             ${ticket.customer_name}
         </div>
       </div>
@@ -105,8 +103,6 @@ export function renderReceiptHtml(ticket: Ticket, organizationName: string = "Yo
       <div style="margin-bottom: 10px;">
         ${itemsHtml}
       </div>
-
-      <div style="border-top: 2px dashed #000; margin-bottom: 8px;"></div>
 
       <div style="font-size:11pt; font-weight:700; line-height: 1.4;">
         <div style="display:flex; justify-content:space-between;"> 
@@ -143,7 +139,7 @@ export function renderReceiptHtml(ticket: Ticket, organizationName: string = "Yo
       </div>
       
       <div style="margin-top:15px; text-align:center;">
-        <div style="border: 3px solid #000; display:inline-block; padding: 4px 10px; font-weight:900; font-size:14pt; text-transform: uppercase;">
+        <div style="display:inline-block; padding: 4px 10px; font-weight:900; font-size:14pt; text-transform: uppercase;">
             PIECES: ${totalPieces}
         </div>
       </div>
@@ -152,7 +148,7 @@ export function renderReceiptHtml(ticket: Ticket, organizationName: string = "Yo
         Pickup: ${ticket.pickup_date ? new Date(ticket.pickup_date).toLocaleDateString() : 'See Counter'}
       </div>
 
-      <div style="margin-top:10px; text-align:center; font-size:10pt; border-top:2px dashed #000; padding-top:6px; font-weight:700;">
+      <div style="margin-top:10px; text-align:center; font-size:10pt; padding-top:6px; font-weight:700;">
         ${footerText}
       </div>
     </div>

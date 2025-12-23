@@ -19,15 +19,17 @@ from routers.org_settings import router as settings_router
 from routers.org_functions4 import router as org_functions4_router
 from routers.customer_routes import router as customer_router
 from routers.platform_admin import router as platform_admin_router
+from routers.org_functions5 import router as org_functions5_router
+
 
 import uvicorn
 
 # ======================
 # CONFIGURATION
 # ====================== 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5433/cleanpress")
+# DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5433/cleanpress")
 
-# DATABASE_URL = os.getenv("DATABASE_URL")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 
 if not DATABASE_URL:
@@ -89,6 +91,8 @@ app.include_router(settings_router)
 app.include_router(org_functions4_router)
 app.include_router(customer_router)
 app.include_router(platform_admin_router)
+app.include_router(org_functions5_router)
+
 
 @app.get("/")
 def read_root():
