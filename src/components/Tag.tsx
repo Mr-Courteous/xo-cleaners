@@ -98,14 +98,13 @@ export default function Tag(): JSX.Element {
     const rawName = ticket.customer_name || ticket.customer_phone || 'Guest';
     const fullName = rawName;
     const ticketId = ticket.ticket_number || '';
-    // Short numeric date: MM-DD-YY (e.g. 09-19-25)
+    // Very short date: MM-YY (e.g. 09-25)
     let dateIssued = '';
     if (ticket.created_at) {
       const d = new Date(ticket.created_at);
       const mm = String(d.getMonth() + 1).padStart(2, '0');
-      const dd = String(d.getDate()).padStart(2, '0');
       const yy = String(d.getFullYear() % 100).padStart(2, '0');
-      dateIssued = `${mm}-${dd}-${yy}`;
+      dateIssued = `${mm}-${yy}`;
     }
 
     const preferences = [];
@@ -126,8 +125,8 @@ export default function Tag(): JSX.Element {
       <div style="display:flex; flex-direction:column; gap:6px; padding:4px; font-family:monospace;">
         ${tags.map(() => `
           <div style="border:1px solid #000; padding:6px; width:100%; box-sizing:border-box; display:flex; flex-direction:column; gap:4px;">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-              <div style="font-size:12pt; font-weight:700;">${ticketId}</div>
+            <div style="display:flex; justify-content:flex-start; align-items:center;">
+              <div style="font-size:9pt; font-weight:700; margin-right:8px;">${ticketId}</div>
               <div style="font-size:9pt; color:#333;">${dateIssued}</div>
             </div>
             <div style="font-size:${nameFontSize}; color:#000; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${fullName}</div>

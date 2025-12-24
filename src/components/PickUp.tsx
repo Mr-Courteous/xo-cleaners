@@ -124,8 +124,9 @@ export default function PickUp() {
           status: response.data.new_status ?? selectedTicket.status
         } as Ticket;
 
-        // Prefer backend-generated receipt HTML when available (server-side is authoritative)
-        const receiptHtml = response.data.receipt_html || renderPickupReceiptHtml(updatedTicket);
+        // For pickup flow always use the pickup receipt template for the preview (client-side)
+        // Use server receipt_html only if you explicitly prefer it; here we render the pickup template
+        const receiptHtml = renderPickupReceiptHtml(updatedTicket);
         const plantHtml = renderPlantReceiptHtml ? renderPlantReceiptHtml(updatedTicket) : '';
 
         setPrintContent(receiptHtml);
