@@ -107,9 +107,6 @@ export function renderReceiptHtml(ticket: Ticket, organizationName: string = "Yo
         <div style="display:flex; justify-content:space-between;"> 
           <div>Subtotal:</div> <div>$${subtotal.toFixed(2)}</div> 
         </div>
-        <div style="display:flex; justify-content:space-between;"> 
-          <div>Margin:</div> <div>$${totalMargin.toFixed(2)}</div> 
-        </div>
         <div style="display:flex; justify-content:space-between; font-size:10pt;"> 
           <div>Env Fee (4.7%):</div> <div>$${envCharge.toFixed(2)}</div> 
         </div>

@@ -5,15 +5,6 @@ import baseURL from '../lib/config';
 import { Ticket } from '../types';
 import PrintPreviewModal from './PrintPreviewModal';
 
-// --- CRITICAL FIX: The QZ library is loaded globally via index.html,
-// so we must use 'declare const' instead of import to avoid errors.
-declare const qz: any; 
-// ----------------------------------------------------------------------
-
-// --- PRINTER CONFIGURATION (Update this to your exact printer name) ---
-const PRINTER_NAME = 'Epson TM_U220B M188B';
-// ----------------------------------------------------------------------
-
 interface TicketItem {
   id: number;
   ticket_id: number;
@@ -27,113 +18,6 @@ interface TicketItem {
 interface TicketWithItems extends Ticket {
   items: TicketItem[];
 }
-
-/**
- * Converts ticket and item data into a raw ESC/POS byte array (Array<number>).
- * This structure is required by QZ Tray for raw printing and achieving 15mm height/cut.
- */
-const generateEscPosCommands = (ticket: Ticket, item: any): Array<number> => {
-  // Hex codes for ESC/POS commands (represented as decimal numbers)
-  const ESC_INIT = [0x1B, 0x40]; // ESC @: Initialize printer
-  const ESC_FONT_STANDARD = [0x1B, 0x21, 0x00]; // ESC ! 0: Select standard font (dotted)
-  const CUT_PARTIAL = [0x1D, 0x56, 0x01]; // GS V 1: Partial Cut command
-  const LINE_SPACING_DOTS = 30; // 1/6" for TM-U220B (180 dpi) - tune if needed
-  const ESC_SET_LINE_SPACING = [0x1B, 0x33, LINE_SPACING_DOTS]; // ESC 3 n
-  const ESC_FEED_LINES = (lines: number): Array<number> => [0x1B, 0x64, lines]; // ESC d n
-  const TAG_FEED_LINES = 4; // Tune to hit the desired tag height
-
-  // --- Dynamic Data Assembly ---
-  const ticketId = (ticket.ticket_number || '').trim().slice(0, 15);
-  const rawName = ticket.customer_name || 'Guest';
-  // Example formatting: "Franklin, Alfr"
-  const customerName = rawName.trim().split(/\s+/).join(', ').slice(0, 20); 
-  
-  // Date format matching the image: Fri 09-19
-  const dateObj = ticket.created_at ? new Date(ticket.created_at) : new Date();
-  const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'short' }); 
-  const monthDay = dateObj.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit' }); 
-  const dateLine = `${dayName} ${monthDay.replace('/', '-')}`;
-
-  // Preferences Line
-  const preferences = [];
-  if (item.starch_level && item.starch_level !== 'no_starch' && item.starch_level !== 'none') {
-    preferences.push(item.starch_level.replace(/_/g, ' ').toUpperCase());
-  }
-  if (item.crease === 'crease') {
-    preferences.push('CREASE');
-  }
-  const preferencesText = preferences.join(' / ');
-  
-  // Combine all secondary details
-  const detailsLine = `${dateLine} ${customerName}, ${preferencesText}`.trim().slice(0, 40);
-
-
-  // Helper to convert string to byte array
-  const textToBytes = (text: string): Array<number> => Array.from(new TextEncoder().encode(text));
-
-  // --- Final Command Sequence ---
-  let allCommands: Array<number> = [];
-
-  // Loop to print the required quantity of tags for this item
-  for (let i = 0; i < item.quantity; i++) {
-    const singleTagCommands = [
-      ...ESC_INIT,
-      ...ESC_SET_LINE_SPACING,
-      ...ESC_FONT_STANDARD,
-
-      // Line 1: Ticket ID + Newline (\n)
-      ...textToBytes(ticketId + '\n'), 
-
-      // Line 2: Date + Customer Name/Prefs + Newline (\n)
-      ...textToBytes(detailsLine + '\n'),
-      
-      // --- CRITICAL: CONTROLLED FEED FOR TAG HEIGHT ---
-      ...ESC_FEED_LINES(TAG_FEED_LINES),
-
-      // --- CRITICAL: CUT COMMAND ---
-      ...CUT_PARTIAL,
-    ];
-    allCommands.push(...singleTagCommands);
-  }
-
-  return allCommands;
-};
-
-/**
- * Sends the raw ESC/POS byte array to the local printer via QZ Tray.
- */
-const printTagEscPos = async (rawBytes: Array<number>) => {
-  if (!rawBytes || rawBytes.length === 0) {
-    alert("Nothing to print. Please try again.");
-    return;
-  }
-
-  const shouldDisconnect = !qz.websocket.isActive();
-
-  try {
-    if (shouldDisconnect) {
-      await qz.websocket.connect();
-    }
-
-    const data = [
-      { type: 'raw', data: rawBytes } // Send the raw byte array
-    ];
-
-    const config = qz.configs.create(PRINTER_NAME);
-
-    await qz.print(config, data);
-    
-    console.log("ESC/POS tag commands sent to QZ Tray successfully.");
-
-  } catch (error) {
-    console.error("QZ Tray Printing Error:", error);
-    alert("An error occurred during printing. Ensure QZ Tray is running and the printer name is correct.");
-  } finally {
-    if (shouldDisconnect && qz.websocket.isActive()) {
-      qz.websocket.disconnect();
-    }
-  }
-};
 
 
 export default function Tag(): JSX.Element {
@@ -206,8 +90,7 @@ export default function Tag(): JSX.Element {
     }
   };
 
-  // 🚨 NOTE: This function is only used for the "View Tag" preview modal. 
-  // It does NOT handle the actual 15mm ESC/POS printing.
+  // Used for browser-based preview and printing.
   const generateTagHtml = (ticket: Ticket, item: any) => {
     const readyDate = new Date(ticket.created_at);
     readyDate.setDate(readyDate.getDate() + 2);
@@ -269,6 +152,11 @@ export default function Tag(): JSX.Element {
       </div>
     `;
   };
+  const openTagPreview = (ticket: Ticket, item: any) => {
+    setPrintContent(generateTagHtml(ticket, item));
+    setShowPrintPreview(true);
+  };
+
   return (
     <div className="max-w-6xl mx-auto">
       <div className="mb-8">
@@ -333,24 +221,18 @@ export default function Tag(): JSX.Element {
                             </div>
                           </div>
                           <div className="flex space-x-2">
-                            {/* The View button still uses the HTML version for a browser preview */}
+                            {/* The View button uses the HTML preview */}
                             <button
-                              onClick={() => {
-                                setPrintContent(generateTagHtml(ticket, item));
-                                setShowPrintPreview(true);
-                              }}
+                              onClick={() => openTagPreview(ticket, item)}
                               className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition-colors flex items-center"
                             >
                               <Eye className="h-4 w-4 mr-2" />
                               View Tag
                             </button>
                             
-                            {/* 👈 The Print button now uses the ESC/POS raw printing logic */}
+                            {/* The Print button uses the same browser-based preview */}
                             <button
-                              onClick={async () => {
-                                const rawBytes = generateEscPosCommands(ticket, item);
-                                await printTagEscPos(rawBytes);
-                              }}
+                              onClick={() => openTagPreview(ticket, item)}
                               className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
                             >
                               <Printer className="h-4 w-4 mr-2" />
