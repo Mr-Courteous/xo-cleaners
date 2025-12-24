@@ -371,7 +371,84 @@ async def register_customer(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create new customer."
         ) 
+@router.post("/register-customers/bulk", summary="Bulk create customers")
+async def register_customers_bulk(
+    customers: List[NewCustomerRequest], # ✅ Accepts a LIST of customers
+    db: Session = Depends(get_db),
+    payload: Dict[str, Any] = Depends(get_current_user_payload)
+):
+    """
+    Creates multiple customers at once.
+    Atomic Transaction: If one fails (e.g., duplicate phone), ALL fail.
+    """
+    
+    # 1. Authorization
+    admin_role = payload.get("role")
+    organization_id = payload.get("organization_id")
+    allowed_roles = ["cashier", "store_admin", "org_owner", "STORE_OWNER"]
+    
+    if admin_role not in allowed_roles:
+        raise HTTPException(status_code=403, detail="Permission denied.")
+    if not organization_id:
+        raise HTTPException(status_code=400, detail="Missing Organization ID.")
+
+    users_to_insert = []
+    
+    # 2. Loop through data to prepare the list
+    for data in customers:
+        # Hash Password
+        hashed_password = hash_password(data.password)
         
+        # Handle Email Logic (Placeholder if empty)
+        if data.email and data.email.strip():
+            email_to_insert = data.email.lower().strip()
+        else:
+            clean_phone = ''.join(filter(str.isdigit, data.phone))
+            email_to_insert = f"no-email-{clean_phone}@placeholder.com"
+
+        users_to_insert.append({
+            "email": email_to_insert,
+            "phone": data.phone,
+            "first_name": data.first_name,
+            "last_name": data.last_name or "",
+            "address": data.address or "",
+            "password_hash": hashed_password,
+            "role": "customer",
+            "org_id": organization_id
+        })
+
+    try:
+        # 3. Bulk Insert (Much faster than looping inserts)
+        insert_stmt = text("""
+            INSERT INTO allUsers 
+                (email, phone, first_name, last_name, address, password_hash, role, organization_id)
+            VALUES 
+                (:email, :phone, :first_name, :last_name, :address, :password_hash, :role, :org_id)
+        """)
+        
+        # SQLAlchemy will automatically batch this if you pass a list of dicts
+        db.execute(insert_stmt, users_to_insert)
+        db.commit()
+
+        return {"message": f"Successfully created {len(users_to_insert)} customers."}
+
+    except Exception as e:
+        db.rollback()
+        error_msg = str(e).lower()
+        
+        if "unique constraint" in error_msg:
+             # It's hard to tell EXACTLY which user failed in a bulk insert, 
+             # but we know it's a duplicate.
+             raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="One of the users has a duplicate email or phone number."
+            )
+            
+        print("Error bulk creating customers:", e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to bulk create customers."
+        )        
         
 # TICKET ROUTES
 
