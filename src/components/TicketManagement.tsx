@@ -105,9 +105,6 @@ export default function TicketManagement() {
               ${preferencesText}
             </div>
             
-            <div style="grid-column: 1 / span 2; text-align: center; font-size: 11pt; font-weight: 900; padding: 2px 0; border-top: 1px dashed #ccc; margin-top: 4px;">
-                ${item.clothing_name}
-            </div>
           </div>
       `).join('');
       

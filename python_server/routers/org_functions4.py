@@ -4,6 +4,8 @@ from fastapi import APIRouter, HTTPException, Depends, status
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError # Make sure to import this
+
 
 # --- IMPORTS FROM YOUR UTILS ---
 from utils.common import (
@@ -839,3 +841,53 @@ async def get_analytics_ledger(
     except Exception as e:
         print(f"Error building ledger: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to build ledger")
+    
+    
+
+@router.delete("/customers/{customer_id}/permanent", summary="PERMANENTLY Delete a Customer")
+def delete_customer_permanently(
+    customer_id: int,
+    db: Session = Depends(get_db),
+    payload: Dict[str, Any] = Depends(get_current_user_payload)
+):
+    """
+    WARNING: This removes the user from the database entirely.
+    This will FAIL if the customer has existing tickets (Foreign Key Violation).
+    """
+    try:
+        # 1. Authorization
+        org_id = payload.get("organization_id")
+        user_role = payload.get("role")
+        
+        allowed_roles = ["org_owner", "store_admin", "STORE_OWNER"]
+        if user_role not in allowed_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, 
+                detail="Only Admins can permanently delete customers."
+            )
+
+        # 2. Verify existence
+        check_query = text("SELECT id FROM allUsers WHERE id = :cid AND organization_id = :oid")
+        user = db.execute(check_query, {"cid": customer_id, "oid": org_id}).fetchone()
+        
+        if not user:
+            raise HTTPException(status_code=404, detail="Customer not found in your organization.")
+
+        # 3. Attempt Hard Delete
+        delete_query = text("DELETE FROM allUsers WHERE id = :cid AND organization_id = :oid")
+        db.execute(delete_query, {"cid": customer_id, "oid": org_id})
+        db.commit()
+
+        return {"message": "Customer permanently deleted."}
+
+    except IntegrityError:
+        db.rollback()
+        # This error happens if the customer has Tickets/Transactions linked to them
+        raise HTTPException(
+            status_code=400, 
+            detail="Cannot delete this customer because they have Ticket history. Please use 'Deactivate' instead."
+        )
+    except Exception as e:
+        db.rollback()
+        print(f"Error deleting customer: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete customer.")

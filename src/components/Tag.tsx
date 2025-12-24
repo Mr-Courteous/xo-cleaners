@@ -212,7 +212,7 @@ export default function Tag(): JSX.Element {
                       {ticket.items?.map((item, index) => (
                         <div key={index} className="group flex justify-between items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
                           <div>
-                            <span className="font-medium">{item.clothing_name}</span>
+                            {/* <span className="font-medium">{item.clothing_name}</span> */}
                             <span className="text-gray-600 ml-2">×{item.quantity}</span>
                             <div className="text-sm text-gray-500 mt-1">
                               {item.starch_level !== 'no_starch' && `${item.starch_level.replace('_', ' ')} starch`}
