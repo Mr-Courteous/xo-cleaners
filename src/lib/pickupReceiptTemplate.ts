@@ -71,11 +71,8 @@ export function renderPickupReceiptHtml(ticket: Ticket, organizationName: string
       
       <div style="text-align:center; margin-bottom: 8px;">
         <div style="font-size:15pt; font-weight:400; text-transform:uppercase; margin-bottom: 4px;">${ticket.organization_name || organizationName}</div>
-        <div style="font-size:10pt; font-weight:400;">${greetingText}</div>
       </div>
       
-      <div style="border-top: 2px dashed #000; margin-bottom: 8px;"></div>
-
       <div style="text-align:center; margin-bottom: 8px;">
         <div style="font-size:20pt; font-weight:700; letter-spacing: -1px;">${ticket.ticket_number}</div>
         
@@ -98,8 +95,6 @@ export function renderPickupReceiptHtml(ticket: Ticket, organizationName: string
       <div style="margin-bottom: 10px;">
         ${itemsHtml}
       </div>
-
-      <div style="border-top: 2px dashed #000; margin-bottom: 8px;"></div>
 
       <div style="font-size:11pt; font-weight:400; line-height: 1.4;">
         <div style="display:flex; justify-content:space-between;"> 
@@ -127,7 +122,7 @@ export function renderPickupReceiptHtml(ticket: Ticket, organizationName: string
         </div>
 
         ${isPaid 
-            ? `<div style="text-align:center; margin-top:12px; border: 4px solid #000; padding: 4px; font-weight:400; font-size: 14pt;">PAID IN FULL</div>`
+            ? `<div style="text-align:center; margin-top:12px; padding: 4px; font-weight:400; font-size: 14pt;">PAID IN FULL</div>`
             : `<div style="display:flex; justify-content:space-between; font-weight:400; margin-top:8px; font-size:12pt; border-top: 2px solid #000; border-bottom: 2px solid #000; padding: 6px 0;"> 
                  <div>BALANCE:</div> 
                  <div>$${balance.toFixed(2)}</div> 
@@ -136,7 +131,7 @@ export function renderPickupReceiptHtml(ticket: Ticket, organizationName: string
       </div>
       
       <div style="margin-top:15px; text-align:center;">
-        <div style="border: 3px solid #000; display:inline-block; padding: 4px 10px; font-weight:400; font-size:12pt; text-transform:uppercase;">
+        <div style=" display:inline-block; padding: 4px 10px; font-weight:400; font-size:12pt; text-transform:uppercase;">
             PIECES: ${totalPieces}
         </div>
       </div>

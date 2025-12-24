@@ -98,7 +98,15 @@ export default function Tag(): JSX.Element {
     const rawName = ticket.customer_name || ticket.customer_phone || 'Guest';
     const fullName = rawName;
     const ticketId = ticket.ticket_number || '';
-    const dateIssued = ticket.created_at ? new Date(ticket.created_at).toLocaleDateString() : '';
+    // Short numeric date: MM-DD-YY (e.g. 09-19-25)
+    let dateIssued = '';
+    if (ticket.created_at) {
+      const d = new Date(ticket.created_at);
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      const yy = String(d.getFullYear() % 100).padStart(2, '0');
+      dateIssued = `${mm}-${dd}-${yy}`;
+    }
 
     const preferences = [];
     if (item.starch_level && item.starch_level !== 'no_starch' && item.starch_level !== 'none') {
@@ -109,44 +117,20 @@ export default function Tag(): JSX.Element {
     }
     const preferencesText = preferences.join(' / ');
 
+    // create one tag per quantity but keep each tag compact: ticket number, date, customer name
     const tags = Array(item.quantity).fill(null);
     const nameLen = fullName.length || 0;
-    const nameFontSize = nameLen > 50 ? '9pt' : nameLen > 35 ? '10pt' : '11pt';
-    const prefFontSize = '9pt';
-    
-    return `
-      <div style="
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        padding: 6px;
-        font-family: monospace; /* Simulating dot-matrix font */
-      ">
-        ${tags.map(() => `
-          <div style="
-            border: 1.5px solid #000;
-            padding: 6px 8px;
-            width: 100%;
-            box-sizing: border-box;
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 6px;
-            font-size: 10pt;
-            line-height: 1.1;
-          ">
-            <div style="font-size: 10pt; font-weight: 700; overflow-wrap: break-word; word-break: break-word;">
-              ${ticketId}
-            </div>
-            <div style="font-size: ${nameFontSize}; font-weight: 700; text-align: right; overflow-wrap: break-word; word-break: break-word;">
-              ${fullName}
-            </div>
+    const nameFontSize = nameLen > 30 ? '9pt' : '10pt';
 
-            <div style="font-size: 9pt;">
-              Issued: ${dateIssued}
+    return `
+      <div style="display:flex; flex-direction:column; gap:6px; padding:4px; font-family:monospace;">
+        ${tags.map(() => `
+          <div style="border:1px solid #000; padding:6px; width:100%; box-sizing:border-box; display:flex; flex-direction:column; gap:4px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div style="font-size:12pt; font-weight:700;">${ticketId}</div>
+              <div style="font-size:9pt; color:#333;">${dateIssued}</div>
             </div>
-            <div style="font-size: ${prefFontSize}; text-align: right; overflow-wrap: break-word; word-break: break-word;">
-              ${preferencesText}
-            </div>
+            <div style="font-size:${nameFontSize}; color:#000; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${fullName}</div>
           </div>
         `).join('')}
       </div>
