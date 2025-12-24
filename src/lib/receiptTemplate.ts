@@ -60,7 +60,7 @@ export function renderReceiptHtml(ticket: Ticket, organizationName: string = "Yo
 
     return `
       <div style="margin-bottom: 6px; padding-bottom: 6px; border-bottom: 1px solid #000;">
-         <div style="display:flex; justify-content:space-between; align-items:flex-start; font-size:11pt; font-weight: 700; color: #000; line-height:1.1;">
+         <div style="display:flex; justify-content:space-between; align-items:flex-start; font-size:11pt; font-weight:400; color: #000; line-height:1.1;">
             <div style="flex:1; text-transform: uppercase;">${item.clothing_name}</div>
             <div style="text-align: right; min-width: 65px;">
                 <span style="margin-right: 4px;">${quantity}</span>

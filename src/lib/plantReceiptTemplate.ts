@@ -64,15 +64,15 @@ export function renderPlantReceiptHtml(ticket: Ticket, organizationName: string 
         details.push(`NOTE: ${item.item_instructions} ${cost}`);
     }
 
-    const detailsHtml = details.length > 0
-        ? `<div style="font-size:9pt; color:#000; margin-top:2px; padding-left:0px; line-height:1.2; font-weight:700;">
-             ${details.map(d => `&bull; ${d}`).join('<br>')}
-           </div>`
-      : '';
+        const detailsHtml = details.length > 0
+         ? `<div style="font-size:9pt; color:#000; margin-top:2px; padding-left:0px; line-height:1.2; font-weight:400;">
+           ${details.map(d => `&bull; ${d}`).join('<br>')}
+         </div>`
+       : '';
 
     return `
       <div style="margin-bottom: 6px; padding-bottom: 6px; border-bottom: 1px solid #000;">
-         <div style="display:flex; justify-content:space-between; align-items:flex-start; font-size:11pt; font-weight:700; color: #000; line-height:1.1;">
+         <div style="display:flex; justify-content:space-between; align-items:flex-start; font-size:11pt; font-weight:400; color: #000; line-height:1.1;">
             <div style="flex:1; text-transform: uppercase;">${item.clothing_name}</div>
             <div style="text-align: right; min-width: 65px;">
                 <span style="margin-right: 2px;">${quantity}</span>

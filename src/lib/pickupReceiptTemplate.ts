@@ -56,10 +56,10 @@ export function renderPickupReceiptHtml(ticket: Ticket, organizationName: string
 
     return `
       <div style="margin-bottom: 6px; padding-bottom: 6px; border-bottom: 1px solid #000;">
-         <div style="display:flex; align-items:baseline; font-size:11pt; font-weight:700; color: #000; line-height:1.1;">
+         <div style="display:flex; align-items:baseline; font-size:11pt; font-weight:400; color: #000; line-height:1.1;">
             <div style="flex:1; text-transform: uppercase; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; padding-right:8px;">${item.clothing_name}</div>
-            <div style="width:28px; text-align:right; margin-right:6px; font-weight:700;">x${quantity}</div>
-            <div style="width:64px; text-align:right; font-weight:700;">$${itemTotal.toFixed(2)}</div>
+            <div style="width:28px; text-align:right; margin-right:6px; font-weight:400;">x${quantity}</div>
+            <div style="width:64px; text-align:right; font-weight:400;">$${itemTotal.toFixed(2)}</div>
         </div>
         ${detailsHtml}
       </div>
