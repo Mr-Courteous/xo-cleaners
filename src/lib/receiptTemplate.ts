@@ -126,7 +126,7 @@ export function renderReceiptHtml(ticket: Ticket, organizationName: string = "Yo
         </div>
 
         ${isPaid 
-            ? `<div style="text-align:center; margin-top:12px; border: 4px solid #000; padding: 4px; font-weight:400; font-size: 16pt;">PAID IN FULL</div>`
+            ? `<div style="text-align:center; margin-top:12px; padding: 4px; font-weight:400; font-size: 16pt;">PAID IN FULL</div>`
             : `<div style="display:flex; justify-content:space-between; font-weight:400; margin-top:8px; font-size:10pt; border-top: 2px solid #000; border-bottom: 2px solid #000; padding: 6px 0;"> 
                  <div>BALANCE:</div> 
                  <div>$${balance.toFixed(2)}</div> 

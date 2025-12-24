@@ -38,82 +38,44 @@ export default function TicketManagement() {
 
   // --- HELPER: Generate Tag HTML (Same as DropOff) ---
   const generateTagHtml = (ticket: Ticket) => {
-    let combinedHtml = '';
+    // Use the same compact Tag layout as Tag.tsx
+    let combined = '';
     const rawName = ticket.customer_name || ticket.customer_phone || 'Guest';
     const fullName = rawName;
     const ticketId = ticket.ticket_number || '';
-    const dateIssued = ticket.created_at ? new Date(ticket.created_at).toLocaleDateString() : '';
-    
-    // Ensure items exist
-    const items = ticket.items || [];
 
-    items.forEach((item) => {
-      const preferences = [];
-      if (item.starch_level && item.starch_level !== 'no_starch' && item.starch_level !== 'none') {
-        let starchDisplay = item.starch_level;
-        if (starchDisplay === 'extra_heavy') starchDisplay = 'Ex. Heavy';
-        else if (starchDisplay === 'heavy') starchDisplay = 'Heavy';
-        else if (starchDisplay === 'medium') starchDisplay = 'Medium';
-        else if (starchDisplay === 'light') starchDisplay = 'Light';
-        preferences.push(`${starchDisplay} starch`);
-      }
-      if (item.crease === 'crease') {
-        preferences.push('Crease');
-      }
-      if (item.alterations) {
-        preferences.push(`Alt: ${item.alterations}`);
-      }
-      if (item.item_instructions) {
-         preferences.push(`Note: ${item.item_instructions}`);
-      }
-      const preferencesText = preferences.join(' / ');
-      
-      // Loop for quantity to create individual tags
+    let dateIssued = '';
+    if (ticket.created_at) {
+      const d = new Date(ticket.created_at);
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const yy = String(d.getFullYear() % 100).padStart(2, '0');
+      dateIssued = `${mm}-${yy}`;
+    }
+
+    const items = (ticket as any).items || [];
+    items.forEach((item: any) => {
       const qty = item.quantity || 1;
       const tags = Array.from({ length: qty });
-      
-      const nameLen = fullName.length || 0;
-      const nameFontSize = nameLen > 50 ? '9pt' : nameLen > 35 ? '10pt' : '11pt';
-      const prefFontSize = '9pt';
-      
-      const itemTagsHtml = tags.map(() => `
-          <div style="
-            border: 1.5px solid #000;
-            padding: 6px 8px;
-            width: 100%;
-            box-sizing: border-box;
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 6px;
-            font-size: 10pt;
-            line-height: 1.1;
-            margin-bottom: 8px; 
-            page-break-after: always;
-            font-family: sans-serif;
-          ">
-            <div style="font-size: 10pt; font-weight: 700; overflow-wrap: break-word; word-break: break-word;">
-              ${ticketId}
-            </div>
-            <div style="font-size: ${nameFontSize}; font-weight: 700; text-align: right; overflow-wrap: break-word; word-break: break-word;">
-              ${fullName}
-            </div>
 
-            <div style="font-size: 9pt;">
-              Issued: ${dateIssued}
-            </div>
-            <div style="font-size: ${prefFontSize}; text-align: right; overflow-wrap: break-word; word-break: break-word;">
-              ${preferencesText}
-            </div>
-            
+      const nameLen = fullName.length || 0;
+      const nameFontSize = nameLen > 30 ? '9pt' : '10pt';
+
+      const itemHtml = tags.map(() => `
+        <div style="border:1px solid #000; padding:6px; width:100%; box-sizing:border-box; display:flex; flex-direction:column; gap:4px; font-family:monospace;">
+          <div style="display:flex; justify-content:flex-start; align-items:center;">
+            <div style="font-size:9pt; font-weight:700; margin-right:8px;">${ticketId}</div>
+            <div style="font-size:9pt; color:#333;">${dateIssued}</div>
           </div>
+          <div style="font-size:${nameFontSize}; color:#000; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${fullName}</div>
+        </div>
       `).join('');
-      
-      combinedHtml += itemTagsHtml;
+
+      combined += itemHtml;
     });
 
     return `
-      <div style="display: flex; flex-direction: column; gap: 8px; padding: 6px;">
-        ${combinedHtml}
+      <div style="display:flex; flex-direction:column; gap:6px; padding:4px; font-family:monospace;">
+        ${combined}
       </div>
     `;
   };

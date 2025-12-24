@@ -136,7 +136,7 @@ export function renderPlantReceiptHtml(ticket: Ticket, organizationName: string 
         </div>
 
         ${isPaid ? `
-          <div style="text-align:center; margin-top:8px; border: 3px solid #000; padding: 4px; font-weight:400; font-size:12pt;">PAID IN FULL</div>
+          <div style="text-align:center; margin-top:8px; padding: 4px; font-weight:400; font-size:12pt;">PAID IN FULL</div>
         ` : `
           <div style="display:flex; justify-content:space-between; font-weight:400; margin-top:8px; font-size:11pt; border-top: 2px solid #000; border-bottom: 2px solid #000; padding: 6px 0;"> 
             <div>BALANCE:</div> 

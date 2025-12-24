@@ -826,7 +826,7 @@ async def process_ticket_pickup(
                     </div>
                 </div>
 
-                {"<div style=\"border: 2px solid #000; padding: 5px; margin-top: 10px; text-align: center;\"><p style=\"margin: 0; font-size: 12pt; font-weight: 900;\">PAID IN FULL</p></div>" if is_fully_paid else f"<div style=\"display:flex;justify-content:space-between;margin-top:8px;font-weight:900;font-size:12pt;background:#eee;padding:4px;\"><div>BALANCE DUE:</div><div>${float(balance_after):.2f}</div></div>"}
+                {"<div style=\"padding: 5px; margin-top: 10px; text-align: center;\"><p style=\"margin: 0; font-size: 12pt; font-weight: 900;\">PAID IN FULL</p></div>" if is_fully_paid else f"<div style=\"display:flex;justify-content:space-between;margin-top:8px;font-weight:900;font-size:12pt;background:#eee;padding:4px;\"><div>BALANCE DUE:</div><div>${float(balance_after):.2f}</div></div>"}
                 
                 <hr style="margin: 15px 0 8px 0; border: 0; border-top: 1px dashed #000;" />
                 
