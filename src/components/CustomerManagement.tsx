@@ -89,7 +89,7 @@ export default function CustomerManagement() {
       };
 
       await axios.post(
-        `${baseURL}/api/organizations/register-customer`, 
+        `${baseURL}/api/organizations/register-customers`, 
         payload, 
         { headers: { Authorization: `Bearer ${token}` } }
       );
