@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Search, User, Phone, Mail, MapPin, Plus, 
-  ChevronRight, X, Save, ArrowLeft, Edit2, 
+  ChevronRight, X, Save, ArrowLeft, Edit2, Trash2,
   CheckCircle, AlertCircle, Calendar
 } from 'lucide-react';
 import axios from 'axios';
@@ -172,6 +172,68 @@ export default function CustomerManagement() {
     setViewMode('edit');
   };
 
+  // --- 4. DELETE CUSTOMER (PERMANENT) ---
+  const handleDeleteCustomer = async () => {
+    if (!selectedCustomer) return;
+
+    const confirmDelete = window.confirm(
+      `Permanently delete ${selectedCustomer.first_name || selectedCustomer.name || 'this customer'}? This cannot be undone.`
+    );
+    if (!confirmDelete) return;
+
+    setActionLoading(true);
+    try {
+      const token = localStorage.getItem('accessToken');
+      await axios.delete(
+        `${baseURL}/api/organizations/customers/${selectedCustomer.id}/permanent`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      showNotification('success', 'Customer permanently deleted.');
+      setSelectedCustomer(null);
+      setViewMode('list');
+      fetchCustomers();
+    } catch (error: any) {
+      console.error('Delete failed', error);
+      const msg = error.response?.data?.detail || 'Failed to delete customer.';
+      showNotification('error', msg);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Delete by id from list (prevents navigating into details by stopping propagation)
+  const handleDeleteCustomerById = async (customerId: number, customerName?: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+
+    const confirmDelete = window.confirm(
+      `Permanently delete ${customerName || 'this customer'}? This cannot be undone.`
+    );
+    if (!confirmDelete) return;
+
+    setActionLoading(true);
+    try {
+      const token = localStorage.getItem('accessToken');
+      await axios.delete(
+        `${baseURL}/api/organizations/customers/${customerId}/permanent`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      showNotification('success', 'Customer permanently deleted.');
+      if (selectedCustomer && selectedCustomer.id === customerId) {
+        setSelectedCustomer(null);
+        setViewMode('list');
+      }
+      fetchCustomers();
+    } catch (error: any) {
+      console.error('Delete failed', error);
+      const msg = error.response?.data?.detail || 'Failed to delete customer.';
+      showNotification('error', msg);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // --- RENDERERS ---
 
   // 1. LIST VIEW
@@ -236,12 +298,20 @@ export default function CustomerManagement() {
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center ml-4">
+                  <div className="flex items-center ml-4 gap-2">
                     {customer.tenure && (
-                      <span className={`hidden sm:inline-flex px-2 py-0.5 text-xs font-semibold rounded-full mr-4 ${customer.tenure === 'Prospect' ? 'bg-gray-100 text-gray-800' : 'bg-green-100 text-green-800'}`}>
+                      <span className={`hidden sm:inline-flex px-2 py-0.5 text-xs font-semibold rounded-full ${customer.tenure === 'Prospect' ? 'bg-gray-100 text-gray-800' : 'bg-green-100 text-green-800'}`}>
                         {customer.tenure}
                       </span>
                     )}
+                    <button
+                      onClick={(e) => handleDeleteCustomerById(customer.id, customer.first_name || customer.name, e)}
+                      disabled={actionLoading}
+                      className="p-1 bg-red-50 hover:bg-red-100 text-red-600 rounded transition"
+                      title="Delete Customer"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                     <ChevronRight className="h-5 w-5 text-gray-400" />
                   </div>
                 </div>
@@ -286,13 +356,23 @@ export default function CustomerManagement() {
                 </div>
               </div>
             </div>
-            <button 
-              onClick={initEditMode}
-              className="p-2 bg-white/10 hover:bg-white/20 rounded-full transition text-white"
-              title="Edit Customer"
-            >
-              <Edit2 size={20} />
-            </button>
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={initEditMode}
+                className="p-2 bg-white/10 hover:bg-white/20 rounded-full transition text-white"
+                title="Edit Customer"
+              >
+                <Edit2 size={20} />
+              </button>
+              <button
+                onClick={handleDeleteCustomer}
+                disabled={actionLoading}
+                className="p-2 bg-red-600 hover:bg-red-700 rounded-full transition text-white flex items-center"
+                title="Permanently Delete Customer"
+              >
+                <Trash2 size={18} />
+              </button>
+            </div>
           </div>
 
           {/* Body */}
