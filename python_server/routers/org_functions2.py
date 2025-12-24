@@ -336,106 +336,106 @@ async def validate_ticket_number(
 
 
 
-@router.put(
-    "/tickets/{ticket_id}/rack", 
-    summary="Assign an available rack to a ticket"
-)
-async def assign_rack_to_ticket(
-    ticket_id: int,
-    req: RackAssignmentRequest,
-    db: Session = Depends(get_db),
-    payload: Dict[str, Any] = Depends(get_current_user_payload)
-):
-    """
-    Assigns an available rack to a ticket. This is a special transaction that:
-    1. Checks if the rack is available in the user's org.
-    2. Updates the ticket with the rack number AND sets status to 'ready_for_pickup'.
-    3. Marks the rack as occupied and links it to the ticket.
-    """
-    try:
-        # 1. Get organization_id AND role from the trusted token
-        organization_id = payload.get("organization_id")
-        user_role = payload.get("role")
+# @router.put(
+#     "/tickets/{ticket_id}/rack", 
+#     summary="Assign an available rack to a ticket"
+# )
+# async def assign_rack_to_ticket(
+#     ticket_id: int,
+#     req: RackAssignmentRequest,
+#     db: Session = Depends(get_db),
+#     payload: Dict[str, Any] = Depends(get_current_user_payload)
+# ):
+#     """
+#     Assigns an available rack to a ticket. This is a special transaction that:
+#     1. Checks if the rack is available in the user's org.
+#     2. Updates the ticket with the rack number AND sets status to 'ready_for_pickup'.
+#     3. Marks the rack as occupied and links it to the ticket.
+#     """
+#     try:
+#         # 1. Get organization_id AND role from the trusted token
+#         organization_id = payload.get("organization_id")
+#         user_role = payload.get("role")
 
-        # 2. Role-based authorization check (all staff can do this)
-        allowed_roles = ["cashier", "store_admin", "org_owner", "STORE_OWNER"]
-        if user_role not in allowed_roles:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You do not have permission to assign racks."
-            )
-        if not organization_id:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token: Organization ID missing."
-            )
+#         # 2. Role-based authorization check (all staff can do this)
+#         allowed_roles = ["cashier", "store_admin", "org_owner", "STORE_OWNER"]
+#         if user_role not in allowed_roles:
+#             raise HTTPException(
+#                 status_code=status.HTTP_403_FORBIDDEN,
+#                 detail="You do not have permission to assign racks."
+#             )
+#         if not organization_id:
+#             raise HTTPException(
+#                 status_code=status.HTTP_401_UNAUTHORIZED,
+#                 detail="Invalid token: Organization ID missing."
+#             )
 
-        # 3. Check if the rack is available IN THIS ORG
-        rack_query = text("""
-            SELECT id FROM racks 
-            WHERE number = :rack_number 
-            AND organization_id = :org_id 
-            AND is_occupied = false
-        """)
-        available_rack = db.execute(rack_query, {
-            "rack_number": req.rack_number,
-            "org_id": organization_id
-        }).fetchone()
+#         # 3. Check if the rack is available IN THIS ORG
+#         rack_query = text("""
+#             SELECT id FROM racks 
+#             WHERE number = :rack_number 
+#             AND organization_id = :org_id 
+#             AND is_occupied = false
+#         """)
+#         available_rack = db.execute(rack_query, {
+#             "rack_number": req.rack_number,
+#             "org_id": organization_id
+#         }).fetchone()
 
-        if not available_rack:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Rack #{req.rack_number} is not available or does not exist in your organization."
-            )
+#         if not available_rack:
+#             raise HTTPException(
+#                 status_code=status.HTTP_400_BAD_REQUEST,
+#                 detail=f"Rack #{req.rack_number} is not available or does not exist in your organization."
+#             )
 
-        # 4. Update the ticket, ensuring it's in the same org
-        # --- THIS IS THE MODIFIED PART ---
-        ticket_update_sql = text("""
-            UPDATE tickets 
-            SET 
-                rack_number = :rack_number, 
-                status = 'ready_for_pickup'  -- <-- ADDED THIS LINE
-            WHERE id = :ticket_id AND organization_id = :org_id
-            RETURNING id
-        """)
-        # ---------------------------------
+#         # 4. Update the ticket, ensuring it's in the same org
+#         # --- THIS IS THE MODIFIED PART ---
+#         ticket_update_sql = text("""
+#             UPDATE tickets 
+#             SET 
+#                 rack_number = :rack_number, 
+#                 status = 'ready_for_pickup'  -- <-- ADDED THIS LINE
+#             WHERE id = :ticket_id AND organization_id = :org_id
+#             RETURNING id
+#         """)
+#         # ---------------------------------
         
-        ticket_result = db.execute(ticket_update_sql, {
-            "rack_number": req.rack_number,
-            "ticket_id": ticket_id,
-            "org_id": organization_id
-        }).fetchone()
+#         ticket_result = db.execute(ticket_update_sql, {
+#             "rack_number": req.rack_number,
+#             "ticket_id": ticket_id,
+#             "org_id": organization_id
+#         }).fetchone()
 
-        if not ticket_result:
-            db.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Ticket not found in your organization."
-            )
+#         if not ticket_result:
+#             db.rollback()
+#             raise HTTPException(
+#                 status_code=status.HTTP_404_NOT_FOUND,
+#                 detail="Ticket not found in your organization."
+#             )
 
-        # 5. Update the rack to mark it as occupied
-        rack_update_sql = text("""
-            UPDATE racks 
-            SET is_occupied = true, ticket_id = :ticket_id 
-            WHERE number = :rack_number AND organization_id = :org_id
-        """)
-        db.execute(rack_update_sql, {
-            "ticket_id": ticket_id,
-            "rack_number": req.rack_number,
-            "org_id": organization_id
-        })
+#         # 5. Update the rack to mark it as occupied
+#         rack_update_sql = text("""
+#             UPDATE racks 
+#             SET is_occupied = true, ticket_id = :ticket_id 
+#             WHERE number = :rack_number AND organization_id = :org_id
+#         """)
+#         db.execute(rack_update_sql, {
+#             "ticket_id": ticket_id,
+#             "rack_number": req.rack_number,
+#             "org_id": organization_id
+#         })
 
-        # 6. Commit the transaction
-        db.commit()
-        return {"success": True, "message": f"Ticket {ticket_id} assigned to rack {req.rack_number} and marked as ready."}
+#         # 6. Commit the transaction
+#         db.commit()
+#         return {"success": True, "message": f"Ticket {ticket_id} assigned to rack {req.rack_number} and marked as ready."}
 
-    except HTTPException:
-        db.rollback()
-        raise
-    except Exception as e:
-        db.rollback()
-        print(f"Error during rack assignment: {e}")
-        raise HTTPException(status_code=500, detail="An unexpected error occurred.")
+#     except HTTPException:
+#         db.rollback()
+#         raise
+#     except Exception as e:
+#         db.rollback()
+#         print(f"Error during rack assignment: {e}")
+#         raise HTTPException(status_code=500, detail="An unexpected error occurred.")
 
 # --- ADDED NEW PICKUP ROUTE ---
 
