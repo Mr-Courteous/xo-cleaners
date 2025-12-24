@@ -76,7 +76,6 @@ export function renderPickupReceiptHtml(ticket: Ticket, organizationName: string
       <div style="text-align:center; margin-bottom: 8px;">
         <div style="font-size:20pt; font-weight:700; letter-spacing: -1px;">${ticket.ticket_number}</div>
         
-        <div style="font-size:15pt; font-weight:400; margin-top:8px; border: 4px solid black; display:inline-block; padding: 4px 8px; transform: rotate(-2deg);">PICKED UP</div>
         <div style="font-size:10pt; font-weight:400; margin-top:6px;">${pickedUpDate}</div>
       </div>
 
@@ -100,9 +99,6 @@ export function renderPickupReceiptHtml(ticket: Ticket, organizationName: string
         <div style="display:flex; justify-content:space-between;"> 
           <div>Subtotal:</div> <div>$${subtotal.toFixed(2)}</div> 
         </div>
-        <div style="display:flex; justify-content:space-between;"> 
-          <div>Margin (informational):</div> <div>$${totalMargin.toFixed(2)}</div> 
-        </div>
         <div style="display:flex; justify-content:space-between; font-size:10pt;"> 
           <div>Env Fee (4.7%):</div> <div>$${envCharge.toFixed(2)}</div> 
         </div>
@@ -112,9 +108,6 @@ export function renderPickupReceiptHtml(ticket: Ticket, organizationName: string
 
         <div style="border-top: 3px solid #000; margin-top: 6px; padding-top: 4px;"></div>
 
-        <div style="display:flex; justify-content:space-between; font-size:14pt; font-weight:400; margin-top:2px;">
-          <div>TOTAL:</div> <div>$${displayTotal.toFixed(2)}</div>
-        </div>
 
         <div style="display:flex; justify-content:space-between; margin-top:4px; font-size:12pt; font-weight:400;"> 
           <div>Paid:</div> 
