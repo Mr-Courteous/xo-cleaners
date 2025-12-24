@@ -696,6 +696,8 @@ export default function DropOff() {
 
       const newTicket = response.data as TicketWithItems;
 
+      console.log("newticket data:", newTicket);  
+
       if (!newTicket.items || newTicket.items.length === 0) {
           const ticketDetails = await axios.get(`${baseURL}/api/organizations/tickets/${newTicket.id}`, { headers: { Authorization: `Bearer ${token}` } });
           newTicket.items = ticketDetails.data.items || [];

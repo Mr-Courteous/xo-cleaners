@@ -1337,16 +1337,18 @@ def create_ticket(
                 # ✅ CUSTOM ITEM LOGIC
                 if not item_create.unit_price or not item_create.custom_name:
                     raise HTTPException(status_code=400, detail="Custom items requires a name and price.")
-                
+
                 clothing_name = item_create.custom_name
-                
-                # Treat unit_price as plant_price
+
+                # Treat unit_price as the plant cost (what the plant charges)
                 plant_price = decimal.Decimal(str(item_create.unit_price))
-                
-                # ✅ Allow Frontend to set Margin for Custom Items
+
+                # ✅ Allow Frontend to set Margin for Custom Items (stored separately)
                 margin_input = getattr(item_create, 'margin', 0.0)
                 margin = decimal.Decimal(str(margin_input))
-                
+
+                # Do NOT merge margin into plant_price here; keep them separate so they are
+                # both persisted to the DB and can be used independently for reporting.
                 base_wash_price = plant_price + margin
                 pieces = 1 # Default for custom
             else:
@@ -1419,6 +1421,7 @@ def create_ticket(
                 
                 "additional_charge": float(alteration_charge),
                 "instruction_charge": float(instruction_charge),
+                # Persist plant_price and margin AS DISTINCT COLUMNS for custom items
                 "plant_price": float(plant_price),
                 "margin": float(margin),
                 "item_total": float(item_total_price),

@@ -156,22 +156,34 @@ class StarchLevel(str, Enum):
     high = "high"
 
 
+# Note: `TicketItemCreate` is intentionally defined later in this module (after TicketResponse)
+# to ensure the request model used by `TicketCreate` includes all custom fields
+# such as `unit_price` and `margin`. The canonical `TicketItemCreate` definition
+# lives further down in this file.
+    
+    
+
 class TicketItemCreate(BaseModel):
-    clothing_type_id: int
+    # Fields allowed when creating/updating ticket items from the frontend
+    clothing_type_id: Optional[int] = None
     quantity: int
     starch_level: StarchLevel = StarchLevel.none
     crease: bool = False
     additional_charge: Optional[float] = 0.0
-    alterations: Optional[str] = None  # <--- ADD THIS
-    item_instructions: Optional[str] = None  # <--- ADD THIS
-    instruction_charge: Optional[float] = 0.0 # New field for Instruction Charge
-    clothing_type_id: Optional[int] = None # ✅ Made Optional
-    custom_name: Optional[str] = None      # ✅ New Field
-    unit_price: Optional[float] = None     # ✅ New Field (for custom price)
-    starch_charge: float = 0.0  # ✅ Receive Calculated Charge
-    size_charge: Optional[float] = 0.0
+    alterations: Optional[str] = None
+    item_instructions: Optional[str] = None
+    instruction_charge: Optional[float] = 0.0
 
+    # Custom/ad-hoc item support
+    custom_name: Optional[str] = None
+    unit_price: Optional[float] = None  # plant price for custom items
+    margin: Optional[float] = 0.0       # margin for custom items (must be accepted from frontend)
 
+    # Calculated/derived charges (frontend may supply these, server will validate/recompute)
+    starch_charge: float = 0.0
+    size_charge: float = 0.0
+    alteration_behavior: Optional[str] = "none"
+    
     
     
 class TicketItemResponse(BaseModel):
@@ -274,19 +286,6 @@ class StarchLevel(str, Enum):
     high = "high"
 
 
-class TicketItemCreate(BaseModel):
-    clothing_type_id: int
-    quantity: int
-    starch_level: StarchLevel = StarchLevel.none
-    crease: bool = False
-    additional_charge: Optional[float] = 0.0
-    alterations: Optional[str] = None  # <--- ADD THIS
-    item_instructions: Optional[str] = None  # <--- ADD THIS
-    instruction_charge: Optional[float] = 0.0 # New field for Instruction Charge
-    starch_charge: float = 0.0  # ✅ Receive Calculated Charge
-    size_charge: float = 0.0  # ✅ Receive Calculated Charge
-    
-    
     
     
 class TicketSummaryResponse(BaseModel):
