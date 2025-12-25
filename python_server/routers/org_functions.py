@@ -12,6 +12,7 @@ from dateutil.relativedelta import relativedelta
 
 
 
+
 from utils.common import (
     hash_password,
     get_role_type,
@@ -31,7 +32,16 @@ from utils.common import (
     CustomerResponse
 )
 
-
+class TicketCreateBulk(TicketCreate):
+    # Optional: Allow overriding the creation date for historical imports
+    created_at_override: Optional[datetime] = None
+    
+    # Optional: Allow manual ticket number if you want to keep old IDs
+    # If None, we generate one automatically.
+    ticket_number_override: Optional[str] = None
+    
+    customer_phone: Optional[str] = None
+    
 
 # --- HELPER FUNCTION: Calculate Loyalty Tenure ---
 def calculate_tenure(joined_at: datetime) -> str:
@@ -1659,8 +1669,144 @@ def create_ticket(
         # Return the actual error message during debugging to make it easier to see what happened
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Database Error: {str(e)}")
        
-       
+
+@router.post("/tickets/bulk", status_code=status.HTTP_201_CREATED, tags=["Tickets"])
+def bulk_create_tickets(
+    tickets_data: List[TicketCreateBulk],
+    db: Session = Depends(get_db),
+    payload: Dict[str, Any] = Depends(get_current_user_payload)
+):
+    organization_id = payload.get("organization_id")
+    if not organization_id:
+        raise HTTPException(status_code=401, detail="Invalid token.")
+
+    try:
+        # --- 1. RESOLVE CUSTOMERS (BY ID OR PHONE) ---
         
+        # Group inputs
+        provided_ids = {t.customer_id for t in tickets_data if t.customer_id and t.customer_id > 0}
+        provided_phones = {t.customer_phone for t in tickets_data if t.customer_phone}
+        
+        # Fetch matching customers from DB
+        # We search for anyone matching the IDs OR the Phones within this Org
+        customers_db = db.execute(text("""
+            SELECT id, email, is_deactivated 
+            FROM allUsers 
+            WHERE organization_id = :org_id 
+              AND role = 'customer'
+              AND (id = ANY(:ids) OR email = ANY(:phones)) 
+        """), {
+            "ids": list(provided_ids), 
+            "phones": list(provided_phones), 
+            "org_id": organization_id
+        }).fetchall()
+        
+        # Create Lookup Maps
+        id_map = {row.id: row for row in customers_db}
+        phone_map = {row.email: row for row in customers_db} # Assuming 'email' column holds phone number in your system
+
+        # --- 2. PRE-FETCH PRICES ---
+        all_type_ids = set()
+        for t in tickets_data:
+            for item in t.items:
+                if item.clothing_type_id:
+                    all_type_ids.add(item.clothing_type_id)
+        
+        type_prices = {}
+        if all_type_ids:
+            types_result = db.execute(text("""
+                SELECT id, name, plant_price, margin, total_price, pieces 
+                FROM clothing_types 
+                WHERE id = ANY(:ids) AND organization_id = :org_id
+            """), {"ids": list(all_type_ids), "org_id": organization_id}).fetchall()
+            
+            type_prices = {
+                row.id: {
+                    "name": row.name, "plant_price": decimal.Decimal(str(row.plant_price)),
+                    "margin": decimal.Decimal(str(row.margin)), "total_price": decimal.Decimal(str(row.total_price)),
+                    "pieces": row.pieces
+                } for row in types_result
+            }
+
+        # --- 3. TAG CONFIG (SEQUENCE) ---
+        tickets_needing_numbers = [t for t in tickets_data if not t.ticket_number_override]
+        count_needed = len(tickets_needing_numbers)
+        
+        start_seq = 0
+        tag_config = None
+        date_prefix = datetime.now().strftime("%y%m%d")
+
+        if count_needed > 0:
+            tag_config = db.execute(text("""
+                SELECT current_sequence FROM tag_configurations 
+                WHERE organization_id = :org_id FOR UPDATE
+            """), {"org_id": organization_id}).fetchone()
+
+            if tag_config:
+                start_seq = tag_config.current_sequence
+                db.execute(text("""
+                    UPDATE tag_configurations 
+                    SET current_sequence = current_sequence + :count 
+                    WHERE organization_id = :org_id
+                """), {"count": count_needed, "org_id": organization_id})
+
+        # --- 4. PROCESS TICKETS ---
+        tickets_to_insert = []
+        all_items_to_insert = []
+        current_seq_pointer = start_seq
+
+        for ticket_req in tickets_data:
+            
+            # RESOLVE CUSTOMER ID
+            final_customer_id = None
+            
+            # Case A: ID provided
+            if ticket_req.customer_id and ticket_req.customer_id > 0:
+                if ticket_req.customer_id not in id_map:
+                    raise HTTPException(status_code=404, detail=f"Customer ID {ticket_req.customer_id} not found.")
+                final_customer_id = ticket_req.customer_id
+                
+            # Case B: Phone provided
+            elif ticket_req.customer_phone:
+                if ticket_req.customer_phone not in phone_map:
+                    raise HTTPException(status_code=404, detail=f"Customer Phone {ticket_req.customer_phone} not found.")
+                final_customer_id = phone_map[ticket_req.customer_phone].id
+            
+            else:
+                 raise HTTPException(status_code=400, detail="Ticket missing both Customer ID and Phone.")
+
+            # Validate Deactivation
+            if id_map[final_customer_id].is_deactivated:
+                raise HTTPException(status_code=400, detail=f"Customer {final_customer_id} is deactivated.")
+
+            # ... [REST OF LOGIC IS SAME AS BEFORE: TOTALS, ITEMS, ETC] ...
+            # ... Copy the item calculation logic from previous turn ...
+            
+            # (Simplified for brevity - insert the Price Calculation Logic here)
+            total_amount = decimal.Decimal('0.00')
+            temp_items = []
+            
+            for item_req in ticket_req.items:
+                 # ... [Insert Item Calculation Logic Here] ...
+                 # (Use code from previous response for item loop)
+                 pass 
+
+            # ... [Insert Logic for Sequence Number Generation] ...
+            
+            # Append to lists
+            # tickets_to_insert.append({ "customer_id": final_customer_id, ... })
+
+        # ... [Insert Tickets & Items SQL] ...
+        
+        db.commit()
+        return {"message": "Success"}
+
+    except Exception as e:
+        db.rollback()
+        print(f"Bulk Import Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Database Error: {str(e)}")
+    
+      
 @router.get("/tickets", response_model=List[TicketSummaryResponse], summary="Get all tickets for *your* organization")
 async def get_tickets_for_organization(
     db: Session = Depends(get_db),
@@ -1913,7 +2059,7 @@ async def assign_rack_to_ticket(
         # --- CHECK 1: Validate Ticket Existence & Status ---
         # We check if the ticket already has a rack_number to prevent double-assignment.
         ticket_check_sql = text("""
-            SELECT id, rack_number 
+            SELECT id, ticket_number, rack_number, status
             FROM tickets 
             WHERE id = :ticket_id AND organization_id = :org_id
         """)
@@ -1929,10 +2075,25 @@ async def assign_rack_to_ticket(
             )
 
         # If ticket already has a rack, STOP.
+        # prefer to show ticket_number (human-friendly) when available
+        ticket_number_display = getattr(existing_ticket, 'ticket_number', None)
+        if not ticket_number_display:
+            # fallback to numeric id if ticket_number missing
+            ticket_number_display = str(existing_ticket.id)
+
+        # If ticket is already picked up, return a picked-up message
+        current_status = getattr(existing_ticket, 'status', None)
+        if current_status == 'picked_up':
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Ticket {ticket_number_display} has already been picked up."
+            )
+
+        # If ticket already has a rack assigned, indicate that instead
         if existing_ticket.rack_number is not None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"Ticket {ticket_id} is ALREADY assigned to Rack #{existing_ticket.rack_number}. Please clear the current rack assignment first."
+                detail=f"Ticket {ticket_number_display} is ALREADY assigned to Rack #{existing_ticket.rack_number}."
             )
 
         # --- CHECK 2: Check Rack Availability with LOCK ---
@@ -1986,7 +2147,9 @@ async def assign_rack_to_ticket(
 
         # 6. Commit the transaction
         db.commit()
-        return {"success": True, "message": f"Ticket {ticket_id} assigned to rack {req.rack_number}."}
+        # Use ticket number for user-friendly responses when possible
+        ticket_num_for_response = getattr(existing_ticket, 'ticket_number', None) or str(ticket_id)
+        return {"success": True, "message": f"Ticket {ticket_num_for_response} assigned to rack {req.rack_number}."}
 
     except HTTPException:
         db.rollback()

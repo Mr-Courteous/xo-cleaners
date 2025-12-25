@@ -11,11 +11,13 @@ import {
   CheckCircle,
   AlertCircle,
   Database, // New Icon
-  UploadCloud // New Icon
+  UploadCloud, // New Icon
+  Package
 } from "lucide-react";
 import baseURL from "../lib/config"; 
 import Header from "./Header";
 import BulkCustomerImport from "./BulkCustomerImport"; // ✅ 1. Import the component
+import BulkTicketImport from "./BulkTicketImport"; // ✅ 2. Import ticket bulk importer
 
 export default function OrganizationSettings() {
   // ================= State Management =================
@@ -46,6 +48,7 @@ export default function OrganizationSettings() {
 
   // --- ✅ New State for Bulk Import ---
   const [showBulkImport, setShowBulkImport] = useState(false);
+  const [showBulkTicketImport, setShowBulkTicketImport] = useState(false);
 
   // ================= Effects =================
   useEffect(() => {
@@ -266,29 +269,51 @@ export default function OrganizationSettings() {
                   <h2 className="text-lg font-bold text-gray-900 mb-6 pb-2 border-b">Data Management</h2>
                   
                   <div className="space-y-6">
-                     
-                     {/* Import Card */}
-                     <div className="border border-gray-200 rounded-xl p-6 bg-gray-50/50 hover:bg-white hover:shadow-md transition-all">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Bulk Customer Import Card */}
+                      <div className="border border-gray-200 rounded-xl p-6 bg-gray-50/50 hover:bg-white hover:shadow-md transition-all">
                         <div className="flex items-start gap-4">
-                           <div className="p-3 bg-blue-100 text-blue-600 rounded-lg">
-                              <UploadCloud size={24} />
-                           </div>
-                           <div>
-                              <h3 className="text-base font-bold text-gray-900">Bulk Customer Import</h3>
-                              <p className="text-sm text-gray-600 mt-1 mb-4 leading-relaxed max-w-lg">
-                                 Upload multiple customers at once manually. Useful for migrating from an old system 
-                                 or adding a list of initial clients.
-                              </p>
-                              
-                              <button 
-                                onClick={() => setShowBulkImport(true)}
-                                className="flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 hover:text-blue-600 transition-colors font-medium text-sm shadow-sm"
-                              >
-                                 <Plus size={16} /> Open Import Tool
-                              </button>
-                           </div>
+                          <div className="p-3 bg-blue-100 text-blue-600 rounded-lg">
+                            <UploadCloud size={24} />
+                          </div>
+                          <div>
+                            <h3 className="text-base font-bold text-gray-900">Bulk Customer Import</h3>
+                            <p className="text-sm text-gray-600 mt-1 mb-4 leading-relaxed max-w-lg">
+                              Upload multiple customers at once manually. Useful for migrating from an old system
+                              or adding a list of initial clients.
+                            </p>
+                            <button
+                             onClick={() => setShowBulkImport(true)}
+                             className="flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 hover:text-blue-600 transition-colors font-medium text-sm shadow-sm"
+                            >
+                              <Plus size={16} /> Open Import Tool
+                            </button>
+                          </div>
                         </div>
-                     </div>
+                      </div>
+
+                      {/* Bulk Ticket Import Card */}
+                      <div className="border border-gray-200 rounded-xl p-6 bg-gray-50/50 hover:bg-white hover:shadow-md transition-all">
+                        <div className="flex items-start gap-4">
+                          <div className="p-3 bg-purple-100 text-purple-600 rounded-lg">
+                            <Package size={24} />
+                          </div>
+                          <div>
+                            <h3 className="text-base font-bold text-gray-900">Bulk Ticket Import</h3>
+                            <p className="text-sm text-gray-600 mt-1 mb-4 leading-relaxed max-w-lg">
+                              Import historical tickets or migrate large ticket batches. Use the template to
+                              group items into tickets by a Ticket Ref.
+                            </p>
+                            <button
+                             onClick={() => setShowBulkTicketImport(true)}
+                             className="flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 hover:text-purple-600 transition-colors font-medium text-sm shadow-sm"
+                            >
+                              <Package size={16} /> Open Ticket Import
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                      
                      {/* Placeholder for future tools */}
                      {/* <div className="border border-gray-200 rounded-xl p-6 bg-gray-50/50 opacity-60">
@@ -350,6 +375,14 @@ export default function OrganizationSettings() {
         <BulkCustomerImport 
           onClose={() => setShowBulkImport(false)}
           onSuccess={() => setMsg({ type: 'success', text: 'Customers imported successfully!' })}
+        />
+      )}
+
+      {/* ✅ Bulk Ticket Import Component */}
+      {showBulkTicketImport && (
+        <BulkTicketImport
+          onClose={() => setShowBulkTicketImport(false)}
+          onSuccess={() => setMsg({ type: 'success', text: 'Tickets imported successfully!' })}
         />
       )}
 

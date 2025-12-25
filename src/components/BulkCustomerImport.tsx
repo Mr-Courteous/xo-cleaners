@@ -37,7 +37,6 @@ export default function BulkCustomerImport({ onClose, onSuccess }: BulkImportPro
 
   const removeRow = (index: number) => {
     if (rows.length === 1) {
-        // If it's the last row, just clear it instead of removing
         setRows([{ first_name: '', last_name: '', email: '', phone: '', address: '', password: '' }]);
         return;
     }
@@ -54,8 +53,9 @@ export default function BulkCustomerImport({ onClose, onSuccess }: BulkImportPro
   // --- FILE UPLOAD LOGIC ---
 
   const downloadTemplate = () => {
+    // Added quotes around the address in the example to show how to escape commas
     const headers = ["First Name,Last Name,Phone,Email,Address"];
-    const example = ["John,Doe,08012345678,john@example.com,123 Main St"];
+    const example = ["John,Doe,08012345678,john@example.com,\"123 Main St, Lagos\""];
     const csvContent = "data:text/csv;charset=utf-8," + headers.concat(example).join("\n");
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
@@ -77,7 +77,6 @@ export default function BulkCustomerImport({ onClose, onSuccess }: BulkImportPro
     };
     reader.readAsText(file);
     
-    // Reset input so same file can be selected again if needed
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -85,30 +84,31 @@ export default function BulkCustomerImport({ onClose, onSuccess }: BulkImportPro
     try {
         const lines = csvText.split('\n').filter(line => line.trim() !== '');
         
-        // Skip header if it exists (basic check if first row contains "Name" or "Phone")
         const startIndex = lines[0].toLowerCase().includes('phone') ? 1 : 0;
         
         const newRows: BulkCustomerData[] = [];
 
         for (let i = startIndex; i < lines.length; i++) {
-            // Simple CSV split (Note: Does not handle commas inside quotes perfectly, use a library like PapaParse for that)
-            const cols = lines[i].split(',').map(c => c.trim());
+            // ✅ FIX: Use Regex to split by comma ONLY if it's not inside quotes
+            // This allows "123 Main St, Lagos" to stay as one field
+            const cols = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => {
+                // Remove surrounding quotes if present (e.g. "Lagos" -> Lagos)
+                return c.trim().replace(/^"|"$/g, ''); 
+            });
             
-            // Expected Format: FirstName, LastName, Phone, Email, Address
-            if (cols.length >= 3) { // Require at least First, Last, Phone
+            if (cols.length >= 3) { 
                 newRows.push({
                     first_name: cols[0] || '',
                     last_name: cols[1] || '',
                     phone: cols[2] || '',
                     email: cols[3] || '',
-                    address: cols[4] || '',
-                    password: '' // Will use default
+                    address: cols[4] || '', // Now contains the full address including commas
+                    password: '' 
                 });
             }
         }
 
         if (newRows.length > 0) {
-            // If current list is empty/default, replace it. Otherwise append.
             if (rows.length === 1 && !rows[0].first_name) {
                 setRows(newRows);
             } else {
@@ -254,7 +254,6 @@ export default function BulkCustomerImport({ onClose, onSuccess }: BulkImportPro
                   </td>
                 </tr>
               ))}
-              {/* Add Row Button at bottom of list */}
               <tr>
                 <td colSpan={7} className="p-2">
                    <button onClick={addRow} className="flex items-center justify-center gap-2 w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50 transition-all text-sm font-medium">

@@ -203,7 +203,7 @@ export default function RackManagement() {
       console.error('Rack assignment error:', error);
       const errorMessage = parseApiError(error);
       setAssignError(errorMessage);
-      setModalMessage(`Failed to assign rack: ${errorMessage}. Please check if the ticket exists and the rack is available.`);
+      setModalMessage(`Failed to assign rack: ${errorMessage}`);
       setIsModalOpen(true);
     } finally {
       setAssigning(false);
