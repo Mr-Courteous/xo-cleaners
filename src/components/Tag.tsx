@@ -90,54 +90,174 @@ export default function Tag(): JSX.Element {
     }
   };
 
-  // Used for browser-based preview and printing.
+  // Used for browser-based preview and printing (Single Item)
   const generateTagHtml = (ticket: Ticket, item: any) => {
-    const readyDate = new Date(ticket.created_at);
-    readyDate.setDate(readyDate.getDate() + 2);
+    const rawName = ticket.customer_name || ticket.customer_phone || 'Guest';
+    const fullName = rawName;
+    const ticketId = ticket.ticket_number || '';
+    
+    // Date formatting: Fri 09-19
+    let dateIssued = '';
+    if (ticket.created_at) {
+      const d = new Date(ticket.created_at);
+      const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+      const day = days[d.getDay()];
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      dateIssued = `${day} ${mm}-${dd}`;
+    }
+
+    const qty = item.quantity || 1;
+    const nameLen = fullName.length || 0;
+    const nameFontSize = nameLen > 30 ? '9pt' : '10pt';
+
+    const blocks = Array.from({ length: qty }).map((_, idx) => {
+      const isLast = idx === qty - 1;
+      const breakStyle = isLast ? '' : 'page-break-after: always; break-after: page;';
+
+      // Width set to 100% of the parent body (which is 55mm)
+      return `
+        <div style="${breakStyle} width:100%; box-sizing:border-box; padding:4px;">
+          <div style="box-sizing:border-box;">
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px; align-items:start;">
+              <div style="text-align:left;">
+                <div style="font-size:10pt; font-weight:700;">${ticketId}</div>
+                <div style="font-size:9pt; color:#333; margin-top:2px;">${dateIssued}</div>
+              </div>
+              <div style="text-align:right;">
+                <div style="font-size:10pt; font-weight:700;">${ticketId}</div>
+                <div style="font-size:${nameFontSize}; color:#000; margin-top:2px;">${fullName}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    });
+
+    return `
+      <div style="display:flex; flex-direction:column; width:100%; font-family:'Courier New', Courier, monospace;">
+        ${blocks.join('\n')}
+      </div>
+    `;
+  };
+
+  // Generate HTML for ALL items on the ticket (Print All)
+  const generateAllTagsHtml = (ticket: Ticket) => {
+    if (!ticket.items || ticket.items.length === 0) return '';
+
+    const allTagBlocks: string[] = [];
+
+    // Pre-calculate date to match the single tag format exactly
+    let dateIssued = '';
+    if (ticket.created_at) {
+      const d = new Date(ticket.created_at);
+      const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+      const day = days[d.getDay()];
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      dateIssued = `${day} ${mm}-${dd}`;
+    }
 
     const rawName = ticket.customer_name || ticket.customer_phone || 'Guest';
     const fullName = rawName;
     const ticketId = ticket.ticket_number || '';
-    // Very short date: MM-YY (e.g. 09-25)
-    let dateIssued = '';
-    if (ticket.created_at) {
-      const d = new Date(ticket.created_at);
-      const mm = String(d.getMonth() + 1).padStart(2, '0');
-      const yy = String(d.getFullYear() % 100).padStart(2, '0');
-      dateIssued = `${mm}-${yy}`;
-    }
-
-    const preferences = [];
-    if (item.starch_level && item.starch_level !== 'no_starch' && item.starch_level !== 'none') {
-      preferences.push(`${item.starch_level} starch`);
-    }
-    if (item.crease === 'crease') {
-      preferences.push('Crease');
-    }
-    const preferencesText = preferences.join(' / ');
-
-    // create one tag per quantity but keep each tag compact: ticket number, date, customer name
-    const tags = Array(item.quantity).fill(null);
     const nameLen = fullName.length || 0;
     const nameFontSize = nameLen > 30 ? '9pt' : '10pt';
 
-    return `
-      <div style="display:flex; flex-direction:column; gap:6px; padding:4px; font-family:monospace;">
-        ${tags.map(() => `
-          <div style="border:1px solid #000; padding:6px; width:100%; box-sizing:border-box; display:flex; flex-direction:column; gap:4px;">
-            <div style="display:flex; justify-content:flex-start; align-items:center;">
-              <div style="font-size:9pt; font-weight:700; margin-right:8px;">${ticketId}</div>
-              <div style="font-size:9pt; color:#333;">${dateIssued}</div>
+    (ticket.items || []).forEach((item: any) => {
+      const qty = item.quantity || 1;
+      for (let i = 0; i < qty; i++) {
+        // Use the exact same HTML structure as generateTagHtml
+        // Reduced padding slightly to ensure fit within 55mm
+        const block = `
+          <div style="box-sizing:border-box;">
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px; align-items:start;">
+              <div style="text-align:left;">
+                <div style="font-size:10pt; font-weight:700;">${ticketId}</div>
+                <div style="font-size:9pt; color:#333; margin-top:2px;">${dateIssued}</div>
+              </div>
+              <div style="text-align:right;">
+                <div style="font-size:10pt; font-weight:700;">${ticketId}</div>
+                <div style="font-size:${nameFontSize}; color:#000; margin-top:2px;">${fullName}</div>
+              </div>
             </div>
-            <div style="font-size:${nameFontSize}; color:#000; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${fullName}</div>
           </div>
-        `).join('')}
+        `;
+        allTagBlocks.push(block);
+      }
+    });
+
+    // Wrap each block with a page-break AFTER it except the final one
+    const wrapped = allTagBlocks.map((b, idx) => {
+      const isLast = idx === allTagBlocks.length - 1;
+      const breakStyle = isLast ? '' : 'page-break-after: always; break-after: page;';
+      return `<div style="${breakStyle} width:100%; box-sizing:border-box; padding:4px;">${b}</div>`;
+    });
+
+    return `
+      <div style="display:flex; flex-direction:column; width:100%; font-family:'Courier New', Courier, monospace;">
+        ${wrapped.join('\n')}
       </div>
     `;
+  };
+
+  // Print helper: writes HTML to an off-screen iframe and calls print()
+  const handlePrintJob = (htmlContent: string) => {
+    const printFrame = document.createElement('iframe');
+    printFrame.style.display = 'none';
+    document.body.appendChild(printFrame);
+
+    const doc = printFrame.contentDocument || printFrame.contentWindow?.document;
+    if (!doc) return;
+
+    doc.open();
+    // Added explicit width to body to force correct aspect ratio/wrapping
+    doc.write(`
+      <html>
+        <head>
+          <title>Print Tags</title>
+          <style>
+            @page { size: 55mm auto; margin: 0; }
+            @media print { 
+              html, body { margin: 0; padding: 0; } 
+            }
+            body { 
+              font-family: 'Courier New', Courier, monospace; 
+              width: 55mm; 
+              max-width: 55mm;
+            }
+          </style>
+        </head>
+        <body>${htmlContent}</body>
+      </html>
+    `);
+    doc.close();
+
+    printFrame.contentWindow?.focus();
+    setTimeout(() => {
+      printFrame.contentWindow?.print();
+      setTimeout(() => {
+        if (document.body.contains(printFrame)) document.body.removeChild(printFrame);
+      }, 1000);
+    }, 100);
   };
   const openTagPreview = (ticket: Ticket, item: any) => {
     setPrintContent(generateTagHtml(ticket, item));
     setShowPrintPreview(true);
+  };
+
+  const openAllTagsPreview = (ticket: Ticket) => {
+    setPrintContent(generateAllTagsHtml(ticket));
+    setShowPrintPreview(true);
+  };
+
+  const handlePrintAllTags = (ticket: Ticket) => {
+    const html = generateAllTagsHtml(ticket);
+    if (!html) {
+      alert('No tags available to print for this ticket.');
+      return;
+    }
+    handlePrintJob(html);
   };
 
   return (
@@ -213,13 +333,22 @@ export default function Tag(): JSX.Element {
                               View Tag
                             </button>
                             
-                            {/* The Print button uses the same browser-based preview */}
+                            {/* The Print button uses the same browser-based preview for single item */}
                             <button
                               onClick={() => openTagPreview(ticket, item)}
                               className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
                             >
                               <Printer className="h-4 w-4 mr-2" />
                               Print Tag
+                            </button>
+                            
+                            {/* Print All Tags for the whole ticket */}
+                            <button
+                              onClick={() => handlePrintAllTags(ticket)}
+                              className="bg-amber-600 text-white px-4 py-2 rounded-lg hover:bg-amber-700 transition-colors flex items-center"
+                            >
+                              <Printer className="h-4 w-4 mr-2" />
+                              Print All
                             </button>
                           </div>
                         </div>
