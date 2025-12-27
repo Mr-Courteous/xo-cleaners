@@ -11,6 +11,7 @@ import PrintPreviewModal from './PrintPreviewModal';
 import renderReceiptHtml from '../lib/receiptTemplate';
 import renderPlantReceiptHtml from '../lib/plantReceiptTemplate';
 import { renderPickupReceiptHtml } from '../lib/pickupReceiptTemplate';
+import { generateTagHtml } from '../lib/tagTemplates'; 
 
 // Define a type for the items being edited
 interface EditableItem {
@@ -35,50 +36,6 @@ export default function TicketManagement() {
   // Edit Modal State
   const [showEditModal, setShowEditModal] = useState(false);
   const [editedItems, setEditedItems] = useState<EditableItem[]>([]);
-
-  // --- HELPER: Generate Tag HTML (Same as DropOff) ---
-  const generateTagHtml = (ticket: Ticket) => {
-    // Use the same compact Tag layout as Tag.tsx
-    let combined = '';
-    const rawName = ticket.customer_name || ticket.customer_phone || 'Guest';
-    const fullName = rawName;
-    const ticketId = ticket.ticket_number || '';
-
-    let dateIssued = '';
-    if (ticket.created_at) {
-      const d = new Date(ticket.created_at);
-      const mm = String(d.getMonth() + 1).padStart(2, '0');
-      const yy = String(d.getFullYear() % 100).padStart(2, '0');
-      dateIssued = `${mm}-${yy}`;
-    }
-
-    const items = (ticket as any).items || [];
-    items.forEach((item: any) => {
-      const qty = item.quantity || 1;
-      const tags = Array.from({ length: qty });
-
-      const nameLen = fullName.length || 0;
-      const nameFontSize = nameLen > 30 ? '9pt' : '10pt';
-
-      const itemHtml = tags.map(() => `
-        <div style="border:1px solid #000; padding:6px; width:100%; box-sizing:border-box; display:flex; flex-direction:column; gap:4px; font-family:monospace;">
-          <div style="display:flex; justify-content:flex-start; align-items:center;">
-            <div style="font-size:9pt; font-weight:700; margin-right:8px;">${ticketId}</div>
-            <div style="font-size:9pt; color:#333;">${dateIssued}</div>
-          </div>
-          <div style="font-size:${nameFontSize}; color:#000; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${fullName}</div>
-        </div>
-      `).join('');
-
-      combined += itemHtml;
-    });
-
-    return `
-      <div style="display:flex; flex-direction:column; gap:6px; padding:4px; font-family:monospace;">
-        ${combined}
-      </div>
-    `;
-  };
 
   // --- Search Tickets ---
   const searchTickets = async () => {
@@ -119,7 +76,7 @@ export default function TicketManagement() {
     }
   };
 
-  // --- Printing Logic ---
+  // --- Printing Logic (UPDATED FOR CENTERING) ---
   const handlePrintJob = (htmlContent: string) => {
     const printFrame = document.createElement('iframe');
     printFrame.style.display = 'none';
@@ -129,14 +86,34 @@ export default function TicketManagement() {
         <head>
           <title>Print</title>
           <style>
-            @page { size: 55mm auto; margin: 0; }
+            /* Reset Page Margins but allow paper size to be flexible */
+            @page { 
+                margin: 0; 
+            }
+
             @media print {
-              html, body { margin: 0; padding: 0; }
+              html {
+                width: 100%; /* Ensure container fills the paper width */
+                margin: 0;
+                padding: 0;
+              }
+              
+              body {
+                width: 55mm;    /* Restrict content to receipt width */
+                margin: 0 auto; /* CENTER horizontally */
+                padding: 0;
+                font-family: sans-serif;
+              }
+
+              div { break-inside: avoid; }
+              
               .page-break-receipt { 
                 page-break-after: always; 
                 break-after: page;
               }
             }
+            
+            /* Fallback style */
             body { font-family: sans-serif; }
           </style>
         </head>
@@ -164,7 +141,6 @@ export default function TicketManagement() {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const fullTicket: Ticket = response.data; 
-      console.log('Full Ticket for Printing:', fullTicket);
       
       // Generate all versions
       const customerHtml = fullTicket.status === 'picked_up' 
@@ -172,7 +148,7 @@ export default function TicketManagement() {
         : renderReceiptHtml(fullTicket);
       
       const plantHtml = renderPlantReceiptHtml(fullTicket);
-      const tagsHtml = generateTagHtml(fullTicket);
+      const tagsHtml = generateTagHtml(fullTicket); 
 
       setCustomerPrintContent(customerHtml);
       setPlantPrintContent(plantHtml);
@@ -361,7 +337,6 @@ export default function TicketManagement() {
             const isVoid = ticket.is_void || ticket.status === 'voided';
             const isRefunded = ticket.is_refunded;
 
-            // Determine card styles based on status
             let cardClasses = 'bg-white border-gray-200';
             if (isVoid) {
                 cardClasses = 'bg-red-50 border-red-200';
@@ -424,7 +399,6 @@ export default function TicketManagement() {
                         <Eye className="h-5 w-5" />
                     </button>
                     
-                    {/* Print & Edit (Hide if Void) */}
                     {!isVoid && (
                       <>
                         <button onClick={() => openPrintModal(ticket)} className="p-2 text-gray-500 hover:text-blue-600" title="Print">
@@ -436,7 +410,6 @@ export default function TicketManagement() {
                       </>
                     )}
 
-                    {/* Void / Unvoid Toggle Button */}
                     <button 
                         onClick={() => toggleAction(ticket, 'void')} 
                         className={`p-2 ${isVoid ? 'text-green-600 hover:text-green-800 bg-green-50' : 'text-gray-500 hover:text-red-600'}`} 
@@ -445,7 +418,6 @@ export default function TicketManagement() {
                         {isVoid ? <RotateCcw className="h-5 w-5" /> : <Ban className="h-5 w-5" />}
                     </button>
 
-                    {/* Refund / Undo Refund Toggle Button (Disabled if Void) */}
                     {!isVoid && (
                         <button 
                             onClick={() => toggleAction(ticket, 'refund')} 
@@ -603,7 +575,6 @@ export default function TicketManagement() {
               <Printer size={18} /> Plant Only
             </button>
 
-            {/* ✅ ADDED TAGS BUTTON */}
             <button 
                 onClick={handlePrintTags} 
                 className="px-4 py-2 bg-amber-600 text-white rounded hover:bg-amber-700 flex items-center gap-2"
@@ -611,7 +582,6 @@ export default function TicketManagement() {
               <Printer size={18} /> Tags Only
             </button>
 
-            {/* ✅ ADDED ALL BUTTON */}
             <button 
                 onClick={handlePrintAll} 
                 className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 flex items-center gap-2"

@@ -10,6 +10,8 @@ import Modal from './Modal';
 import PrintPreviewModal from './PrintPreviewModal';
 import renderReceiptHtml from '../lib/receiptTemplate';
 import renderPlantReceiptHtml from '../lib/plantReceiptTemplate';
+// --- IMPORTED TAG GENERATOR ---
+import { generateTagHtml } from '../lib/tagTemplates'; 
 
 // --- NEW CENTRAL IMAGE MAP FOR CORRELATION AND BETTER IMAGES ---
 const CLOTHING_IMAGE_MAP: { [key: string]: string } = {
@@ -21,8 +23,8 @@ const CLOTHING_IMAGE_MAP: { [key: string]: string } = {
 interface ExtendedTicketItem extends TicketItem {
   instruction_charge?: number;
   starch_charge?: number;
-  size_charge?: number; // ✅ NEW FIELD
-  clothing_size?: string; // ✅ NEW FIELD
+  size_charge?: number; 
+  clothing_size?: string; 
   alteration_behavior?: string;
   is_custom?: boolean; 
 }
@@ -31,7 +33,7 @@ interface TicketWithItems extends Ticket {
   items: Array<ExtendedTicketItem & {
     clothing_name: string;
     starch_level: string;
-    clothing_size: string; // ✅ NEW FIELD
+    clothing_size: string; 
     crease: string;
     quantity: number;
   }>;
@@ -50,15 +52,13 @@ const getAuthHeaders = () => {
 const RECEIPT_STORAGE_KEY = 'receiptConfig';
 const VIEW_MODE_STORAGE_KEY = 'dropOffViewMode';
 
-// --- HELPER COMPONENT: UPCHARGE BUTTONS (UPDATED) ---
+// --- HELPER COMPONENT: UPCHARGE BUTTONS ---
 interface UpchargeProps {
   currentCharge: number;
   onUpdate: (amount: number) => void;
 }
 
 const UpchargeSelector = ({ currentCharge, onUpdate }: UpchargeProps) => {
-  
-  // Logic: Add to current, but don't go below 0
   const handleAdd = (amount: number) => {
     const newVal = Math.max(0, currentCharge + amount);
     onUpdate(newVal);
@@ -81,7 +81,7 @@ const UpchargeSelector = ({ currentCharge, onUpdate }: UpchargeProps) => {
       </div>
 
       <div className="flex flex-wrap gap-2 items-center">
-        {/* MINUS BUTTONS (2 Buttons) */}
+        {/* MINUS BUTTONS */}
         <div className="flex gap-1 bg-red-50 p-1 rounded">
             <button
                 type="button"
@@ -99,7 +99,7 @@ const UpchargeSelector = ({ currentCharge, onUpdate }: UpchargeProps) => {
             </button>
         </div>
 
-        {/* ADD BUTTONS (3 Buttons) */}
+        {/* ADD BUTTONS */}
         <div className="flex gap-1 bg-green-50 p-1 rounded">
             <button
                 type="button"
@@ -266,7 +266,6 @@ export default function DropOff() {
                 heavy: parseFloat(res.data.starch_price_heavy) || 0.00,
                 extra_heavy: parseFloat(res.data.starch_price_extra_heavy) || 0.00 
             });
-            // ✅ FETCH SIZE PRICES
             setSizePrices({
                 s: parseFloat(res.data.size_price_s) || 0.00,
                 m: parseFloat(res.data.size_price_m) || 0.00,
@@ -316,7 +315,6 @@ export default function DropOff() {
       console.error("Failed to search customers:", error);
       setCustomers([]);
       
-      // Handle 401/403 Unauthorized errors
       if (error.response && (error.response.status === 401 || error.response.status === 403)) {
           setModal({
             isOpen: true,
@@ -375,7 +373,7 @@ export default function DropOff() {
       clothing_name: ct?.name || 'Select Item',
       quantity: 1,
       starch_level: 'no_starch', starch_charge: 0,
-      clothing_size: 'm', size_charge: 0, // ✅ Defaults
+      clothing_size: 'm', size_charge: 0, 
       crease: 'no_crease', additional_charge: 0, instruction_charge: 0,
       alterations: '', item_instructions: '',
       plant_price: ct?.plant_price || 0, margin: ct?.margin || 0,
@@ -399,7 +397,7 @@ export default function DropOff() {
       clothing_name: ct.name,
       quantity: 1,
       starch_level: 'no_starch', starch_charge: 0,
-      clothing_size: 'm', size_charge: 0, // ✅ Defaults
+      clothing_size: 'm', size_charge: 0, 
       crease: 'no_crease', additional_charge: 0, instruction_charge: 0,
       alterations: '', item_instructions: '',
       plant_price: ct.plant_price, margin: ct.margin,
@@ -424,7 +422,7 @@ export default function DropOff() {
       clothing_name: name,
       quantity: 1,
       starch_level: 'no_starch', starch_charge: 0,
-      clothing_size: 'm', size_charge: 0, // ✅ Defaults
+      clothing_size: 'm', size_charge: 0, 
       crease: 'no_crease', additional_charge: 0, instruction_charge: 0,
       alterations: '', item_instructions: '',
       plant_price: price, margin: margin,
@@ -447,7 +445,7 @@ export default function DropOff() {
     updateItem(selectedTicketIndex, { starch_level: levelKey });
   };
 
-  const handleQuickSizeUpdate = (sizeKey: string) => { // ✅ NEW HANDLER
+  const handleQuickSizeUpdate = (sizeKey: string) => { 
     if (selectedTicketIndex === null) return;
     updateItem(selectedTicketIndex, { clothing_size: sizeKey });
   };
@@ -465,7 +463,7 @@ export default function DropOff() {
     const unitStarchPrice = starchPrices[selectedStarch] || 0;
     updatedItem.starch_charge = unitStarchPrice * qty;
 
-    // 2. ✅ Size Calculation
+    // 2. Size Calculation
     const selectedSize = (updatedItem.clothing_size || 'm') as keyof typeof sizePrices;
     const unitSizePrice = sizePrices[selectedSize] || 0;
     updatedItem.size_charge = unitSizePrice * qty;
@@ -505,49 +503,7 @@ export default function DropOff() {
     if (selectedTicketIndex !== null && index < selectedTicketIndex) setSelectedTicketIndex(selectedTicketIndex - 1);
   };
 
-  const generateTagHtml = (ticket: TicketWithItems) => {
-    // Reuse the compact Tag style used in the Tag management component.
-    let combined = '';
-    const rawName = ticket.customer_name || ticket.customer_phone || 'Guest';
-    const fullName = rawName;
-    const ticketId = ticket.ticket_number || '';
-
-    // short date MM-YY
-    let dateIssued = '';
-    if (ticket.created_at) {
-      const d = new Date(ticket.created_at);
-      const mm = String(d.getMonth() + 1).padStart(2, '0');
-      const yy = String(d.getFullYear() % 100).padStart(2, '0');
-      dateIssued = `${mm}-${yy}`;
-    }
-
-    (ticket.items || []).forEach((item) => {
-      const qty = item.quantity || 1;
-      const tags = Array.from({ length: qty });
-
-      const nameLen = fullName.length || 0;
-      const nameFontSize = nameLen > 30 ? '9pt' : '10pt';
-
-      const itemHtml = tags.map(() => `
-        <div style="border:1px solid #000; padding:6px; width:100%; box-sizing:border-box; display:flex; flex-direction:column; gap:4px; font-family:monospace;">
-          <div style="display:flex; justify-content:flex-start; align-items:center;">
-            <div style="font-size:9pt; font-weight:700; margin-right:8px;">${ticketId}</div>
-            <div style="font-size:9pt; color:#333;">${dateIssued}</div>
-          </div>
-          <div style="font-size:${nameFontSize}; color:#000; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${fullName}</div>
-        </div>
-      `).join('');
-
-      combined += itemHtml;
-    });
-
-    return `
-      <div style="display:flex; flex-direction:column; gap:6px; padding:4px; font-family:monospace;">
-        ${combined}
-      </div>
-    `;
-  };
-
+  // --- UPDATED PRINT HANDLER (Centers content) ---
   const handlePrintJob = (htmlContent: string) => {
     const printFrame = document.createElement('iframe');
     printFrame.style.display = 'none';
@@ -558,14 +514,34 @@ export default function DropOff() {
         <head>
           <title>Print</title>
           <style>
-            @page { size: 55mm auto; margin: 0; }
+             /* Reset Page Margins but allow paper size to be flexible */
+            @page { 
+                margin: 0; 
+            }
+
             @media print {
-              html, body { margin: 0; padding: 0; }
+              html {
+                width: 100%; /* Ensure container fills the paper width */
+                margin: 0;
+                padding: 0;
+              }
+              
+              body {
+                width: 55mm;    /* Restrict content to receipt width */
+                margin: 0 auto; /* CENTER horizontally */
+                padding: 0;
+                font-family: sans-serif;
+              }
+
+              div { break-inside: avoid; }
+              
               .page-break-receipt { 
                 page-break-after: always; 
                 break-after: page;
               }
             }
+            
+            /* Fallback style */
             body { font-family: sans-serif; }
           </style>
         </head>
@@ -585,7 +561,6 @@ export default function DropOff() {
       }, 1000);
     }, 100);
   };
-
 
   const createTicket = async () => {
     const itemsWithValidQuantity = items.filter(item => item.quantity > 0);
@@ -625,8 +600,8 @@ export default function DropOff() {
           quantity: Number(item.quantity) || 0,
           
           starch_level: mapStarchLevel(item.starch_level),
-          clothing_size: item.clothing_size || 'm', // ✅ SEND SIZE
-          size_charge: item.size_charge || 0.0,     // ✅ SEND SIZE CHARGE
+          clothing_size: item.clothing_size || 'm', 
+          size_charge: item.size_charge || 0.0,    
 
           crease: item.crease === 'crease', 
           
@@ -663,6 +638,7 @@ export default function DropOff() {
       
       const customerHtml = renderReceiptHtml(newTicket as any);
       const plantHtml = renderPlantReceiptHtml(newTicket as any);
+      // ✅ Use imported generator
       const tagHtml = generateTagHtml(newTicket); 
 
       setPrintContent(customerHtml);
@@ -840,10 +816,6 @@ export default function DropOff() {
                     prefill.first_name = part ? part.charAt(0).toUpperCase() + part.slice(1) : '';
                   }
 
-                  // IMPORTANT: If the input is a phone, don't stuff the phone value into the first name.
-                  // We want phone-only creation to populate only the phone field and leave name empty so there
-                  // is no visual/name/number clash.
-
                   setNewCustomer(prefill);
                   setShowNewCustomerForm(true);
                 }}
@@ -946,7 +918,7 @@ export default function DropOff() {
                    <span className="text-sm text-gray-500">{items.length} Items</span>
                 </div>
 
-                {/* ✅✅ CONTROL PANEL CONTAINER */}
+                {/* CONTROL PANEL CONTAINER */}
                 <div className="space-y-3 mb-4">
                     
                     {/* 1. STARCH PANEL */}
@@ -989,7 +961,7 @@ export default function DropOff() {
                         </div>
                     </div>
 
-                    {/* 2. ✅✅ CLOTHING SIZE PANEL */}
+                    {/* 2. CLOTHING SIZE PANEL */}
                     <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200">
                         <div className="flex items-center justify-between mb-2">
                             <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">
@@ -1030,12 +1002,12 @@ export default function DropOff() {
 
                 </div>
                 
-                {/* ITEMS LIST (Reduced Height) */}
+                {/* ITEMS LIST */}
                 <div className="space-y-2 mb-6 max-h-[400px] overflow-y-auto">
                    {items.map((item, index) => (
                       <div 
                         key={index} 
-                        // ✅ Click to Select
+                        // Click to Select
                         onClick={() => setSelectedTicketIndex(index)}
                         className={`
                           p-2 border rounded-lg cursor-pointer transition-all duration-200
@@ -1054,7 +1026,7 @@ export default function DropOff() {
                             <button onClick={(e) => removeItem(index, e)} className="text-gray-400 hover:text-red-600"><Trash2 className="h-3 w-3" /></button>
                          </div>
 
-                         {/* Row 2: Controls (Qty, Tags, Total) - Compact Flex Row */}
+                         {/* Row 2: Controls (Qty, Tags, Total) */}
                          <div className="flex items-center justify-between text-xs" onClick={(e) => e.stopPropagation()}>
                             
                             <div className="flex items-center gap-2">
