@@ -77,6 +77,7 @@ export default function TicketManagement() {
   };
 
   // --- Printing Logic (UPDATED FOR CENTERING) ---
+    // --- Printing Logic ---
   const handlePrintJob = (htmlContent: string) => {
     const printFrame = document.createElement('iframe');
     printFrame.style.display = 'none';
@@ -86,34 +87,14 @@ export default function TicketManagement() {
         <head>
           <title>Print</title>
           <style>
-            /* Reset Page Margins but allow paper size to be flexible */
-            @page { 
-                margin: 0; 
-            }
-
+            @page { size: 55mm auto; margin: 0; }
             @media print {
-              html {
-                width: 100%; /* Ensure container fills the paper width */
-                margin: 0;
-                padding: 0;
-              }
-              
-              body {
-                width: 55mm;    /* Restrict content to receipt width */
-                margin: 0 auto; /* CENTER horizontally */
-                padding: 0;
-                font-family: sans-serif;
-              }
-
-              div { break-inside: avoid; }
-              
+              html, body { margin: 0; padding: 0; }
               .page-break-receipt { 
                 page-break-after: always; 
                 break-after: page;
               }
             }
-            
-            /* Fallback style */
             body { font-family: sans-serif; }
           </style>
         </head>
@@ -177,6 +158,7 @@ export default function TicketManagement() {
     handlePrintJob(tagPrintContent);
     setShowPrintPreview(false);
   };
+
 
   const handlePrintAll = () => {
     const combinedHtml = `

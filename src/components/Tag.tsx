@@ -126,8 +126,7 @@ export default function Tag(): JSX.Element {
               </div>
               <div style="text-align:right;">
                 <div style="font-size:10pt; font-weight:700;">${ticketId}</div>
-                <div style="font-size:${nameFontSize}; color:#000; margin-top:2px;">${fullName}</div>
-              </div>
+                <div style="font-size:${nameFontSize}; color:#000; margin-top:2px; word-wrap: break-word; line-height: 1.1;">${fullName.substring(0, 5)}</div>              </div>
             </div>
           </div>
         </div>
@@ -178,8 +177,7 @@ export default function Tag(): JSX.Element {
               </div>
               <div style="text-align:right;">
                 <div style="font-size:10pt; font-weight:700;">${ticketId}</div>
-                <div style="font-size:${nameFontSize}; color:#000; margin-top:2px;">${fullName}</div>
-              </div>
+                <div style="font-size:${nameFontSize}; color:#000; margin-top:2px; word-wrap: break-word; line-height: 1.1;">${fullName.substring(0, 5)}</div>              </div>
             </div>
           </div>
         `;

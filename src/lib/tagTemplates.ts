@@ -21,7 +21,7 @@ const createSingleTagBlock = (
   const nameLen = fullName.length || 0;
   // Adjust font size dynamically for long names
   const nameFontSize = nameLen > 30 ? '9pt' : '10pt';
-  
+
   // Page break logic: if it's not the last item, force a page break
   const breakStyle = isLast ? '' : 'page-break-after: always; break-after: page;';
 
@@ -37,8 +37,7 @@ const createSingleTagBlock = (
           </div>
           <div style="text-align:right;">
             <div style="font-size:10pt; font-weight:700;">${ticketId}</div>
-            <div style="font-size:${nameFontSize}; color:#000; margin-top:2px; word-wrap: break-word; line-height: 1.1;">${fullName}</div>
-          </div>
+            <div style="font-size:${nameFontSize}; color:#000; margin-top:2px; word-wrap: break-word; line-height: 1.1;">${fullName.substring(0, 5)}</div>          </div>
         </div>
       </div>
     </div>
@@ -48,7 +47,7 @@ const createSingleTagBlock = (
 // Main Function: Generates HTML for a specific list of items
 export const generateTagHtml = (ticket: Ticket, specificItems?: any[]): string => {
   const itemsToPrint = specificItems || ticket.items || [];
-  
+
   if (itemsToPrint.length === 0) return '';
 
   const rawName = ticket.customer_name || ticket.customer_phone || 'Guest';
