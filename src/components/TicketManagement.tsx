@@ -85,7 +85,10 @@ export default function TicketManagement() {
     printFrame.contentDocument?.write(`
       <html>
         <head>
+
           <title>Print</title>
+
+          
           <style>
             @page { size: 55mm auto; margin: 0; }
             @media print {

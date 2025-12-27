@@ -117,7 +117,7 @@ export default function Tag(): JSX.Element {
 
       // Width set to 100% of the parent body (which is 55mm)
       return `
-        <div style="${breakStyle} width:100%; box-sizing:border-box; padding:4px;">
+        <div style="${breakStyle} width:100%; max-width: 40mm box-sizing:border-box;">
           <div style="box-sizing:border-box;">
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px; align-items:start;">
               <div style="text-align:left;">
