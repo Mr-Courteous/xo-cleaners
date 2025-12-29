@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, MapPin, CheckCircle, AlertCircle, Printer, CreditCard, DollarSign } from 'lucide-react';
+import { Search, MapPin, CheckCircle, AlertCircle, Printer, CreditCard, DollarSign, Ban } from 'lucide-react';
 import { Ticket } from '../types';
 import axios from 'axios';
 import baseURL from '../lib/config';
@@ -16,7 +16,7 @@ export default function PickUp() {
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [loading, setLoading] = useState(false);
   
-  // Payment State: "cashTendered" is what the customer gives (e.g., $50 bill)
+  // Payment State
   const [cashTendered, setCashTendered] = useState<string>(''); 
   
   const [modal, setModal] = useState({ isOpen: false, title: '', message: '', type: 'success' as 'error' | 'success' });
@@ -82,7 +82,7 @@ export default function PickUp() {
   // --- 3. Proceed to Payment ---
   const handleProceedToPayment = () => {
     if (!selectedTicket) return;
-    setCashTendered(''); // Reset input so user must type it
+    setCashTendered(''); 
     setStep('payment');
   };
 
@@ -90,11 +90,9 @@ export default function PickUp() {
   const handleProcessPickup = async () => {
     if (!selectedTicket) return;
 
-    // Recalculate based on current state to ensure validity
     const { balance } = computeCharges(selectedTicket);
     const tendered = parseFloat(cashTendered) || 0;
 
-    // FINAL GUARD: Ensure sufficient funds
     if (tendered < balance) {
         setModal({ isOpen: true, title: 'Insufficient Funds', message: 'Cash tendered is less than the balance due.', type: 'error' });
         return;
@@ -104,9 +102,6 @@ export default function PickUp() {
     try {
       const token = localStorage.getItem('accessToken');
 
-      // We send the BALANCE amount to the backend as the amount_paid, 
-      // because that is the actual revenue we are recording. 
-      // The change given back to the customer is irrelevant to the API record.
       const response = await axios.put(
         `${baseURL}/api/organizations/tickets/${selectedTicket.id}/pickup`,
         { amount_paid: balance }, 
@@ -155,7 +150,6 @@ export default function PickUp() {
         <head>
           <title>Print</title>
           <style>
-            /* Reset Page Margins but allow paper size to be flexible */
             @page { margin: 0; }
             @media print {
               html { width: 100%; margin: 0; padding: 0; }
@@ -181,13 +175,26 @@ export default function PickUp() {
     const items = ticket.items || [];
     const subtotal = items.reduce((sum, item) => sum + (Number(item.item_total) || 0), 0);
     
-    const envCharge = subtotal * 0.047; // 4.7%
-    const tax = subtotal * 0.0825;      // 8.25%
+    const envCharge = subtotal * 0.047;
+    const tax = subtotal * 0.0825;
     
     const finalTotal = subtotal + envCharge + tax;
     const paid = Number(ticket.paid_amount) || 0;
-    const balance = Math.max(0, finalTotal - paid); // Ensure balance isn't negative
+    const balance = Math.max(0, finalTotal - paid); 
     return { subtotal, envCharge, tax, finalTotal, paid, balance };
+  };
+
+  // --- VALIDATION HELPER ---
+  const getPickupEligibility = (ticket: Ticket) => {
+    const hasRack = ticket.rack_number && ticket.rack_number.trim() !== '';
+    // Check if status implies it's still being processed
+    const isProcessing = ['processed', 'processing'].includes(ticket.status.toLowerCase());
+    
+    let error = null;
+    if (!hasRack) error = 'Ticket has no rack location assigned.';
+    else if (isProcessing) error = 'Ticket is still processing (not ready).';
+
+    return { allowed: !error, error };
   };
 
   return (
@@ -245,7 +252,10 @@ export default function PickUp() {
                         {ticket.customer_name}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
+                          ${['processed', 'processing'].includes(ticket.status.toLowerCase()) 
+                             ? 'bg-yellow-100 text-yellow-800' 
+                             : 'bg-green-100 text-green-800'}`}>
                           {ticket.status}
                         </span>
                       </td>
@@ -279,19 +289,47 @@ export default function PickUp() {
             </button>
           </div>
 
+          {/* CHECK ELIGIBILITY */}
+          {(() => {
+              const { allowed, error } = getPickupEligibility(selectedTicket);
+              if (!allowed) {
+                  return (
+                      <div className="mb-6 bg-red-50 border-l-4 border-red-500 p-4 rounded-r flex items-start">
+                          <Ban className="w-5 h-5 text-red-500 mr-3 mt-0.5" />
+                          <div>
+                              <h4 className="font-bold text-red-800">Cannot Process Pickup</h4>
+                              <p className="text-sm text-red-700">{error}</p>
+                          </div>
+                      </div>
+                  );
+              }
+              return null;
+          })()}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             <div className="bg-gray-50 p-4 rounded-lg">
                 <h4 className="font-medium text-gray-700 mb-2">Customer Info</h4>
                 <p className="text-lg font-bold">{selectedTicket.customer_name}</p>
                 <p className="text-gray-600">{selectedTicket.customer_phone}</p>
             </div>
-            <div className="bg-blue-50 p-4 rounded-lg">
-                <h4 className="font-medium text-blue-800 mb-2">Rack Location</h4>
+            <div className={`p-4 rounded-lg ${!selectedTicket.rack_number ? 'bg-red-50 border border-red-200' : 'bg-blue-50'}`}>
+                <h4 className={`font-medium mb-2 ${!selectedTicket.rack_number ? 'text-red-800' : 'text-blue-800'}`}>
+                    Rack Location
+                </h4>
                 <div className="flex items-center">
-                    <MapPin className="w-5 h-5 text-blue-600 mr-2" />
-                    <span className="text-2xl font-bold text-blue-900">
-                        {selectedTicket.rack_number || 'Unassigned'}
-                    </span>
+                    {selectedTicket.rack_number ? (
+                        <>
+                            <MapPin className="w-5 h-5 text-blue-600 mr-2" />
+                            <span className="text-2xl font-bold text-blue-900">
+                                {selectedTicket.rack_number}
+                            </span>
+                        </>
+                    ) : (
+                        <>
+                            <AlertCircle className="w-5 h-5 text-red-600 mr-2" />
+                            <span className="text-xl font-bold text-red-600">Unassigned</span>
+                        </>
+                    )}
                 </div>
             </div>
           </div>
@@ -333,13 +371,24 @@ export default function PickUp() {
              >
                 Back
              </button>
-             <button
-                onClick={handleProceedToPayment}
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium flex items-center"
-             >
-                <CreditCard className="w-4 h-4 mr-2" />
-                Proceed to Payment
-             </button>
+             {/* Disable button if not allowed */}
+             {(() => {
+                 const { allowed } = getPickupEligibility(selectedTicket);
+                 return (
+                     <button
+                        onClick={handleProceedToPayment}
+                        disabled={!allowed}
+                        className={`px-6 py-2 rounded-lg font-medium flex items-center
+                            ${allowed 
+                                ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                            }`}
+                     >
+                        <CreditCard className="w-4 h-4 mr-2" />
+                        Proceed to Payment
+                     </button>
+                 );
+             })()}
           </div>
         </div>
       )}
@@ -349,13 +398,12 @@ export default function PickUp() {
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 max-w-md mx-auto">
             <h3 className="text-xl font-bold text-gray-900 mb-6 text-center">Collect Payment</h3>
             
-            {/* Calculation Logic Variables */}
             {(() => {
                 const { balance } = computeCharges(selectedTicket);
                 const tendered = parseFloat(cashTendered) || 0;
                 const change = tendered - balance;
                 const isInsufficient = tendered < balance;
-                const isValidInput = cashTendered !== ''; // User has typed something
+                const isValidInput = cashTendered !== ''; 
 
                 return (
                     <>
@@ -386,7 +434,6 @@ export default function PickUp() {
                                 />
                             </div>
                             
-                            {/* Quick Exact Amount Button */}
                             <button 
                                 type="button"
                                 onClick={() => setCashTendered(balance.toFixed(2))}
@@ -396,7 +443,6 @@ export default function PickUp() {
                             </button>
                         </div>
 
-                        {/* CHANGE DISPLAY */}
                         <div className={`mb-8 p-4 rounded-lg text-center transition-colors duration-200 ${isValidInput && !isInsufficient ? 'bg-green-50 border border-green-200' : 'bg-gray-50 border border-gray-100'}`}>
                             {isValidInput ? (
                                 isInsufficient ? (

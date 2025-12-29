@@ -59,7 +59,7 @@ export function renderReceiptHtml(ticket: Ticket, organizationName: string = "Yo
       : '';
 
     return `
-      <div style="margin-bottom: 6px; padding-bottom: 6px; border-bottom: 1px solid #000;">
+      <div style="margin-bottom: 6px; padding-bottom: 6px;">
          <div style="display:flex; justify-content:space-between; align-items:flex-start; font-size:11pt; font-weight:400; color: #000; line-height:1.1;">
             <div style="flex:1; text-transform: uppercase;">${item.clothing_name}</div>
             <div style="text-align: right; min-width: 65px;">
@@ -76,25 +76,25 @@ export function renderReceiptHtml(ticket: Ticket, organizationName: string = "Yo
     <div style="width:58mm; margin:0 auto; font-family: 'Arial', 'Helvetica', sans-serif; font-weight: 400; color:#000; background: white; padding: 2px;">
       
       <div style="text-align:center; margin-bottom: 10px;">
-        <div style="font-size:15pt; font-weight:400; text-transform:uppercase; margin-bottom:4px; line-height:1;">
+        <div style="font-size:13pt; font-weight:400; text-transform:uppercase; margin-bottom:4px; line-height:1;">
           ${ticket.organization_name || organizationName}
         </div>
       </div>
       
       <div style="text-align:center; margin-bottom: 8px;">
-        <div style="font-size:12pt; font-weight:400; margin-bottom: 6px; display:inline-block; padding: 2px 6px;">CUSTOMER COPY</div>
-        <div style="font-size:20pt; font-weight:700; letter-spacing: -1px;">${ticket.ticket_number}</div>
-        <div style="font-size:10pt; font-weight:400;">${dateStr} ${timeStr}</div>
+        <div style="font-size:10pt; font-weight:400; margin-bottom: 6px; display:inline-block; padding: 2px 6px;">CUSTOMER COPY</div>
+        <div style="font-size:18pt; font-weight:700; letter-spacing: -1px;">${ticket.ticket_number}</div>
+        <div style="font-size:8pt; font-weight:400;">${dateStr} ${timeStr}</div>
       </div>
 
-      <div style="border-bottom: 1px solid #000; margin-bottom: 10px; padding-bottom: 4px;">
-        <div style=" font-size:10pt; text-transform: uppercase;">
+      <div style="margin-bottom: 10px; padding-bottom: 4px;">
+        <div style=" font-size:8pt; text-transform: uppercase;">
             ${ticket.customer_name}
         </div>
       </div>
 
       ${ticket.special_instructions ? `
-        <div style="margin-bottom:10px; padding:4px; border:3px solid #000; font-weight:900; font-size:11pt; text-align:center; text-transform:uppercase;">
+        <div style="margin-bottom:10px; padding:4px; font-weight:900; font-size:7pt; text-align:center; text-transform:uppercase;">
           ${ticket.special_instructions}
         </div>
       ` : ''}
@@ -103,31 +103,31 @@ export function renderReceiptHtml(ticket: Ticket, organizationName: string = "Yo
         ${itemsHtml}
       </div>
 
-      <div style="font-size:11pt; font-weight:400; line-height: 1.4;">
+      <div style="font-size:9pt; font-weight:400; line-height: 1.4;">
         <div style="display:flex; justify-content:space-between;"> 
           <div>Subtotal:</div> <div>$${subtotal.toFixed(2)}</div> 
         </div>
-        <div style="display:flex; justify-content:space-between; font-size:10pt;"> 
+        <div style="display:flex; justify-content:space-between; font-size:9pt;"> 
           <div>Env Fee (4.7%):</div> <div>$${envCharge.toFixed(2)}</div> 
         </div>
-        <div style="display:flex; justify-content:space-between; font-size:10pt;"> 
+        <div style="display:flex; justify-content:space-between; font-size:9pt;"> 
           <div>Tax (8.25%):</div> <div>$${tax.toFixed(2)}</div> 
         </div>
 
-        <div style="border-top: 3px solid #000; margin-top: 6px; padding-top: 4px;"></div>
+        <div style="border-top: 1px solid #000; margin-top: 6px; padding-top: 4px;"></div>
 
-        <div style="display:flex; justify-content:space-between; font-size:12pt; font-weight:400; margin-top:2px;">
+        <div style="display:flex; justify-content:space-between; font-size:10pt; font-weight:400; margin-top:2px;">
           <div>TOTAL:</div> <div>$${finalTotal.toFixed(2)}</div>
         </div>
 
-        <div style="display:flex; justify-content:space-between; margin-top:4px; font-size:12pt; font-weight:400;"> 
+        <div style="display:flex; justify-content:space-between; margin-top:4px; font-size:10pt; font-weight:400;"> 
             <div>Paid:</div> 
             <div>$${paid.toFixed(2)}</div> 
         </div>
 
         ${isPaid 
-            ? `<div style="text-align:center; margin-top:12px; padding: 4px; font-weight:400; font-size: 16pt;">PAID IN FULL</div>`
-            : `<div style="display:flex; justify-content:space-between; font-weight:400; margin-top:8px; font-size:10pt; border-top: 2px solid #000; border-bottom: 2px solid #000; padding: 6px 0;"> 
+            ? `<div style="text-align:center; margin-top:12px; padding: 4px; font-weight:400; font-size: 14pt;">PAID IN FULL</div>`
+            : `<div style="display:flex; justify-content:space-between; font-weight:400; margin-top:8px; font-size:8pt; padding: 6px 0;"> 
                  <div>BALANCE:</div> 
                  <div>$${balance.toFixed(2)}</div> 
                </div>`
@@ -135,12 +135,12 @@ export function renderReceiptHtml(ticket: Ticket, organizationName: string = "Yo
       </div>
       
       <div style="margin-top:15px; text-align:center;">
-        <div style="display:inline-block; padding: 4px 10px; font-weight:400; font-size:10pt; text-transform: uppercase;">
+        <div style="display:inline-block; padding: 4px 10px; font-weight:400; font-size:8pt; text-transform: uppercase;">
             PIECES: ${totalPieces}
         </div>
       </div>
       
-      <div style="margin-top:12px; text-align:center; font-size:10pt; font-weight:600; text-transform: uppercase;">
+      <div style="margin-top:12px; text-align:center; font-size:8pt; font-weight:600; text-transform: uppercase;">
         Pickup: ${ticket.pickup_date ? new Date(ticket.pickup_date).toLocaleDateString() : 'See Counter'}
       </div>
 
