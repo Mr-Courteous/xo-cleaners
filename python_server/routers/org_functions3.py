@@ -341,16 +341,23 @@ async def get_ticket_details(
         if not ticket:
             raise HTTPException(status_code=404, detail="Ticket not found.")
 
-        # --- TIMEZONE FIX START ---
-        # Ensure dates are explicitly marked as UTC so the Frontend converts them correctly.
+        # --- TIMEZONE FIX START (SAFE VERSION) ---
         
+        # 1. Fix Created At
         c_at = ticket.created_at
-        if c_at and c_at.tzinfo is None:
+        if c_at and isinstance(c_at, datetime) and c_at.tzinfo is None:
             c_at = c_at.replace(tzinfo=timezone.utc)
 
+        # 2. Fix Pickup Date (Handles both Date and DateTime)
         p_date = ticket.pickup_date
-        if p_date and p_date.tzinfo is None:
-            p_date = p_date.replace(tzinfo=timezone.utc)
+        if p_date:
+            if isinstance(p_date, datetime):
+                # If it's a full DateTime
+                if p_date.tzinfo is None:
+                    p_date = p_date.replace(tzinfo=timezone.utc)
+            elif isinstance(p_date, date):
+                # If it's just a Date, convert to Midnight UTC
+                p_date = datetime.combine(p_date, datetime.min.time()).replace(tzinfo=timezone.utc)
         # --- TIMEZONE FIX END ---
 
         # 2. Get Items
@@ -360,7 +367,7 @@ async def get_ticket_details(
                 ti.item_total, ti.plant_price, ti.margin, 
                 ti.starch_level, ti.starch_charge, 
                 
-                ti.clothing_size, ti.size_charge,  -- ✅ Size Fields
+                ti.clothing_size, ti.size_charge, 
                 
                 ti.crease, ti.alterations, ti.item_instructions, 
                 ti.additional_charge, ti.instruction_charge,
@@ -379,7 +386,6 @@ async def get_ticket_details(
 
         items_list = []
         for item_row in items_results:
-            # Name Logic: Use DB clothing name, if null use custom_name
             final_name = item_row.clothing_name 
             if not final_name:
                 final_name = item_row.custom_name or "Custom Item"
@@ -390,14 +396,10 @@ async def get_ticket_details(
                     ticket_id=item_row.ticket_id,
                     clothing_type_id=item_row.clothing_type_id,
                     quantity=item_row.quantity,
-                    
                     starch_level=item_row.starch_level,
                     starch_charge=float(item_row.starch_charge or 0.0),
-
-                    # ✅ Size Data
                     clothing_size=item_row.clothing_size,
                     size_charge=float(item_row.size_charge or 0.0),
-
                     crease=item_row.crease,
                     alterations=item_row.alterations,
                     item_instructions=item_row.item_instructions,
@@ -405,16 +407,14 @@ async def get_ticket_details(
                     item_total=float(item_row.item_total),
                     plant_price=float(item_row.plant_price),
                     margin=float(item_row.margin),
-                    
                     additional_charge=float(item_row.additional_charge or 0.0),
                     instruction_charge=float(item_row.instruction_charge or 0.0),
-                    
                     clothing_name=final_name,
                     pieces=item_row.pieces
                 )
             )
 
-        # 3. Branding (Header/Footer)
+        # 3. Branding
         org_name_query = text("SELECT name FROM organizations WHERE id = :org_id")
         org_name_row = db.execute(org_name_query, {"org_id": org_id}).fetchone()
         org_name_val = org_name_row.name if org_name_row else "Your Cleaners"
@@ -436,7 +436,7 @@ async def get_ticket_details(
             rack_number=ticket.rack_number,
             special_instructions=ticket.special_instructions,
             
-            # ✅ Return the UTC-fixed variables
+            # ✅ Return Safe Dates
             pickup_date=p_date,
             created_at=c_at,
             
@@ -452,7 +452,8 @@ async def get_ticket_details(
     except Exception as e:
         print(f"Error: {e}")
         raise HTTPException(status_code=500, detail="Error retrieving ticket.")
-
+    
+    
 # --- ADD THIS FUNCTION *AFTER* THE ONE ABOVE ---
 
 @router.get("/find-tickets", response_model=List[TicketResponse], summary="Search for tickets by number, name, or phone")
