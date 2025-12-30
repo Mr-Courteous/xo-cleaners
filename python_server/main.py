@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from pydantic import BaseModel, Field
 
 # Utils & typing
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from typing import Optional, List, Dict, Any
 import os
 import uuid 
@@ -366,8 +366,8 @@ class TicketResponse(BaseModel):
     status: str
     rack_number: Optional[str]
     special_instructions: Optional[str]
-    pickup_date: Optional[datetime]
-    created_at: datetime
+    pickup_date: Optional[date]
+    created_at: date
     # The list of items must use the rich response model
     items: List[TicketItemResponse]     
     is_void: bool

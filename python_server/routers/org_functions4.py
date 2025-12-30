@@ -7,11 +7,14 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError # Make sure to import this
 
 
+
 # --- IMPORTS FROM YOUR UTILS ---
 from utils.common import (
     get_db, 
     get_current_user_payload
 )
+
+
 
 # 1. Define the Router
 router = APIRouter(
@@ -68,20 +71,11 @@ class FullOrgDataResponse(BaseModel):
     items: List[RawTicketItem]
     racks: List[RawRack]
     customers: List[RawCustomer]
-# 3. The Analytics Route
-# ==========================================
-# 3. The "Everything" Analytics Route
-# ==========================================
-from typing import Dict, Any, List, Optional
-from datetime import datetime
-from fastapi import APIRouter, HTTPException, Depends, status
-from sqlalchemy.orm import Session
-from sqlalchemy import text
-from pydantic import BaseModel
+    
+    
 
-from utils.common import get_db, get_current_user_payload
 
-router = APIRouter(prefix="/api/organizations", tags=["Organization Resources"])
+
 # =======================
 # Response Models
 # =======================
@@ -141,6 +135,24 @@ class FullOrgDataResponse(BaseModel):
     racks: List[RawRack]
     customers: List[RawCustomer]
     ledger: List[LedgerEntry] # <--- New Financial Data
+    
+class TicketMiniSummary(BaseModel):
+    id: int
+    ticket_number: str
+    status: str
+    total_amount: float
+    paid_amount: float
+    balance: float
+    created_at: datetime
+
+class CustomerFinancialResponse(BaseModel):
+    customer_id: int
+    total_tickets: int
+    lifetime_total_sales: float
+    lifetime_total_paid: float
+    total_outstanding_balance: float # <--- This is the number you need to see if they owe money
+    tickets: List[TicketMiniSummary]
+
 
 # =======================
 # Analytics Endpoint
@@ -891,3 +903,91 @@ def delete_customer_permanently(
         db.rollback()
         print(f"Error deleting customer: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete customer.")
+    
+    
+    
+@router.get("/customers/{customer_id}/financials", response_model=CustomerFinancialResponse, summary="Get full financial history for a customer")
+async def get_customer_financials(
+    customer_id: int,
+    db: Session = Depends(get_db),
+    payload: Dict[str, Any] = Depends(get_current_user_payload)
+):
+    """
+    Fetches all tickets for a specific customer and calculates:
+    1. Total amount they have ever spent.
+    2. Total amount they have paid.
+    3. Current Total Balance (Debt).
+    """
+    org_id = payload.get("organization_id")
+    if not org_id:
+        raise HTTPException(status_code=400, detail="Organization ID missing.")
+
+    try:
+        # 1. Verify Customer belongs to this Org
+        check_query = text("SELECT id FROM allUsers WHERE id = :cid AND organization_id = :oid")
+        customer = db.execute(check_query, {"cid": customer_id, "oid": org_id}).fetchone()
+        
+        if not customer:
+            raise HTTPException(status_code=404, detail="Customer not found.")
+
+        # 2. Fetch All Tickets for this Customer
+        # We order by ID desc so the newest tickets are at the top
+        query = text("""
+            SELECT 
+                id, ticket_number, status, total_amount, paid_amount, created_at
+            FROM tickets
+            WHERE customer_id = :cid AND organization_id = :oid
+            ORDER BY created_at DESC
+        """)
+        
+        results = db.execute(query, {"cid": customer_id, "oid": org_id}).fetchall()
+
+        # 3. Calculate Financials in Python
+        # (This is safer/easier than a complex SQL aggregate for this specific view)
+        tickets_list = []
+        total_sales = 0.0
+        total_paid = 0.0
+
+        for row in results:
+            t_total = float(row.total_amount)
+            t_paid = float(row.paid_amount)
+            t_balance = t_total - t_paid
+            
+            # Add to lifetime totals
+            total_sales += t_total
+            total_paid += t_paid
+
+            # Timezone Safety Fix
+            c_at = row.created_at
+            if c_at and c_at.tzinfo is None:
+                c_at = c_at.replace(tzinfo=timezone.utc)
+
+            tickets_list.append(
+                TicketMiniSummary(
+                    id=row.id,
+                    ticket_number=row.ticket_number,
+                    status=row.status,
+                    total_amount=t_total,
+                    paid_amount=t_paid,
+                    balance=t_balance,
+                    created_at=c_at
+                )
+            )
+
+        # 4. Final Calculation
+        total_outstanding = total_sales - total_paid
+
+        return CustomerFinancialResponse(
+            customer_id=customer_id,
+            total_tickets=len(tickets_list),
+            lifetime_total_sales=total_sales,
+            lifetime_total_paid=total_paid,
+            total_outstanding_balance=total_outstanding, # <--- If this is > 0.01, they owe money
+            tickets=tickets_list
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error fetching customer financials: {e}")
+        raise HTTPException(status_code=500, detail="Failed to load customer financial history.")
