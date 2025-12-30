@@ -231,7 +231,7 @@ class TicketCreate(BaseModel):
     rack_number: Optional[str] = None
     special_instructions: Optional[str] = None
     paid_amount: float = 0.0
-    pickup_date: Optional[datetime] = None
+    pickup_date: Optional[date] = None
 
 # =======================
 # TICKET RESPONSE (Updated)
@@ -267,8 +267,8 @@ class TicketResponse(BaseModel):
 
 
     # Fix for pickup_date
-    pickup_date: Optional[datetime] = None
-    created_at: datetime
+    pickup_date: Optional[date] = None
+    created_at: date
     organization_id: int
     
     # List of items
@@ -300,8 +300,8 @@ class TicketSummaryResponse(BaseModel):
     status: str
     rack_number: Optional[str]
     special_instructions: Optional[str]
-    pickup_date: Optional[datetime]
-    created_at: datetime
+    pickup_date: Optional[datet]
+    created_at: date
     organization_id: int
 
     class Config:

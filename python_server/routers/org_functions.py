@@ -6,7 +6,7 @@ from sqlalchemy import text
 from pydantic import BaseModel, EmailStr, Field
 import decimal # ADDED: Import for handling DECIMAL types
 from datetime import timedelta, datetime, timezone
-from datetime import date
+from datetime import date, datetime, timezone
 from sqlalchemy.exc import IntegrityError
 from dateutil.relativedelta import relativedelta
 
