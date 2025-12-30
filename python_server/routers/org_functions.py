@@ -1867,19 +1867,23 @@ async def get_tickets_for_organization(
         for row in tickets_result:
             
             # --- TIMEZONE FIX START ---
-            # SQLAlchemy might return 'naive' datetimes (no timezone) if the column 
-            # type is TIMESTAMP without time zone. We must attach UTC manually so 
-            # the frontend knows exactly what time this is.
             
-            # Fix Created At
+            # Fix Created At (Safely handle if it's already a datetime)
             c_at = row.created_at
-            if c_at and c_at.tzinfo is None:
+            if c_at and isinstance(c_at, datetime) and c_at.tzinfo is None:
                 c_at = c_at.replace(tzinfo=timezone.utc)
 
-            # Fix Pickup Date
+            # Fix Pickup Date (Handle both 'date' and 'datetime' objects)
             p_date = row.pickup_date
-            if p_date and p_date.tzinfo is None:
-                p_date = p_date.replace(tzinfo=timezone.utc)
+            if p_date:
+                if isinstance(p_date, datetime):
+                    # Case 1: It is a full DateTime (e.g. 2025-12-30 14:00:00)
+                    if p_date.tzinfo is None:
+                        p_date = p_date.replace(tzinfo=timezone.utc)
+                elif isinstance(p_date, date):
+                    # Case 2: It is just a Date (e.g. 2025-12-30)
+                    # We must convert it to a DateTime at Midnight UTC to return it safely
+                    p_date = datetime.combine(p_date, datetime.min.time()).replace(tzinfo=timezone.utc)
             # --- TIMEZONE FIX END ---
 
             response_list.append(
@@ -1914,7 +1918,7 @@ async def get_tickets_for_organization(
         print(f"Error fetching tickets: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error retrieving tickets for organization."
+            detail=f"Error retrieving tickets for organization: {str(e)}"
         )
         
         
