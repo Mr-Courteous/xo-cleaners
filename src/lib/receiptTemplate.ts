@@ -19,20 +19,8 @@ export function renderReceiptHtml(ticket: Ticket, organizationName: string = "Yo
   const isPaid = balance <= 0.05; 
   const totalPieces = items.reduce((sum, item) => sum + (Number(item.quantity) * (Number(item.pieces) || 1)), 0);
   
-  // --- DATE & TIME FORMATTING (UTC -> Local) ---
-  const createdDate = new Date(ticket.created_at || Date.now());
-  
-  const dateStr = createdDate.toLocaleDateString('en-US', {
-    month: 'short', 
-    day: 'numeric', 
-    year: 'numeric'
-  });
-  
-  const timeStr = createdDate.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true
-  });
+  const dateStr = new Date(ticket.created_at || Date.now()).toLocaleDateString();
+  const timeStr = new Date(ticket.created_at || Date.now()).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
 
   const greetingText = ticket.receipt_header ? ticket.receipt_header.replace(/\n/g, '<br>') : `Welcome!`;
   const footerText = ticket.receipt_footer ? ticket.receipt_footer.replace(/\n/g, '<br>') : `Thank you for choosing us!`;
