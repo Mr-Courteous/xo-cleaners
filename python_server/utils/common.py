@@ -231,7 +231,7 @@ class TicketCreate(BaseModel):
     rack_number: Optional[str] = None
     special_instructions: Optional[str] = None
     paid_amount: float = 0.0
-    pickup_date: Optional[date] = None
+    pickup_date: Optional[datetime] = None
 
 # =======================
 # TICKET RESPONSE (Updated)
