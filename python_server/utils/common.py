@@ -267,8 +267,8 @@ class TicketResponse(BaseModel):
 
 
     # Fix for pickup_date
-    pickup_date: Optional[date] = None
-    created_at: date
+    pickup_date: Optional[datetime] = None
+    created_at: datetime
     organization_id: int
     
     # List of items
