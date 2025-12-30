@@ -300,7 +300,7 @@ class TicketSummaryResponse(BaseModel):
     status: str
     rack_number: Optional[str]
     special_instructions: Optional[str]
-    pickup_date: Optional[datet]
+    pickup_date: Optional[date]
     created_at: date
     organization_id: int
 
