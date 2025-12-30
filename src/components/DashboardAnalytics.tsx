@@ -114,6 +114,8 @@ export default function DashboardAnalytics() {
       .catch(err => { console.error(err); setLoading(false); });
   }, []);
 
+  console.log('Org Analytics Data:', data);
+
   // --- DATA PROCESSING ---
   const filteredData = useMemo(() => {
     if (!data) return { tickets: [], ledger: [] };

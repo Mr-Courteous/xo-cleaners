@@ -1344,12 +1344,26 @@ def create_ticket(
     db: Session = Depends(get_db),
     payload: Dict[str, Any] = Depends(get_current_user_payload) 
 ):
-    """Creates a new ticket, handling both Standard DB items, Ad-hoc Custom items, and Sizing."""
+    """Creates a new ticket, handling Standard items, Custom items, Sizing, and Timezone Safety."""
     
     try:
+        # --- TIMEZONE FIX 1: ESTABLISH A SINGLE SOURCE OF TRUTH ---
+        # We define 'now' once in UTC. We use this variable for ALL timestamps 
+        # (created_at, joined_at, ticket prefix) to ensure synchronization.
+        now_utc = datetime.now(timezone.utc)
+
+        # --- TIMEZONE FIX 2: NORMALIZE PICKUP DATE ---
+        # Ensure pickup_date is timezone-aware and set to UTC
+        pickup_date_utc = ticket_data.pickup_date
+        if pickup_date_utc.tzinfo is None:
+            # If the frontend sent a naive date (e.g. "2023-12-30 15:00"), assume UTC
+            pickup_date_utc = pickup_date_utc.replace(tzinfo=timezone.utc)
+        else:
+            # If it has a timezone (e.g. EST), convert it to UTC
+            pickup_date_utc = pickup_date_utc.astimezone(timezone.utc)
+
         # 3. GET SECURE DATA FROM TOKEN:
         organization_id = payload.get("organization_id")
-        user_email = payload.get("sub")
         
         if not organization_id:
             raise HTTPException(
@@ -1378,11 +1392,11 @@ def create_ticket(
                 detail="Cannot create ticket. This customer account is deactivated."
             )
 
-        # Loyalty Trigger
+        # Loyalty Trigger (Updated with timezone-aware 'now_utc')
         if customer.joined_at is None:
             activate_query = text("UPDATE allUsers SET joined_at = :now WHERE id = :id")
             db.execute(activate_query, {
-                "now": datetime.now(timezone.utc),
+                "now": now_utc, # Uses UTC
                 "id": ticket_data.customer_id
             })
 
@@ -1390,7 +1404,6 @@ def create_ticket(
         total_amount = decimal.Decimal('0.00')
         ticket_items_to_insert = []
         
-        # Filter out None values so SQL doesn't crash
         type_ids = [item.clothing_type_id for item in ticket_data.items if item.clothing_type_id is not None]
         
         type_prices = {}
@@ -1421,32 +1434,25 @@ def create_ticket(
             
             # --- LOGIC BRANCH: CUSTOM VS STANDARD ---
             if item_create.clothing_type_id is None:
-                # ✅ CUSTOM ITEM LOGIC
+                # CUSTOM ITEM LOGIC
                 if not item_create.unit_price or not item_create.custom_name:
                     raise HTTPException(status_code=400, detail="Custom items requires a name and price.")
 
                 clothing_name = item_create.custom_name
-
-                # Treat unit_price as the plant cost (what the plant charges)
                 plant_price = decimal.Decimal(str(item_create.unit_price))
-
-                # ✅ Allow Frontend to set Margin for Custom Items (stored separately)
                 margin_input = getattr(item_create, 'margin', 0.0)
                 margin = decimal.Decimal(str(margin_input))
-
-                # Do NOT merge margin into plant_price here; keep them separate so they are
-                # both persisted to the DB and can be used independently for reporting.
                 base_wash_price = plant_price + margin
-                pieces = 1 # Default for custom
+                pieces = 1 
             else:
-                # ✅ STANDARD ITEM LOGIC
+                # STANDARD ITEM LOGIC
                 prices = type_prices.get(item_create.clothing_type_id)
                 if prices is None:
                     raise HTTPException(
                         status_code=400, 
                         detail=f"Invalid item: Clothing type ID {item_create.clothing_type_id} not found."
                     )
-                clothing_name = prices["name"] # Use DB name, ignore frontend name if standard
+                clothing_name = prices["name"]
                 plant_price = prices["plant_price"]
                 margin = prices["margin"]
                 base_wash_price = prices["total_price"]
@@ -1456,15 +1462,10 @@ def create_ticket(
             alteration_charge = decimal.Decimal(str(item_create.additional_charge or 0.0))
             instruction_charge = decimal.Decimal(str(getattr(item_create, 'instruction_charge', 0.0)))
             starch_charge = decimal.Decimal(str(getattr(item_create, 'starch_charge', 0.0)))
-            
-            # ✅ NEW: SIZE CHARGE CALCULATION
-            # Defaults to 0.0 if not provided
             size_charge = decimal.Decimal(str(getattr(item_create, 'size_charge', 0.0)))
 
-            # Add size_charge to the total extras
             total_extra_charges = alteration_charge + instruction_charge + starch_charge + size_charge
 
-            # Extract Alteration Behavior (Handle Enum -> String)
             raw_behavior = getattr(item_create, 'alteration_behavior', 'none')
             behavior_val = raw_behavior.value if hasattr(raw_behavior, 'value') else raw_behavior
             
@@ -1475,47 +1476,34 @@ def create_ticket(
             
             total_amount += item_total_price
 
-            # Extract Starch Level (Handle Enum -> String)
-            # This fixes the SQL Insert Error
             raw_starch = item_create.starch_level
             starch_val = raw_starch.value if hasattr(raw_starch, 'value') else raw_starch
 
-            # Extract Clothing Size (Handle Enum -> String just in case)
             raw_size = getattr(item_create, 'clothing_size', 'standard')
             size_val = raw_size.value if hasattr(raw_size, 'value') else raw_size
 
-            # Prepare the item dictionary
             ticket_items_to_insert.append({
-                "ticket_id": None, # Will be set after ticket insert
+                "ticket_id": None, 
                 "clothing_type_id": item_create.clothing_type_id,
                 "custom_name": clothing_name if item_create.clothing_type_id is None else None, 
                 "quantity": item_create.quantity,
-                
-                # ✅ FIXED: Sending string value instead of Enum Object
                 "starch_level": starch_val, 
                 "starch_charge": float(starch_charge),
-
-                # ✅ FIXED: Ensuring string value
                 "clothing_size": size_val,
                 "size_charge": float(size_charge),
-
                 "crease": item_create.crease,
                 "alterations": item_create.alterations,
                 "item_instructions": item_create.item_instructions,
-                
-                # ✅ FIXED: Ensuring string value
                 "alteration_behavior": behavior_val, 
-                
                 "additional_charge": float(alteration_charge),
                 "instruction_charge": float(instruction_charge),
-                # Persist plant_price and margin AS DISTINCT COLUMNS for custom items
                 "plant_price": float(plant_price),
                 "margin": float(margin),
                 "item_total": float(item_total_price),
                 "organization_id": organization_id
             })
 
-        # 4. TICKET NUMBER GENERATION (Kept same as before)
+        # 4. TICKET NUMBER GENERATION (Updated for Timezone)
         tag_config_query = text("""
             SELECT current_sequence, tag_type FROM tag_configurations 
             WHERE organization_id = :org_id FOR UPDATE
@@ -1528,22 +1516,29 @@ def create_ticket(
             ticket_number = str(current_seq)
             db.execute(text("UPDATE tag_configurations SET current_sequence = current_sequence + 1 WHERE organization_id = :org_id"), {"org_id": organization_id})
         else:
-            date_prefix = datetime.now().strftime("%y%m%d")
+            # --- TIMEZONE FIX 3: USE UTC DATE FOR PREFIX ---
+            # This ensures the prefix is consistent regardless of server location.
+            # If you want this to be the STORE'S local date, you must fetch the organization's timezone
+            # setting here and convert 'now_utc' to that timezone.
+            date_prefix = now_utc.strftime("%y%m%d")
+            
             latest_ticket_query = text("SELECT ticket_number FROM tickets WHERE ticket_number LIKE :prefix_like AND organization_id = :org_id ORDER BY created_at DESC LIMIT 1")
             row = db.execute(latest_ticket_query, {"prefix_like": f"{date_prefix}-%", "org_id": organization_id}).fetchone()
             last_seq = int(row[0].split('-')[-1]) if row else 0
             ticket_number = f"{date_prefix}-{last_seq + 1:03d}"
 
-        # 5. Insert Ticket
+        # 5. Insert Ticket (Updated created_at and pickup_date)
         ticket_insert_query = text("""
             INSERT INTO tickets (
                 ticket_number, customer_id, total_amount, rack_number, 
-                special_instructions, paid_amount, pickup_date, 
+                special_instructions, paid_amount, 
+                pickup_date, created_at, 
                 organization_id, status
             )
             VALUES (
                 :ticket_number, :customer_id, :total_amount, :rack_number, 
-                :special_instructions, :paid_amount, :pickup_date, 
+                :special_instructions, :paid_amount, 
+                :pickup_date, :created_at, 
                 :org_id, 'received'
             )
             RETURNING id, created_at, status
@@ -1556,19 +1551,23 @@ def create_ticket(
             "rack_number": ticket_data.rack_number,
             "special_instructions": ticket_data.special_instructions,
             "paid_amount": decimal.Decimal(str(ticket_data.paid_amount)),
-            "pickup_date": ticket_data.pickup_date,
+            
+            # Use the Normalized UTC variables
+            "pickup_date": pickup_date_utc, 
+            "created_at": now_utc, 
+            
             "org_id": organization_id
         }).fetchone()
         
         ticket_id = ticket_result[0]
-        created_at = ticket_result[1]
+        # We rely on the returned DB value to ensure we send back exactly what was stored
+        created_at_val = ticket_result[1] 
         status_val = ticket_result[2]
 
         # 6. Insert Items (Batch)
         for item in ticket_items_to_insert:
             item["ticket_id"] = ticket_id
 
-        # ✅ UPDATED INSERT QUERY: Added clothing_size and size_charge
         item_insert_query = text("""
             INSERT INTO ticket_items (
                 ticket_id, clothing_type_id, custom_name, quantity, 
@@ -1602,7 +1601,6 @@ def create_ticket(
         # 9. Build Response
         response_items = []
         for i, item in enumerate(ticket_items_to_insert, 1):
-            # Resolve name: Use custom_name if present, otherwise look up from type_prices
             if item['clothing_type_id'] is None:
                 final_name = item['custom_name']
                 final_pieces = 1
@@ -1620,11 +1618,8 @@ def create_ticket(
                     quantity=item['quantity'],
                     starch_level=item['starch_level'],
                     starch_charge=item.get('starch_charge', 0.0),
-                    
-                    # ✅ Return new fields
                     clothing_size=item.get('clothing_size', 'standard'),
                     size_charge=item.get('size_charge', 0.0),
-
                     crease=item['crease'],
                     alterations=item['alterations'],
                     item_instructions=item['item_instructions'],
@@ -1651,8 +1646,11 @@ def create_ticket(
             status=status_val,
             rack_number=ticket_data.rack_number,
             special_instructions=ticket_data.special_instructions,
-            pickup_date=ticket_data.pickup_date,
-            created_at=created_at,
+            
+            # Return UTC timestamps
+            pickup_date=pickup_date_utc,
+            created_at=created_at_val,
+            
             items=response_items,
             organization_id=organization_id,
             organization_name=org_name_val,
@@ -1666,9 +1664,9 @@ def create_ticket(
     except Exception as e:
         db.rollback()
         print(f"Error during ticket creation: {e}")
-        # Return the actual error message during debugging to make it easier to see what happened
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Database Error: {str(e)}")
-       
+    
+           
 
 @router.post("/tickets/bulk", status_code=status.HTTP_201_CREATED, tags=["Tickets"])
 def bulk_create_tickets(
@@ -1814,7 +1812,7 @@ async def get_tickets_for_organization(
 ):
     """
     Returns a list of all tickets for the logged-in staff member's organization.
-    This route returns ticket summaries; for full item details, use the /tickets/{ticket_id} endpoint.
+    Ensures all dates are returned with explicit UTC timezone information.
     """
     try:
         # 1. Get organization_id AND role from the trusted token
@@ -1861,11 +1859,28 @@ async def get_tickets_for_organization(
         tickets_result = db.execute(query, {"org_id": organization_id}).fetchall()
 
         if not tickets_result:
-            return [] # Return an empty list, not a 404
+            return [] 
 
-        # 4. Format the response
+        # 4. Format the response with Timezone Safety
         response_list = []
         for row in tickets_result:
+            
+            # --- TIMEZONE FIX START ---
+            # SQLAlchemy might return 'naive' datetimes (no timezone) if the column 
+            # type is TIMESTAMP without time zone. We must attach UTC manually so 
+            # the frontend knows exactly what time this is.
+            
+            # Fix Created At
+            c_at = row.created_at
+            if c_at and c_at.tzinfo is None:
+                c_at = c_at.replace(tzinfo=timezone.utc)
+
+            # Fix Pickup Date
+            p_date = row.pickup_date
+            if p_date and p_date.tzinfo is None:
+                p_date = p_date.replace(tzinfo=timezone.utc)
+            # --- TIMEZONE FIX END ---
+
             response_list.append(
                 TicketSummaryResponse(
                     id=row.id,
@@ -1877,13 +1892,15 @@ async def get_tickets_for_organization(
                     paid_amount=float(row.paid_amount),
                     status=row.status,
                     
-                    # --- THIS IS THE FIX ---
-                    # Convert the int to a string, or keep it None if it's null
+                    # Handle optional rack number
                     rack_number=str(row.rack_number) if row.rack_number is not None else None,
                     
                     special_instructions=row.special_instructions,
-                    pickup_date=row.pickup_date,
-                    created_at=row.created_at,
+                    
+                    # Return the timezone-aware dates
+                    pickup_date=p_date,
+                    created_at=c_at,
+                    
                     organization_id=row.organization_id
                 )
             )
@@ -1891,15 +1908,16 @@ async def get_tickets_for_organization(
         return response_list
 
     except HTTPException:
-        # Re-raise HTTPExceptions directly
         raise
     except Exception as e:
         print(f"Error fetching tickets: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error retrieving tickets for organization."
-        )        
+        )
         
+        
+                
 # @router.get(
 #     "/ticketskets", 
 #     response_model=TicketResponse, 

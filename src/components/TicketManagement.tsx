@@ -69,6 +69,7 @@ export default function TicketManagement() {
         headers: { 'Authorization': `Bearer ${token}` } 
       });
       setSelectedTicket(response.data);
+      console.log('Selected Ticket Details:', response.data);
     } catch (error) {
       alert('Failed to fetch ticket details.');
     } finally {

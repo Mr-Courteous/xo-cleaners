@@ -341,6 +341,18 @@ async def get_ticket_details(
         if not ticket:
             raise HTTPException(status_code=404, detail="Ticket not found.")
 
+        # --- TIMEZONE FIX START ---
+        # Ensure dates are explicitly marked as UTC so the Frontend converts them correctly.
+        
+        c_at = ticket.created_at
+        if c_at and c_at.tzinfo is None:
+            c_at = c_at.replace(tzinfo=timezone.utc)
+
+        p_date = ticket.pickup_date
+        if p_date and p_date.tzinfo is None:
+            p_date = p_date.replace(tzinfo=timezone.utc)
+        # --- TIMEZONE FIX END ---
+
         # 2. Get Items
         items_stmt = text("""
             SELECT 
@@ -353,7 +365,7 @@ async def get_ticket_details(
                 ti.crease, ti.alterations, ti.item_instructions, 
                 ti.additional_charge, ti.instruction_charge,
                 ti.alteration_behavior, 
-                ti.custom_name, -- ✅ ADDED: Needed for custom items to show names
+                ti.custom_name,
                 
                 ct.name AS clothing_name,
                 ct.image_url AS clothing_image_url,
@@ -367,7 +379,7 @@ async def get_ticket_details(
 
         items_list = []
         for item_row in items_results:
-            # Name Logic: Use DB clothing name, if null use custom_name from ticket_item
+            # Name Logic: Use DB clothing name, if null use custom_name
             final_name = item_row.clothing_name 
             if not final_name:
                 final_name = item_row.custom_name or "Custom Item"
@@ -398,7 +410,6 @@ async def get_ticket_details(
                     instruction_charge=float(item_row.instruction_charge or 0.0),
                     
                     clothing_name=final_name,
-                    # For custom items, image might be null
                     pieces=item_row.pieces
                 )
             )
@@ -423,9 +434,12 @@ async def get_ticket_details(
             paid_amount=float(ticket.paid_amount),
             status=ticket.status,
             rack_number=ticket.rack_number,
-            pickup_date=ticket.pickup_date,
-            created_at=ticket.created_at,
             special_instructions=ticket.special_instructions,
+            
+            # ✅ Return the UTC-fixed variables
+            pickup_date=p_date,
+            created_at=c_at,
+            
             items=items_list,
             organization_id=org_id,
             organization_name=org_name_val,
@@ -437,9 +451,7 @@ async def get_ticket_details(
         raise
     except Exception as e:
         print(f"Error: {e}")
-        raise HTTPException(status_code=500, detail="Error retrieving ticket.")    
-# --- END OF get_ticket_details FUNCTION ---
-
+        raise HTTPException(status_code=500, detail="Error retrieving ticket.")
 
 # --- ADD THIS FUNCTION *AFTER* THE ONE ABOVE ---
 
