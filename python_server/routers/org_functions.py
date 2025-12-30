@@ -1649,8 +1649,8 @@ def create_ticket(
             special_instructions=ticket_data.special_instructions,
             
             # Return UTC timestamps
-            pickup_date=pickup_date_utc,
-            created_at=created_at_val,
+            pickup_date=pickup_date_utc.date(), 
+            created_at=created_at_val.date() if isinstance(created_at_val, datetime) else created_at_val,
             
             items=response_items,
             organization_id=organization_id,
