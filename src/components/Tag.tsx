@@ -4,6 +4,7 @@ import axios from 'axios';
 import baseURL from '../lib/config';
 import { Ticket } from '../types';
 import PrintPreviewModal from './PrintPreviewModal';
+import { generateTagHtml } from '../lib/tagTemplates';
 
 interface TicketItem {
   id: number;
@@ -18,7 +19,6 @@ interface TicketItem {
 interface TicketWithItems extends Ticket {
   items: TicketItem[];
 }
-
 
 export default function Tag(): JSX.Element {
   const [searchQuery, setSearchQuery] = useState('');
@@ -42,7 +42,7 @@ export default function Tag(): JSX.Element {
       );
       const results = res.data || [];
 
-      // --- FIX: BATCHING REQUESTS ---
+      // --- BATCHING REQUESTS ---
       const ticketsWithItems: Array<Ticket & { items?: Array<any> }> = [];
       const BATCH_SIZE = 5; 
 
@@ -90,167 +90,57 @@ export default function Tag(): JSX.Element {
     }
   };
 
-  // Used for browser-based preview and printing (Single Item)
-  const generateTagHtml = (ticket: Ticket, item: any) => {
-    const rawName = ticket.customer_name || ticket.customer_phone || 'Guest';
-    const fullName = rawName;
-    const ticketId = ticket.ticket_number || '';
-    
-    // Date formatting: Fri 09-19
-    let dateIssued = '';
-    if (ticket.created_at) {
-      const d = new Date(ticket.created_at);
-      const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-      const day = days[d.getDay()];
-      const mm = String(d.getMonth() + 1).padStart(2, '0');
-      const dd = String(d.getDate()).padStart(2, '0');
-      dateIssued = `${day} ${mm}-${dd}`;
-    }
-
-    const qty = item.quantity || 1;
-    const nameLen = fullName.length || 0;
-    const nameFontSize = nameLen > 30 ? '9pt' : '10pt';
-
-    const blocks = Array.from({ length: qty }).map((_, idx) => {
-      const isLast = idx === qty - 1;
-      const breakStyle = isLast ? '' : 'page-break-after: always; break-after: page;';
-
-      // Width set to 100% of the parent body (which is 55mm)
-      return `
-        <div style="${breakStyle} width:100%; max-width: 40mm box-sizing:border-box;">
-          <div style="box-sizing:border-box;">
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px; align-items:start;">
-              <div style="text-align:left;">
-                <div style="font-size:10pt; font-weight:700;">${ticketId}</div>
-                <div style="font-size:9pt; color:#333; margin-top:2px;">${dateIssued}</div>
-              </div>
-              <div style="text-align:right;">
-                <div style="font-size:10pt; font-weight:700;">${ticketId}</div>
-                <div style="font-size:${nameFontSize}; color:#000; margin-top:2px; word-wrap: break-word; line-height: 1.1;">${fullName.substring(0, 5)}</div>              </div>
-            </div>
-          </div>
-        </div>
-      `;
-    });
-
-    return `
-      <div style="display:flex; flex-direction:column; width:100%; font-family:'Courier New', Courier, monospace;">
-        ${blocks.join('\n')}
-      </div>
-    `;
-  };
-
-  // Generate HTML for ALL items on the ticket (Print All)
-  const generateAllTagsHtml = (ticket: Ticket) => {
-    if (!ticket.items || ticket.items.length === 0) return '';
-
-    const allTagBlocks: string[] = [];
-
-    // Pre-calculate date to match the single tag format exactly
-    let dateIssued = '';
-    if (ticket.created_at) {
-      const d = new Date(ticket.created_at);
-      const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-      const day = days[d.getDay()];
-      const mm = String(d.getMonth() + 1).padStart(2, '0');
-      const dd = String(d.getDate()).padStart(2, '0');
-      dateIssued = `${day} ${mm}-${dd}`;
-    }
-
-    const rawName = ticket.customer_name || ticket.customer_phone || 'Guest';
-    const fullName = rawName;
-    const ticketId = ticket.ticket_number || '';
-    const nameLen = fullName.length || 0;
-    const nameFontSize = nameLen > 30 ? '9pt' : '10pt';
-
-    (ticket.items || []).forEach((item: any) => {
-      const qty = item.quantity || 1;
-      for (let i = 0; i < qty; i++) {
-        // Use the exact same HTML structure as generateTagHtml
-        // Reduced padding slightly to ensure fit within 55mm
-        const block = `
-          <div style="box-sizing:border-box;">
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px; align-items:start;">
-              <div style="text-align:left;">
-                <div style="font-size:10pt; font-weight:700;">${ticketId}</div>
-                <div style="font-size:9pt; color:#333; margin-top:2px;">${dateIssued}</div>
-              </div>
-              <div style="text-align:right;">
-                <div style="font-size:10pt; font-weight:700;">${ticketId}</div>
-                <div style="font-size:${nameFontSize}; color:#000; margin-top:2px; word-wrap: break-word; line-height: 1.1;">${fullName.substring(0, 5)}</div>              </div>
-            </div>
-          </div>
-        `;
-        allTagBlocks.push(block);
-      }
-    });
-
-    // Wrap each block with a page-break AFTER it except the final one
-    const wrapped = allTagBlocks.map((b, idx) => {
-      const isLast = idx === allTagBlocks.length - 1;
-      const breakStyle = isLast ? '' : 'page-break-after: always; break-after: page;';
-      return `<div style="${breakStyle} width:100%; box-sizing:border-box; padding:4px;">${b}</div>`;
-    });
-
-    return `
-      <div style="display:flex; flex-direction:column; width:100%; font-family:'Courier New', Courier, monospace;">
-        ${wrapped.join('\n')}
-      </div>
-    `;
-  };
-
-  // Print helper: writes HTML to an off-screen iframe and calls print()
+  // --- PRINT UTILITY (Centered 55mm) ---
   const handlePrintJob = (htmlContent: string) => {
     const printFrame = document.createElement('iframe');
     printFrame.style.display = 'none';
     document.body.appendChild(printFrame);
-
-    const doc = printFrame.contentDocument || printFrame.contentWindow?.document;
-    if (!doc) return;
-
-    doc.open();
-    // Added explicit width to body to force correct aspect ratio/wrapping
-    doc.write(`
+    printFrame.contentDocument?.write(`
       <html>
         <head>
-          <title>Print Tags</title>
+          <title>Print</title>
           <style>
             @page { size: 55mm auto; margin: 0; }
-            @media print { 
-              html, body { margin: 0; padding: 0; } 
+            @media print {
+              html, body { margin: 0; padding: 0; }
+              .page-break-receipt { 
+                page-break-after: always; 
+                break-after: page;
+              }
             }
-            body { 
-              font-family: 'Courier New', Courier, monospace; 
-              width: 55mm; 
-              max-width: 55mm;
-            }
+            body { font-family: sans-serif; }
           </style>
         </head>
         <body>${htmlContent}</body>
       </html>
     `);
-    doc.close();
-
+    printFrame.contentDocument?.close();
     printFrame.contentWindow?.focus();
     setTimeout(() => {
-      printFrame.contentWindow?.print();
-      setTimeout(() => {
-        if (document.body.contains(printFrame)) document.body.removeChild(printFrame);
-      }, 1000);
+        printFrame.contentWindow?.print();
+        setTimeout(() => {
+            if(document.body.contains(printFrame)) {
+                document.body.removeChild(printFrame);
+            }
+        }, 1000);
     }, 100);
   };
+  // -------------------------------------
+
   const openTagPreview = (ticket: Ticket, item: any) => {
-    setPrintContent(generateTagHtml(ticket, item));
+    const singleItemTicket = { ...ticket, items: [item] };
+    setPrintContent(generateTagHtml(singleItemTicket));
     setShowPrintPreview(true);
   };
 
-  const openAllTagsPreview = (ticket: Ticket) => {
-    setPrintContent(generateAllTagsHtml(ticket));
-    setShowPrintPreview(true);
+  const handlePrintSingleTag = (ticket: Ticket, item: any) => {
+    const singleItemTicket = { ...ticket, items: [item] };
+    const html = generateTagHtml(singleItemTicket);
+    handlePrintJob(html);
   };
 
   const handlePrintAllTags = (ticket: Ticket) => {
-    const html = generateAllTagsHtml(ticket);
+    const html = generateTagHtml(ticket);
     if (!html) {
       alert('No tags available to print for this ticket.');
       return;
@@ -313,7 +203,6 @@ export default function Tag(): JSX.Element {
                       {ticket.items?.map((item, index) => (
                         <div key={index} className="group flex justify-between items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
                           <div>
-                            {/* <span className="font-medium">{item.clothing_name}</span> */}
                             <span className="text-gray-600 ml-2">×{item.quantity}</span>
                             <div className="text-sm text-gray-500 mt-1">
                               {item.starch_level !== 'no_starch' && `${item.starch_level.replace('_', ' ')} starch`}
@@ -322,7 +211,6 @@ export default function Tag(): JSX.Element {
                             </div>
                           </div>
                           <div className="flex space-x-2">
-                            {/* The View button uses the HTML preview */}
                             <button
                               onClick={() => openTagPreview(ticket, item)}
                               className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition-colors flex items-center"
@@ -331,16 +219,14 @@ export default function Tag(): JSX.Element {
                               View Tag
                             </button>
                             
-                            {/* The Print button uses the same browser-based preview for single item */}
                             <button
-                              onClick={() => openTagPreview(ticket, item)}
+                              onClick={() => handlePrintSingleTag(ticket, item)}
                               className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
                             >
                               <Printer className="h-4 w-4 mr-2" />
                               Print Tag
                             </button>
                             
-                            {/* Print All Tags for the whole ticket */}
                             <button
                               onClick={() => handlePrintAllTags(ticket)}
                               className="bg-amber-600 text-white px-4 py-2 rounded-lg hover:bg-amber-700 transition-colors flex items-center"
@@ -368,11 +254,21 @@ export default function Tag(): JSX.Element {
         </div>
       )}
 
+      {/* --- MODAL UPDATED TO HIDE DEFAULT AND USE CUSTOM BUTTON --- */}
       <PrintPreviewModal
         isOpen={showPrintPreview}
         onClose={() => setShowPrintPreview(false)}
-        onPrint={() => setShowPrintPreview(false)}
+        onPrint={() => {}} // Empty because we are hiding the default button
         content={printContent}
+        hideDefaultButton={true} // Hides the double-firing button
+        extraActions={(
+          <button 
+            onClick={() => handlePrintJob(printContent)}
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-2"
+          >
+            <Printer size={18} /> Print Tag
+          </button>
+        )}
       />
     </div>
   );
