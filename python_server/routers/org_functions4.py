@@ -1,6 +1,6 @@
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone, date
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, status, Query, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from pydantic import BaseModel
@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError # Make sure to import this
 # --- IMPORTS FROM YOUR UTILS ---
 from utils.common import (
     get_db, 
+    create_audit_log,
     get_current_user_payload
 )
 
@@ -859,6 +860,7 @@ async def get_analytics_ledger(
 @router.delete("/customers/{customer_id}/permanent", summary="PERMANENTLY Delete a Customer")
 def delete_customer_permanently(
     customer_id: int,
+    background_tasks: BackgroundTasks, # <--- 1. Add this
     db: Session = Depends(get_db),
     payload: Dict[str, Any] = Depends(get_current_user_payload)
 ):
@@ -891,6 +893,26 @@ def delete_customer_permanently(
         db.commit()
 
         return {"message": "Customer permanently deleted."}
+    # 10. Audit Log (Running in background)
+        # We use .get() to prevent crashing if the key is missing
+        background_tasks.add_task(
+            create_audit_log,
+            org_id=payload.get("organization_id"),
+            # Try 'id', if missing try 'user_id', if both missing use 0
+            actor_id=payload.get("id") or payload.get("user_id") or 0,
+            actor_name=payload.get("sub", "Unknown"),
+            actor_role=payload.get("role", "Unknown"),
+            action="Deleted customer",
+            
+            ticket_id=ticket_id,
+            customer_id=ticket_data.customer_id,
+            
+            details={
+                "ticket_id": ticket_id, 
+                "customer_id": ticket_data.customer_id,
+                "pieces": len(ticket_data.items)
+            }
+        )
 
     except IntegrityError:
         db.rollback()

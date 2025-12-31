@@ -6,6 +6,7 @@ from fastapi.staticfiles import StaticFiles  # ✅ ADDED THIS IMPORT
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from utils.common import hash_password
+from database import SessionLocal, engine
 
 # Routers
 from routers.registration import router as registration_router
@@ -29,14 +30,14 @@ import uvicorn
 # ====================== 
 # DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5433/cleanpress")
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+# # DATABASE_URL = os.getenv("DATABASE_URL") 
 
 
-if not DATABASE_URL:
-    raise EnvironmentError("The DATABASE_URL environment variable is missing!")
+# if not DATABASE_URL:
+#     raise EnvironmentError("The DATABASE_URL environment variable is missing!")
 
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# engine = create_engine(DATABASE_URL)
+# SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Default Platform Admin credential
 DEFAULT_ADMIN_NAME = "Taiwo Courteous"

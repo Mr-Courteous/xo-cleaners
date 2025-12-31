@@ -1,7 +1,7 @@
 import decimal
 from typing import Optional, List, Dict, Any
 # Make sure Query is imported
-from fastapi import APIRouter, HTTPException, Depends, status, Query
+from fastapi import APIRouter, HTTPException, Depends, status, Query, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from pydantic import BaseModel, ConfigDict
@@ -14,6 +14,7 @@ from utils.common import (
     TicketSummaryResponse,
     TicketResponse,
     TicketItemResponse,
+    create_audit_log,
     TicketValidationResponse  # --- ADDED THIS IMPORT ---
 )
 
@@ -446,8 +447,10 @@ async def validate_ticket_number(
 async def assign_rack_to_ticket(
     ticket_id: int,
     req: RackAssignmentRequest,
+    background_tasks: BackgroundTasks, # <--- 1. Add this
     db: Session = Depends(get_db),
-    payload: Dict[str, Any] = Depends(get_current_user_payload)
+    payload: Dict[str, Any] = Depends(get_current_user_payload),
+
 ):
     """
     Assigns an available rack to a ticket. This is a special transaction that:
@@ -530,8 +533,30 @@ async def assign_rack_to_ticket(
 
         # 6. Commit the transaction
         db.commit()
+        
+        
+            # 7. Audit Log (Running in background)
+        # We use .get() to prevent crashing if the key is missing
+        background_tasks.add_task(
+            create_audit_log,
+            org_id=payload.get("organization_id"),
+            # Try 'id', if missing try 'user_id', if both missing use 0
+            actor_id=payload.get("id") or payload.get("user_id") or 0,
+            actor_name=payload.get("sub", "Unknown"),
+            actor_role=payload.get("role", "Unknown"),
+            action="Rack a ticket",
+            
+            ticket_id=ticket_id,
+            
+            details={
+                "ticket_id": ticket_id, 
+            }
+        )
         # --- UPDATED SUCCESS MESSAGE ---
         return {"success": True, "message": f"Ticket {ticket_id} assigned to rack {req.rack_number} and marked as ready."}
+    
+    
+
 
     except HTTPException:
         db.rollback()
@@ -551,7 +576,9 @@ async def assign_rack_to_ticket(
 async def process_ticket_pickup(
     ticket_id: int,
     req: TicketPickupRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+
     payload: Dict[str, Any] = Depends(get_current_user_payload)
 ):
     """
@@ -696,6 +723,26 @@ async def process_ticket_pickup(
 
         # 7. Commit the transaction
         db.commit()
+        
+        
+        
+        # 8. Audit Log (Running in background)
+        # We use .get() to prevent crashing if the key is missing
+        background_tasks.add_task(
+            create_audit_log,
+            org_id=payload.get("organization_id"),
+            # Try 'id', if missing try 'user_id', if both missing use 0
+            actor_id=payload.get("id") or payload.get("user_id") or 0,
+            actor_name=payload.get("sub", "Unknown"),
+            actor_role=payload.get("role", "Unknown"),
+            action="PICKUP TICKET",
+            
+            ticket_id=ticket_id,
+            
+            details={
+                "ticket_id": ticket_id, 
+            }
+        )
 
         # ===========================================================================
         # NEW: FETCH ORGANIZATION NAME & BRANDING (Header/Footer)

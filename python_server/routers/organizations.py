@@ -1,11 +1,13 @@
 import os
 from typing import Dict, Any, Optional  # ✅ Added this line
 from pydantic import BaseModel, EmailStr, Field
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from psycopg2.errorcodes import UNIQUE_VIOLATION, FOREIGN_KEY_VIOLATION # Optional for better error handling
 from datetime import timedelta, datetime, timezone
+from typing import List
+from models import AuditLog  # <--- ✅ ADD THIS LINE
 
 
 # Import shared utilities and constants from your utility file
@@ -56,6 +58,20 @@ class WorkerUpdate(BaseModel):
     role: Optional[str] = None
     is_deactivated: Optional[bool] = None
     
+class AuditLogResponse(BaseModel):
+    id: int
+    actor_name: Optional[str]
+    actor_role: Optional[str]
+    action: str
+    ticket_id: Optional[int]
+    customer_id: Optional[int]
+    details: Optional[Dict[str, Any]]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True # Allows reading from SQLAlchemy model
+        
+        
 router = APIRouter()
 
 @router.get("/workers")
@@ -142,7 +158,7 @@ async def update_worker(
     # If the user is trying to change the 'role' field...
     if worker_data.role is not None:
         # ...we strictly ensure the requester is the 'org_owner'
-        if current_user_role != "org_owner":
+        if current_user_role not in ["org_owner", "STORE_OWNER"]:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only Organization Owners are allowed to change worker roles."
@@ -545,3 +561,43 @@ def get_organization_settings(
         }
         
     return dict(settings._mapping)
+
+
+
+@router.get("/audit-logs", response_model=List[AuditLogResponse], summary="Get Audit Logs for Organization")
+def get_organization_audit_logs(
+    limit: int = Query(50, ge=1, le=500, description="Max logs to return"),
+    skip: int = Query(0, ge=0, description="Number of logs to skip (pagination)"),
+    db: Session = Depends(get_db),
+    payload: Dict[str, Any] = Depends(get_current_user_payload)
+):
+    """
+    Fetches audit logs strictly for the logged-in user's organization.
+    Ordered by newest first.
+    """
+    
+    # 1. Get Security Context
+    organization_id = payload.get("organization_id")
+    user_role = payload.get("role")
+
+    # 2. Authorization Check (Only Owners and Managers usually need to see this)
+    allowed_roles = ["org_owner", "STORE_OWNER", "store_admin", "store_manager"]
+    if user_role not in allowed_roles:
+         raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="Insufficient permissions to view audit logs."
+        )
+
+    if not organization_id:
+        raise HTTPException(status_code=401, detail="Organization ID missing from token.")
+
+    # 3. Query the Database
+    # We filter strictly by organization_id from the token
+    logs = db.query(AuditLog)\
+        .filter(AuditLog.organization_id == organization_id)\
+        .order_by(AuditLog.created_at.desc())\
+        .limit(limit)\
+        .offset(skip)\
+        .all()
+
+    return logs

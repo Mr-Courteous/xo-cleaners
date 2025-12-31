@@ -17,6 +17,8 @@ from sqlalchemy.orm import Session, sessionmaker
 from pydantic import BaseModel, Field, EmailStr
 from datetime import datetime, date
 import decimal
+from database import SessionLocal # Ensure this points to your actual SessionLocal
+from models import AuditLog
 
 
 
@@ -380,3 +382,37 @@ class CustomerUpdate(BaseModel):
     email: EmailStr
     phone: str
     address: Optional[str] = None
+    
+    
+def create_audit_log(
+    org_id: int, 
+    actor_id: int, 
+    actor_name: str, 
+    actor_role: str, 
+    action: str, 
+    details: dict,
+    ticket_id: int = None,
+    customer_id: int = None
+):
+    """
+    Creates an audit log entry. 
+    Designed to run in a BackgroundTask so it doesn't slow down the UI.
+    """
+    db = SessionLocal() # Create a fresh session
+    try:
+        log = AuditLog(
+            organization_id=org_id,
+            actor_id=actor_id,
+            actor_name=actor_name,
+            actor_role=actor_role,
+            action=action,
+            details=details,
+            ticket_id=ticket_id,
+            customer_id=customer_id
+        )
+        db.add(log)
+        db.commit()
+    except Exception as e:
+        print(f"FAILED TO LOG: {e}")
+    finally:
+        db.close()

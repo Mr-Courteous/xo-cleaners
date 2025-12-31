@@ -1,6 +1,6 @@
 import os
 from typing import Optional, List, Dict, Any
-from fastapi import APIRouter, HTTPException, Depends, status, Query
+from fastapi import APIRouter, HTTPException, Depends, status, Query, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from pydantic import BaseModel, EmailStr, Field
@@ -30,7 +30,8 @@ from utils.common import (
     RackAssignmentRequest,
     GeneralTicketUpdateRequest,
     TicketValidationResponse,
-    CustomerResponse
+    CustomerResponse,
+    create_audit_log
 )
 
 class TicketCreateBulk(TicketCreate):
@@ -1342,6 +1343,7 @@ async def register_customers_bulk(
 @router.post("/tickets", response_model=TicketResponse, status_code=status.HTTP_201_CREATED, tags=["Tickets"])
 def create_ticket(
     ticket_data: TicketCreate,
+    background_tasks: BackgroundTasks, # <--- 1. ADD THIS LINE HERE
     db: Session = Depends(get_db),
     payload: Dict[str, Any] = Depends(get_current_user_payload) 
 ):
@@ -1635,6 +1637,31 @@ def create_ticket(
             )
 
         customer_name = f"{customer.first_name} {customer.last_name}"
+        
+        db.commit()
+        
+        print(f"🔍 DEBUG PAYLOAD: {payload}")
+        
+# 10. Audit Log (Running in background)
+        # We use .get() to prevent crashing if the key is missing
+        background_tasks.add_task(
+            create_audit_log,
+            org_id=payload.get("organization_id"),
+            # Try 'id', if missing try 'user_id', if both missing use 0
+            actor_id=payload.get("id") or payload.get("user_id") or 0,
+            actor_name=payload.get("sub", "Unknown"),
+            actor_role=payload.get("role", "Unknown"),
+            action="CREATE_TICKET",
+            
+            ticket_id=ticket_id,
+            customer_id=ticket_data.customer_id,
+            
+            details={
+                "ticket_id": ticket_id, 
+                "customer_id": ticket_data.customer_id,
+                "pieces": len(ticket_data.items)
+            }
+        )
 
         return TicketResponse(
             id=ticket_id,
@@ -2047,140 +2074,140 @@ async def get_tickets_for_organization(
         
         
 
-@router.put(
-    "/tickets/{ticket_id}/rack", 
-    summary="Assign an available rack to a ticket"
-)
-async def assign_rack_to_ticket(
-    ticket_id: int,
-    req: RackAssignmentRequest,
-    db: Session = Depends(get_db),
-    payload: Dict[str, Any] = Depends(get_current_user_payload)
-):
-    """
-    Assigns an available rack to a ticket. 
-    Includes checks to prevent double-assignment of tickets or racks.
-    """
-    try:
-        # 1. Get organization_id AND role from the trusted token
-        organization_id = payload.get("organization_id")
-        user_role = payload.get("role")
+# @router.put(
+#     "/tickets/{ticket_id}/rack", 
+#     summary="Assign an available rack to a ticket"
+# )
+# async def assign_rack_to_ticket(
+#     ticket_id: int,
+#     req: RackAssignmentRequest,
+#     db: Session = Depends(get_db),
+#     payload: Dict[str, Any] = Depends(get_current_user_payload)
+# ):
+#     """
+#     Assigns an available rack to a ticket. 
+#     Includes checks to prevent double-assignment of tickets or racks.
+#     """
+#     try:
+#         # 1. Get organization_id AND role from the trusted token
+#         organization_id = payload.get("organization_id")
+#         user_role = payload.get("role")
 
-        # 2. Role-based authorization check (all staff can do this)
-        allowed_roles = ["cashier", "store_admin", "org_owner", "STORE_OWNER"]
-        if user_role not in allowed_roles:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You do not have permission to assign racks."
-            )
-        if not organization_id:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token: Organization ID missing."
-            )
+#         # 2. Role-based authorization check (all staff can do this)
+#         allowed_roles = ["cashier", "store_admin", "org_owner", "STORE_OWNER"]
+#         if user_role not in allowed_roles:
+#             raise HTTPException(
+#                 status_code=status.HTTP_403_FORBIDDEN,
+#                 detail="You do not have permission to assign racks."
+#             )
+#         if not organization_id:
+#             raise HTTPException(
+#                 status_code=status.HTTP_401_UNAUTHORIZED,
+#                 detail="Invalid token: Organization ID missing."
+#             )
 
-        # --- CHECK 1: Validate Ticket Existence & Status ---
-        # We check if the ticket already has a rack_number to prevent double-assignment.
-        ticket_check_sql = text("""
-            SELECT id, ticket_number, rack_number, status
-            FROM tickets 
-            WHERE id = :ticket_id AND organization_id = :org_id
-        """)
-        existing_ticket = db.execute(ticket_check_sql, {
-            "ticket_id": ticket_id,
-            "org_id": organization_id
-        }).fetchone()
+#         # --- CHECK 1: Validate Ticket Existence & Status ---
+#         # We check if the ticket already has a rack_number to prevent double-assignment.
+#         ticket_check_sql = text("""
+#             SELECT id, ticket_number, rack_number, status
+#             FROM tickets 
+#             WHERE id = :ticket_id AND organization_id = :org_id
+#         """)
+#         existing_ticket = db.execute(ticket_check_sql, {
+#             "ticket_id": ticket_id,
+#             "org_id": organization_id
+#         }).fetchone()
 
-        if not existing_ticket:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Ticket not found in your organization."
-            )
+#         if not existing_ticket:
+#             raise HTTPException(
+#                 status_code=status.HTTP_404_NOT_FOUND,
+#                 detail="Ticket not found in your organization."
+#             )
 
-        # If ticket already has a rack, STOP.
-        # prefer to show ticket_number (human-friendly) when available
-        ticket_number_display = getattr(existing_ticket, 'ticket_number', None)
-        if not ticket_number_display:
-            # fallback to numeric id if ticket_number missing
-            ticket_number_display = str(existing_ticket.id)
+#         # If ticket already has a rack, STOP.
+#         # prefer to show ticket_number (human-friendly) when available
+#         ticket_number_display = getattr(existing_ticket, 'ticket_number', None)
+#         if not ticket_number_display:
+#             # fallback to numeric id if ticket_number missing
+#             ticket_number_display = str(existing_ticket.id)
 
-        # If ticket is already picked up, return a picked-up message
-        current_status = getattr(existing_ticket, 'status', None)
-        if current_status == 'picked_up':
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Ticket {ticket_number_display} has already been picked up."
-            )
+#         # If ticket is already picked up, return a picked-up message
+#         current_status = getattr(existing_ticket, 'status', None)
+#         if current_status == 'picked_up':
+#             raise HTTPException(
+#                 status_code=status.HTTP_409_CONFLICT,
+#                 detail=f"Ticket {ticket_number_display} has already been picked up."
+#             )
 
-        # If ticket already has a rack assigned, indicate that instead
-        if existing_ticket.rack_number is not None:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Ticket {ticket_number_display} is ALREADY assigned to Rack #{existing_ticket.rack_number}."
-            )
+#         # If ticket already has a rack assigned, indicate that instead
+#         if existing_ticket.rack_number is not None:
+#             raise HTTPException(
+#                 status_code=status.HTTP_409_CONFLICT,
+#                 detail=f"Ticket {ticket_number_display} is ALREADY assigned to Rack #{existing_ticket.rack_number}."
+#             )
 
-        # --- CHECK 2: Check Rack Availability with LOCK ---
-        # We use 'FOR UPDATE' to lock this row. This prevents a race condition 
-        # where two users try to claim the exact same rack at the same millisecond.
-        rack_query = text("""
-            SELECT id FROM racks 
-            WHERE number = :rack_number 
-            AND organization_id = :org_id 
-            AND is_occupied = false
-            FOR UPDATE 
-        """)
-        available_rack = db.execute(rack_query, {
-            "rack_number": req.rack_number,
-            "org_id": organization_id
-        }).fetchone()
+#         # --- CHECK 2: Check Rack Availability with LOCK ---
+#         # We use 'FOR UPDATE' to lock this row. This prevents a race condition 
+#         # where two users try to claim the exact same rack at the same millisecond.
+#         rack_query = text("""
+#             SELECT id FROM racks 
+#             WHERE number = :rack_number 
+#             AND organization_id = :org_id 
+#             AND is_occupied = false
+#             FOR UPDATE 
+#         """)
+#         available_rack = db.execute(rack_query, {
+#             "rack_number": req.rack_number,
+#             "org_id": organization_id
+#         }).fetchone()
 
-        if not available_rack:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Rack #{req.rack_number} is already occupied or does not exist."
-            )
+#         if not available_rack:
+#             raise HTTPException(
+#                 status_code=status.HTTP_409_CONFLICT,
+#                 detail=f"Rack #{req.rack_number} is already occupied or does not exist."
+#             )
 
-        # 4. Update the ticket
-        ticket_update_sql = text("""
-            UPDATE tickets 
-            SET 
-                rack_number = :rack_number, 
-                status = 'ready_for_pickup'
-            WHERE id = :ticket_id AND organization_id = :org_id
-            RETURNING id
-        """)
+#         # 4. Update the ticket
+#         ticket_update_sql = text("""
+#             UPDATE tickets 
+#             SET 
+#                 rack_number = :rack_number, 
+#                 status = 'ready_for_pickup'
+#             WHERE id = :ticket_id AND organization_id = :org_id
+#             RETURNING id
+#         """)
         
-        db.execute(ticket_update_sql, {
-            "rack_number": req.rack_number,
-            "ticket_id": ticket_id,
-            "org_id": organization_id
-        })
+#         db.execute(ticket_update_sql, {
+#             "rack_number": req.rack_number,
+#             "ticket_id": ticket_id,
+#             "org_id": organization_id
+#         })
 
-        # 5. Update the rack to mark it as occupied
-        rack_update_sql = text("""
-            UPDATE racks 
-            SET is_occupied = true, ticket_id = :ticket_id 
-            WHERE number = :rack_number AND organization_id = :org_id
-        """)
-        db.execute(rack_update_sql, {
-            "ticket_id": ticket_id,
-            "rack_number": req.rack_number,
-            "org_id": organization_id
-        })
+#         # 5. Update the rack to mark it as occupied
+#         rack_update_sql = text("""
+#             UPDATE racks 
+#             SET is_occupied = true, ticket_id = :ticket_id 
+#             WHERE number = :rack_number AND organization_id = :org_id
+#         """)
+#         db.execute(rack_update_sql, {
+#             "ticket_id": ticket_id,
+#             "rack_number": req.rack_number,
+#             "org_id": organization_id
+#         })
 
-        # 6. Commit the transaction
-        db.commit()
-        # Use ticket number for user-friendly responses when possible
-        ticket_num_for_response = getattr(existing_ticket, 'ticket_number', None) or str(ticket_id)
-        return {"success": True, "message": f"Ticket {ticket_num_for_response} assigned to rack {req.rack_number}."}
+#         # 6. Commit the transaction
+#         db.commit()
+#         # Use ticket number for user-friendly responses when possible
+#         ticket_num_for_response = getattr(existing_ticket, 'ticket_number', None) or str(ticket_id)
+#         return {"success": True, "message": f"Ticket {ticket_num_for_response} assigned to rack {req.rack_number}."}
 
-    except HTTPException:
-        db.rollback()
-        raise
-    except Exception as e:
-        db.rollback()
-        print(f"Error during rack assignment: {e}")
-        raise HTTPException(status_code=500, detail="An unexpected error occurred.")    
+#     except HTTPException:
+#         db.rollback()
+#         raise
+#     except Exception as e:
+#         db.rollback()
+#         print(f"Error during rack assignment: {e}")
+#         raise HTTPException(status_code=500, detail="An unexpected error occurred.")    
     
 @router.put(
     "/tickets/{ticket_id}", 

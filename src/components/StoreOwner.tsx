@@ -51,6 +51,8 @@ import OrganizationSettings from "./OrganizationSettings";
 
 // --- 2. Import the new WorkerManagement Component ---
 import WorkerManagement from "./WorkerManagement"; 
+// --- 3. Import the AuditLogTable Component (ADDED) ---
+import AuditLogTable from "./AuditLogTable";
 
 export default function StoreOwner() {
   // --- Navigation State ---
@@ -177,6 +179,12 @@ export default function StoreOwner() {
                 </div>
               </div>
             </div>
+
+            {/* --- ADDED: AUDIT LOG TABLE BELOW CARDS --- */}
+            <div className="mt-8">
+              <AuditLogTable />
+            </div>
+
           </div>
         );
       case 'dropoff': return <DropOff />;
