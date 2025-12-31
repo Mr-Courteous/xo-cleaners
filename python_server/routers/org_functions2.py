@@ -578,13 +578,11 @@ async def process_ticket_pickup(
     req: TicketPickupRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-
     payload: Dict[str, Any] = Depends(get_current_user_payload)
 ):
     """
-    Processes a ticket pickup. It updates the ticket status to 'picked_up',
-    adds the final payment, and frees up the associated rack.
-    Includes item details and alterations in the generated receipt.
+    Processes a ticket pickup or partial payment.
+    Interprets req.amount_paid as the AMOUNT BEING PAID NOW (Increment), not the total.
     """
     try:
         organization_id = payload.get("organization_id")
@@ -623,27 +621,14 @@ async def process_ticket_pickup(
                 detail="Ticket not found in your organization."
             )
 
-        # 3. Check ticket status
-        if ticket.status == 'picked_up':
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="This ticket has already been picked up."
-            )
-        
-        if ticket.status not in ['ready', 'ready_for_pickup']:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Ticket status is '{ticket.status}'. It is not ready for pickup."
-            )
-
-        # 4. PAYMENT HANDLING
-        # Recompute subtotal from ticket items and apply env/tax so frontend and backend match receipts
+        # 3. CALCULATE FINANCIALS
         items_query = text("""
             SELECT ti.item_total
             FROM ticket_items ti
             WHERE ti.ticket_id = :ticket_id
         """)
         items_rows = db.execute(items_query, {"ticket_id": ticket_id}).fetchall()
+        
         subtotal = decimal.Decimal('0')
         for r in items_rows:
             subtotal += decimal.Decimal(str(r.item_total or 0))
@@ -651,53 +636,74 @@ async def process_ticket_pickup(
         env_charge = subtotal * decimal.Decimal('0.047')
         tax = subtotal * decimal.Decimal('0.0825')
         final_total = subtotal + env_charge + tax
+        
+        # Existing paid amount from DB
+        current_paid = decimal.Decimal(str(ticket.paid_amount or 0))
+        
+        # Determine if currently fully paid (before this new transaction)
+        is_currently_fully_paid = current_paid >= (final_total - decimal.Decimal('0.01'))
 
-        current_paid = decimal.Decimal(str(ticket.paid_amount))
-
-        # NOTE: Frontend now sends the new TOTAL paid amount (not the increment).
-        # We'll validate and REPLACE the stored paid_amount with this value (subject to caps),
-        # rather than adding it to the existing paid_amount.
-        new_total_paid_input = decimal.Decimal(str(req.amount_paid))
-
-        if new_total_paid_input < decimal.Decimal('0'):
+        # 4. Check ticket status
+        # Only block if it's picked up AND fully paid.
+        if ticket.status == 'picked_up' and is_currently_fully_paid:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Payment amount must be zero or greater."
+                detail="This ticket has already been picked up and fully paid."
+            )
+        
+        valid_statuses = ['ready', 'ready_for_pickup', 'picked_up']
+        if ticket.status not in valid_statuses:
+             raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Ticket status is '{ticket.status}'. It is not ready for pickup/payment."
             )
 
-        # Prevent accidental decreases to paid_amount. Require the supplied new total to be
-        # at least the current stored paid amount (cannot reduce paid history).
-        if new_total_paid_input < current_paid:
+        # =======================================================================
+        # 5. PROCESS NEW PAYMENT INPUT (FIXED HERE)
+        # =======================================================================
+        amount_paying_now = decimal.Decimal(str(req.amount_paid))
+
+        if amount_paying_now < decimal.Decimal('0'):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Supplied paid amount ${new_total_paid_input} is less than the existing paid amount ${current_paid}."
+                detail="Payment amount cannot be negative."
             )
+
+        # Calculate the NEW TOTAL by adding current history + what they are paying now
+        new_total_paid = current_paid + amount_paying_now
 
         # Cap at the final total to avoid over-crediting
-        new_total_paid = new_total_paid_input
+        # (e.g. if they owe $10 but try to pay $200, we max it at the total price)
         if new_total_paid > final_total:
             new_total_paid = final_total
 
-        # Amount actually collected now (could be zero if frontend sent a total equal to current)
+        # Re-calculate 'paid_now' based on the capped amount 
+        # (This handles the case where they tried to overpay)
         paid_now = new_total_paid - current_paid
 
-        # Determine whether the ticket is now fully paid (allow 1 cent tolerance)
+        # Determine if the ticket is now fully paid
         is_fully_paid = new_total_paid >= (final_total - decimal.Decimal('0.01'))
-        new_status = "picked_up" if is_fully_paid else ticket.status
 
-        # 5. Update the ticket
+        # 6. DETERMINE NEW STATUS
+        if is_fully_paid:
+            new_status = "picked_up"
+            pickup_date_value = datetime.now()
+        else:
+            # If not fully paid, keep existing status (unless it was already picked_up)
+            new_status = ticket.status 
+            pickup_date_value = None 
+
+        # 7. UPDATE TICKET
         update_query = text("""
             UPDATE tickets
             SET 
                 status = :status,
                 paid_amount = :paid_amount,
-                pickup_date = :pickup_date 
+                pickup_date = COALESCE(:pickup_date, pickup_date)
             WHERE 
                 id = :ticket_id AND organization_id = :org_id
         """)
         
-        # Set pickup_date only if fully paid (otherwise leave it NULL)
-        pickup_date_value = datetime.now() if is_fully_paid else None
         db.execute(update_query, {
             "status": new_status,
             "paid_amount": float(new_total_paid),
@@ -706,7 +712,7 @@ async def process_ticket_pickup(
             "org_id": organization_id
         })
         
-        # 6. Free up the rack if one was assigned AND the ticket is fully paid
+        # 8. Free up the rack ONLY if fully paid
         if is_fully_paid and ticket.rack_number:
             rack_free_query = text("""
                 UPDATE racks
@@ -721,55 +727,48 @@ async def process_ticket_pickup(
                 "org_id": organization_id
             })
 
-        # 7. Commit the transaction
+        # 9. Commit
         db.commit()
         
-        
-        
-        # 8. Audit Log (Running in background)
-        # We use .get() to prevent crashing if the key is missing
+        # 10. Audit Log
         background_tasks.add_task(
             create_audit_log,
             org_id=payload.get("organization_id"),
-            # Try 'id', if missing try 'user_id', if both missing use 0
             actor_id=payload.get("id") or payload.get("user_id") or 0,
             actor_name=payload.get("sub", "Unknown"),
             actor_role=payload.get("role", "Unknown"),
-            action="PICKUP TICKET",
-            
+            action="PICKUP_PAYMENT", 
             ticket_id=ticket_id,
-            
             details={
                 "ticket_id": ticket_id, 
+                "previous_paid": float(current_paid),
+                "paid_now": float(paid_now),
+                "new_total_paid": float(new_total_paid),
+                "fully_paid": is_fully_paid
             }
         )
 
         # ===========================================================================
-        # NEW: FETCH ORGANIZATION NAME & BRANDING (Header/Footer)
+        # RECEIPT GENERATION
         # ===========================================================================
-        # A. Fetch Org Name
         org_name_query = text("SELECT name FROM organizations WHERE id = :org_id")
         org_name_row = db.execute(org_name_query, {"org_id": organization_id}).fetchone()
         org_name_val = org_name_row.name if org_name_row else "Your Cleaners"
 
-        # B. Fetch Settings (Header/Footer)
         settings_query = text("""
             SELECT receipt_header, receipt_footer 
             FROM organization_settings 
             WHERE organization_id = :org_id
         """)
         settings_row = db.execute(settings_query, {"org_id": organization_id}).fetchone()
-        
         receipt_header_val = settings_row.receipt_header if settings_row and settings_row.receipt_header else "Thank you!"
         receipt_footer_val = settings_row.receipt_footer if settings_row and settings_row.receipt_footer else "Have a great day!"
         
-        # Safe format for HTML
         greeting_html = receipt_header_val.replace('\n', '<br>')
         footer_html = receipt_footer_val.replace('\n', '<br>')
-        # ===========================================================================
 
-        # --- FIX 2: Add missing Comma in SQL ---
-        items_query = text("""
+        # Fetch Items details
+        items_detail_query = text("""
             SELECT 
                 ti.quantity, ti.item_total, ti.starch_level, ti.crease, 
                 ti.alterations, ti.item_instructions, ti.additional_charge,
@@ -778,9 +777,8 @@ async def process_ticket_pickup(
             JOIN clothing_types ct ON ti.clothing_type_id = ct.id
             WHERE ti.ticket_id = :ticket_id
         """)
-        items_result = db.execute(items_query, {"ticket_id": ticket_id}).fetchall()
+        items_result = db.execute(items_detail_query, {"ticket_id": ticket_id}).fetchall()
 
-        # Build Items HTML string
         items_html = ""
         for item in items_result:
             details = []
@@ -788,16 +786,10 @@ async def process_ticket_pickup(
                 details.append(f"Starch: {item.starch_level}")
             if item.crease:
                 details.append("Crease")
-            
-            # BOLD ALTERATIONS
             if item.alterations:
                 details.append(f'<span style="font-weight:900; color:#000;">Alt: {item.alterations}</span>')
-            
-            # ADDED CHARGE
             if item.additional_charge and item.additional_charge > 0:
                  details.append(f'<span style="font-weight:900; color:#000;">Add\'l: ${float(item.additional_charge):.2f}</span>')
-
-            # Instructions (Italic/Different style)
             if item.item_instructions:
                 details.append(f'<span style="font-style:italic; color:#444;">Note: {item.item_instructions}</span>')
             
@@ -815,30 +807,22 @@ async def process_ticket_pickup(
                 {details_html}
             </div>
             """
-        # ---------------------------------------------
-        
-        # 8. Generate a receipt with Branding
-        # Compute subtotal/env/tax/final and balance for the receipt
-        # Note: we already computed 'subtotal', 'env_charge', 'tax', 'final_total' above
-        previous_paid = current_paid
-        # use the computed paid_now (new_total_paid - previous_paid)
-        balance_after = final_total - decimal.Decimal(str(new_total_paid))
+
+        balance_after = final_total - new_total_paid
+
+        receipt_title = "PICKUP RECEIPT" if is_fully_paid else "PARTIAL PAYMENT RECEIPT"
 
         receipt_html = f"""
             <div style="font-family: monospace; font-size: 10pt; width: 300px; margin: 0 auto; color: #000;">
-                
-                <!-- HEADER: ORG NAME -->
                 <div style="text-align:center; margin-bottom: 4px;">
                     <div style="font-size:14pt; font-weight:900; font-family: Arial, sans-serif;">{org_name_val}</div>
                 </div>
-                
-                <!-- HEADER: GREETING -->
                 <div style="text-align:center; font-size:9pt; font-weight:normal; margin-bottom: 8px;">
                     {greeting_html}
                 </div>
 
                 <div style="text-align: center; border-bottom: 1px dashed #000; padding-bottom: 5px;">
-                    <h4 style="margin: 0; font-size: 12pt; font-weight: bold;">PICKUP RECEIPT</h4>
+                    <h4 style="margin: 0; font-size: 12pt; font-weight: bold;">{receipt_title}</h4>
                     <p style="margin: 2px 0;">Ticket #: <strong>{ticket.ticket_number}</strong></p>
                     <p style="margin: 2px 0; font-size: 9pt;">{datetime.now().strftime("%Y-%m-%d %I:%M %p")}</p>
                 </div>
@@ -846,10 +830,7 @@ async def process_ticket_pickup(
                 <p style="margin-top: 8px;">Customer: {ticket.first_name} {ticket.last_name}</p>
                 
                 <hr style="margin: 8px 0; border: 0; border-top: 1px dashed #000;" />
-                
-                <div style="margin-bottom: 10px;">
-                    {items_html}
-                </div>
+                <div style="margin-bottom: 10px;">{items_html}</div>
                 <hr style="margin: 8px 0; border: 0; border-top: 1px dashed #000;" />
 
                 <div style="font-weight: 600;">
@@ -866,7 +847,7 @@ async def process_ticket_pickup(
                         <span>TOTAL:</span> <span>${float(final_total):.2f}</span>
                     </div>
                     <div style="display:flex; justify-content:space-between; margin-top:6px;"> 
-                        <span>Previously Paid:</span> <span>${float(previous_paid):.2f}</span>
+                        <span>Previously Paid:</span> <span>${float(current_paid):.2f}</span>
                     </div>
                     <div style="display:flex; justify-content:space-between;"> 
                         <span>Paid Now:</span> <span>${float(paid_now):.2f}</span>
@@ -876,17 +857,15 @@ async def process_ticket_pickup(
                 {"<div style=\"padding: 5px; margin-top: 10px; text-align: center;\"><p style=\"margin: 0; font-size: 12pt; font-weight: 900;\">PAID IN FULL</p></div>" if is_fully_paid else f"<div style=\"display:flex;justify-content:space-between;margin-top:8px;font-weight:900;font-size:12pt;background:#eee;padding:4px;\"><div>BALANCE DUE:</div><div>${float(balance_after):.2f}</div></div>"}
                 
                 <hr style="margin: 15px 0 8px 0; border: 0; border-top: 1px dashed #000;" />
-                
-                <!-- FOOTER -->
-                <div style="text-align: center; font-size: 9pt;">
-                    {footer_html}
-                </div>
+                <div style="text-align: center; font-size: 9pt;">{footer_html}</div>
             </div>
         """
 
+        success_msg = f"Ticket {ticket.ticket_number} marked as picked up." if is_fully_paid else f"Payment of ${float(paid_now):.2f} recorded. Balance: ${float(balance_after):.2f}"
+
         return TicketPickupResponse(
             success=True,
-            message=f"Ticket {ticket.ticket_number} marked as picked up.",
+            message=success_msg,
             ticket_id=ticket_id,
             new_status=new_status,
             new_total_paid=float(new_total_paid),

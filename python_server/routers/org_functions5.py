@@ -29,6 +29,27 @@ def _check_org_and_role(payload: Dict[str, Any], allowed_roles: List[str] = None
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
     return org_id
 
+class TicketCheckoutItem(BaseModel):
+    id: int
+    ticket_number: str
+    status: str
+    created_at: datetime
+    total_amount: float
+    paid_amount: float
+    remaining_balance: float # Positive = They owe money. Negative = They have credit.
+    is_fully_paid: bool
+
+class CustomerCheckoutProfile(BaseModel):
+    customer_id: int
+    customer_name: str
+    customer_email: str
+    
+    # Financial Summaries
+    total_debt: float       # Sum of all positive balances (Money they owe you)
+    total_credit: float     # Sum of all negative balances (Money you owe them/Overpaid)
+    net_balance: float      # Debt - Credit
+    
+    tickets: List[TicketCheckoutItem]
 
 # -----------------------------
 # Drop-off transactions (ticket creation)
@@ -262,3 +283,88 @@ async def get_customer_transactions(
     except Exception as e:
         print(f"Error fetching customer transactions: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/customers/{customer_id}/checkout-profile", response_model=CustomerCheckoutProfile)
+def get_customer_checkout_profile(
+    customer_id: int,
+    db: Session = Depends(get_db),
+    payload: Dict[str, Any] = Depends(get_current_user_payload)
+):
+    """
+    Fetches ALL tickets for a customer to facilitate complex payments.
+    Calculates total debt and credit to allow over/under payment handling on the frontend.
+    """
+    
+    # 1. Security Check
+    organization_id = payload.get("organization_id")
+    if not organization_id:
+        raise HTTPException(status_code=401, detail="Organization ID missing.")
+
+    # 2. Fetch Customer Details
+    customer_query = text("""
+        SELECT id, first_name, last_name, email 
+        FROM allUsers 
+        WHERE id = :cid AND organization_id = :oid AND role = 'customer'
+    """)
+    customer = db.execute(customer_query, {"cid": customer_id, "oid": organization_id}).fetchone()
+    
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found.")
+
+    # 3. Fetch ALL Tickets for this customer
+    # We order by created_at DESC so newest are top, but you can change to ASC to pay off old debt first.
+    tickets_query = text("""
+        SELECT id, ticket_number, status, total_amount, paid_amount, created_at
+        FROM tickets
+        WHERE customer_id = :cid AND organization_id = :oid
+        ORDER BY created_at DESC
+    """)
+    tickets = db.execute(tickets_query, {"cid": customer_id, "oid": organization_id}).fetchall()
+
+    # 4. Calculate Financials
+    formatted_tickets = []
+    total_debt = 0.0
+    total_credit = 0.0
+
+    for t in tickets:
+        t_total = float(t.total_amount)
+        t_paid = float(t.paid_amount)
+        balance = t_total - t_paid
+        
+        # Determine if fully paid (allow for tiny float discrepancies)
+        is_fully_paid = balance <= 0.01
+
+        # Aggregations
+        if balance > 0.01:
+            total_debt += balance
+        elif balance < -0.01:
+            # If balance is negative (e.g. -5.00), it means they overpaid by 5.
+            # We add absolute value to total_credit
+            total_credit += abs(balance)
+
+        # Timezone safety for the list
+        t_created = t.created_at
+        if t_created.tzinfo is None:
+            t_created = t_created.replace(tzinfo=timezone.utc)
+
+        formatted_tickets.append(TicketCheckoutItem(
+            id=t.id,
+            ticket_number=t.ticket_number,
+            status=t.status,
+            created_at=t_created,
+            total_amount=t_total,
+            paid_amount=t_paid,
+            remaining_balance=balance,
+            is_fully_paid=is_fully_paid
+        ))
+
+    # 5. Return the Profile
+    return CustomerCheckoutProfile(
+        customer_id=customer.id,
+        customer_name=f"{customer.first_name} {customer.last_name}",
+        customer_email=customer.email,
+        total_debt=round(total_debt, 2),
+        total_credit=round(total_credit, 2),
+        net_balance=round(total_debt - total_credit, 2),
+        tickets=formatted_tickets
+    )

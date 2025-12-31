@@ -1,11 +1,38 @@
-import React, { useState } from 'react';
-import { Search, MapPin, CheckCircle, AlertCircle, Printer, CreditCard, DollarSign, Ban } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { 
+  Search, CheckCircle, AlertCircle, Printer, 
+  CreditCard, DollarSign, User, History, Wallet, ArrowLeft, MapPin 
+} from 'lucide-react';
 import { Ticket } from '../types';
 import axios from 'axios';
 import baseURL from '../lib/config';
 import PrintPreviewModal from './PrintPreviewModal';
+
+// --- Imports for Template Generation ---
 import renderPickupReceiptHtml from '../lib/pickupReceiptTemplate';
 import renderPlantReceiptHtml from '../lib/plantReceiptTemplate';
+
+// --- Types for Checkout Profile ---
+interface TicketCheckoutItem {
+  id: number;
+  ticket_number: string;
+  status: string;
+  created_at: string;
+  total_amount: number;
+  paid_amount: number;
+  remaining_balance: number;
+  is_fully_paid: boolean;
+}
+
+interface CustomerCheckoutProfile {
+  customer_id: number;
+  customer_name: string;
+  customer_email: string;
+  total_debt: number;
+  total_credit: number;
+  net_balance: number; // Positive = They owe money
+  tickets: TicketCheckoutItem[];
+}
 
 type Step = 'search' | 'details' | 'payment';
 
@@ -16,15 +43,71 @@ export default function PickUp() {
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [loading, setLoading] = useState(false);
   
+  // --- Checkout Profile State ---
+  const [checkoutProfile, setCheckoutProfile] = useState<CustomerCheckoutProfile | null>(null);
+  const [loadingProfile, setLoadingProfile] = useState(false);
+
   // Payment State
   const [cashTendered, setCashTendered] = useState<string>(''); 
   
   const [modal, setModal] = useState({ isOpen: false, title: '', message: '', type: 'success' as 'error' | 'success' });
 
-  // Printing State
+  // --- PRINTING STATE ---
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [printContent, setPrintContent] = useState('');
   const [plantPrintContent, setPlantPrintContent] = useState('');
+
+  // --- Helper: Print Job (Iframe Method) ---
+  const handlePrintJob = (content: string) => {
+    const printFrame = document.createElement('iframe');
+    printFrame.style.display = 'none';
+    document.body.appendChild(printFrame);
+    
+    // Write content and styles
+    printFrame.contentDocument?.write(`
+      <html>
+        <head>
+          <style>
+            @page { size: 80mm auto; margin: 0; }
+            body { margin: 0; font-family: monospace; }
+            .page-break { page-break-before: always; }
+          </style>
+        </head>
+        <body>${content}</body>
+      </html>
+    `);
+    
+    printFrame.contentDocument?.close();
+    
+    setTimeout(() => {
+        printFrame.contentWindow?.focus();
+        printFrame.contentWindow?.print();
+        setTimeout(() => document.body.removeChild(printFrame), 2000);
+    }, 500);
+  };
+
+  // --- Financial Calculation Logic ---
+  const financials = useMemo(() => {
+    if (!selectedTicket || !selectedTicket.items) {
+      return { subtotal: 0, env: 0, tax: 0, total: 0, paid: 0, balance: 0 };
+    }
+
+    // 1. Calculate Subtotal
+    const subtotal = selectedTicket.items.reduce((sum: number, item: any) => {
+      return sum + (parseFloat(item.item_total) || 0);
+    }, 0);
+
+    // 2. Calculate Fees
+    const env = subtotal * 0.047; // 4.7%
+    const tax = subtotal * 0.0825; // 8.25%
+    const total = subtotal + env + tax;
+
+    // 3. Balance
+    const paid = Number(selectedTicket.paid_amount) || 0;
+    const balance = total - paid;
+
+    return { subtotal, env, tax, total, paid, balance };
+  }, [selectedTicket]);
 
   // --- 1. Search Tickets ---
   const handleSearch = async (e: React.FormEvent) => {
@@ -35,474 +118,479 @@ export default function PickUp() {
     try {
       const token = localStorage.getItem('accessToken');
       const response = await axios.get(`${baseURL}/api/organizations/tickets`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
+        params: { search: searchQuery } // Assuming backend supports ?search= param
       });
       
+      // If backend doesn't support ?search, filter manually here like previous version
       const allTickets: Ticket[] = response.data;
+       // Ensure we filter if the API returns all
       const filtered = allTickets.filter(t => 
         t.ticket_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
         t.customer_name.toLowerCase().includes(searchQuery.toLowerCase())
       );
       
-      // Only show tickets that are NOT picked up yet
-      const activeTickets = filtered.filter(t => t.status !== 'picked_up');
-      
-      setTickets(activeTickets);
-      if (activeTickets.length === 0) {
-          setModal({ isOpen: true, title: 'No Tickets', message: 'No active tickets found matching that query.', type: 'error' });
-      }
-    } catch (err) {
-      console.error(err);
-      setModal({ isOpen: true, title: 'Error', message: 'Failed to search tickets.', type: 'error' });
+      setTickets(filtered);
+      setStep('search');
+    } catch (error) {
+      console.error("Search error:", error);
+      showModal("Error", "Failed to search tickets.", "error");
     } finally {
       setLoading(false);
     }
   };
 
   // --- 2. Select Ticket ---
-  const handleSelectTicket = (ticket: Ticket) => {
-    const fetchDetails = async () => {
-        setLoading(true);
-        try {
-            const token = localStorage.getItem('accessToken');
-            const res = await axios.get(`${baseURL}/api/organizations/tickets/${ticket.id}`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-            setSelectedTicket(res.data);
-            setStep('details');
-        } catch (err) {
-            setModal({ isOpen: true, title: 'Error', message: 'Could not load ticket details.', type: 'error' });
-        } finally {
-            setLoading(false);
+  const handleSelectTicket = async (ticketStub: Ticket) => {
+    setLoading(true);
+    try {
+        const token = localStorage.getItem('accessToken');
+        
+        // Fetch FULL ticket details
+        const ticketResponse = await axios.get(`${baseURL}/api/organizations/tickets/${ticketStub.id}`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        
+        const fullTicket = ticketResponse.data;
+        setSelectedTicket(fullTicket);
+        setCashTendered(''); 
+        setCheckoutProfile(null); 
+
+        // Fetch Financial Profile if customer exists
+        if (fullTicket.customer_id) {
+            fetchCheckoutProfile(fullTicket.customer_id);
         }
-    };
-    fetchDetails();
+
+        setStep('details');
+    } catch (error) {
+        console.error("Selection error:", error);
+        showModal("Error", "Failed to load ticket details.", "error");
+    } finally {
+        setLoading(false);
+    }
   };
 
-  // --- 3. Proceed to Payment ---
-  const handleProceedToPayment = () => {
-    if (!selectedTicket) return;
-    setCashTendered(''); 
+  const fetchCheckoutProfile = async (customerId: number) => {
+    setLoadingProfile(true);
+    try {
+        const token = localStorage.getItem('accessToken');
+        const response = await axios.get(
+            `${baseURL}/api/organizations/customers/${customerId}/checkout-profile`,
+            { headers: { Authorization: `Bearer ${token}` } }
+        );
+        setCheckoutProfile(response.data);
+    } catch (error) {
+        console.error("Failed to load customer profile", error);
+    } finally {
+        setLoadingProfile(false);
+    }
+  };
+
+  const proceedToPayment = () => {
+    if (selectedTicket) {
+        const remaining = financials.balance;
+        setCashTendered(remaining > 0 ? remaining.toFixed(2) : '0.00');
+    }
     setStep('payment');
   };
 
-  // --- 4. Process Pickup ---
-  const handleProcessPickup = async () => {
+  const handleBack = () => {
+    if (step === 'payment') setStep('details');
+    else if (step === 'details') setStep('search');
+  };
+
+  // --- 3. Process Pickup ---
+  const handleCompletePickup = async () => {
     if (!selectedTicket) return;
-
-    const { balance } = computeCharges(selectedTicket);
-    const tendered = parseFloat(cashTendered) || 0;
-
-    if (tendered < balance) {
-        setModal({ isOpen: true, title: 'Insufficient Funds', message: 'Cash tendered is less than the balance due.', type: 'error' });
-        return;
-    }
+    
+    const paymentAmount = parseFloat(cashTendered) || 0;
 
     setLoading(true);
     try {
       const token = localStorage.getItem('accessToken');
-
       const response = await axios.put(
         `${baseURL}/api/organizations/tickets/${selectedTicket.id}/pickup`,
-        { amount_paid: balance }, 
+        { amount_paid: paymentAmount },
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      if (response.data && response.data.success) {
-        const updatedTicket: Ticket = {
-          ...selectedTicket,
-          paid_amount: response.data.new_total_paid ?? selectedTicket.paid_amount,
-          status: response.data.new_status ?? selectedTicket.status
+      if (response.data.success) {
+        // Merge backend data
+        const updatedTicket = {
+            ...selectedTicket,
+            paid_amount: response.data.new_total_paid,
+            status: response.data.new_status
         } as Ticket;
 
+        // --- GENERATE HTML TEMPLATES ---
         const receiptHtml = renderPickupReceiptHtml(updatedTicket);
         const plantHtml = renderPlantReceiptHtml ? renderPlantReceiptHtml(updatedTicket) : '';
-
+        
         setPrintContent(receiptHtml);
         setPlantPrintContent(plantHtml);
+        
         setShowPrintPreview(true);
-
-        setStep('search');
+        
+        // Reset Local Data
         setTickets([]);
         setSearchQuery('');
-        setCashTendered('');
-      } else {
-        const msg = response.data?.message || 'Failed to process pickup.';
-        setModal({ isOpen: true, title: 'Error', message: msg, type: 'error' });
+        setSelectedTicket(null);
+        setStep('search');
       }
-
-    } catch (err: any) {
-      console.error(err);
-      const msg = err.response?.data?.detail || 'Failed to process pickup.';
-      setModal({ isOpen: true, title: 'Error', message: msg, type: 'error' });
+    } catch (error: any) {
+      console.error("Pickup error:", error);
+      showModal("Failed", error.response?.data?.detail || "Could not process pickup.", "error");
     } finally {
       setLoading(false);
     }
   };
 
-  // --- Helper: Print Job ---
-  const handlePrintJob = (content: string) => {
-    const printFrame = document.createElement('iframe');
-    printFrame.style.display = 'none';
-    document.body.appendChild(printFrame);
-    printFrame.contentDocument?.write(`
-      <html>
-        <head>
-          <title>Print</title>
-          <style>
-            @page { margin: 0; }
-            @media print {
-              html { width: 100%; margin: 0; padding: 0; }
-              body { width: 55mm; margin: 0 auto; padding: 0; font-family: sans-serif; }
-              div { break-inside: avoid; }
-              .page-break { page-break-after: always; break-after: page; }
-            }
-          </style>
-        </head>
-        <body>${content}</body>
-      </html>
-    `);
-    printFrame.contentDocument?.close();
-    printFrame.contentWindow?.focus();
-    setTimeout(() => {
-        printFrame.contentWindow?.print();
-        setTimeout(() => document.body.removeChild(printFrame), 1000);
-    }, 100);
+  const showModal = (title: string, message: string, type: 'error' | 'success') => {
+    setModal({ isOpen: true, title, message, type });
   };
 
-  // --- Charges calculation helper ---
-  const computeCharges = (ticket: Ticket) => {
-    const items = ticket.items || [];
-    const subtotal = items.reduce((sum, item) => sum + (Number(item.item_total) || 0), 0);
-    
-    const envCharge = subtotal * 0.047;
-    const tax = subtotal * 0.0825;
-    
-    const finalTotal = subtotal + envCharge + tax;
-    const paid = Number(ticket.paid_amount) || 0;
-    const balance = Math.max(0, finalTotal - paid); 
-    return { subtotal, envCharge, tax, finalTotal, paid, balance };
+  const getPaymentStatus = () => {
+    const balance = financials.balance;
+    const tendered = parseFloat(cashTendered) || 0;
+    const newBalance = balance - tendered;
+
+    if (newBalance > 0.01) return { status: 'PARTIAL', amount: newBalance, label: 'Remaining Balance' };
+    if (newBalance < -0.01) return { status: 'OVERPAID', amount: Math.abs(newBalance), label: 'Change Due' };
+    return { status: 'FULL', amount: 0, label: 'Settled' };
   };
 
-  // --- VALIDATION HELPER ---
-  const getPickupEligibility = (ticket: Ticket) => {
-    const hasRack = ticket.rack_number && ticket.rack_number.trim() !== '';
-    // Check if status implies it's still being processed
-    const isProcessing = ['processed', 'processing'].includes(ticket.status.toLowerCase());
-    
-    let error = null;
-    if (!hasRack) error = 'Ticket has no rack location assigned.';
-    else if (isProcessing) error = 'Ticket is still processing (not ready).';
-
-    return { allowed: !error, error };
-  };
+  const paymentCalc = getPaymentStatus();
 
   return (
-    <div className="max-w-4xl mx-auto">
-      <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center">
-        <CheckCircle className="w-8 h-8 mr-3 text-blue-600" />
-        Ticket Pickup
-      </h2>
+    <div className="p-6 max-w-5xl mx-auto min-h-screen bg-gray-50">
+      
+      {/* --- HEADER --- */}
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-800">Pick Up & Checkout</h1>
+        <p className="text-gray-500 mt-1">Process payments, check debts, and release tickets</p>
+      </div>
 
       {/* --- STEP 1: SEARCH --- */}
       {step === 'search' && (
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <form onSubmit={handleSearch} className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Find Ticket</label>
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Enter Ticket # (e.g., 241105-001) or Customer Name"
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              </div>
-              <button
-                type="submit"
-                disabled={loading}
-                className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50"
-              >
-                {loading ? 'Searching...' : 'Search'}
-              </button>
-            </div>
+        <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 max-w-2xl mx-auto">
+          <form onSubmit={handleSearch} className="relative">
+            <Search className="absolute left-4 top-3.5 text-gray-400" size={20} />
+            <input
+              type="text"
+              placeholder="Scan ticket or search by name/phone..."
+              className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              autoFocus
+            />
+            <button 
+              type="submit"
+              disabled={loading}
+              className="absolute right-2 top-2 bottom-2 px-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium transition-colors disabled:opacity-50"
+            >
+              {loading ? 'Searching...' : 'Search'}
+            </button>
           </form>
 
           {tickets.length > 0 && (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ticket #</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Balance</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {tickets.map((ticket) => (
-                    <tr key={ticket.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600">
-                        {ticket.ticket_number}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {ticket.customer_name}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
-                          ${['processed', 'processing'].includes(ticket.status.toLowerCase()) 
-                             ? 'bg-yellow-100 text-yellow-800' 
-                             : 'bg-green-100 text-green-800'}`}>
-                          {ticket.status}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600 font-medium">
-                        ${(ticket.total_amount - ticket.paid_amount).toFixed(2)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <button
-                          onClick={() => handleSelectTicket(ticket)}
-                          className="text-blue-600 hover:text-blue-900 font-bold"
-                        >
-                          Process
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="mt-6 space-y-3">
+              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Results</h3>
+              {tickets.map(ticket => (
+                <div 
+                  key={ticket.id}
+                  onClick={() => handleSelectTicket(ticket)}
+                  className="flex justify-between items-center p-4 bg-white hover:bg-indigo-50 border border-gray-100 hover:border-indigo-200 rounded-xl cursor-pointer transition-all shadow-sm hover:shadow-md group"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold shadow-sm">
+                        {ticket.ticket_number.split('-').pop()}
+                    </div>
+                    <div>
+                      <p className="font-bold text-gray-800 group-hover:text-indigo-700">{ticket.customer_name}</p>
+                      <p className="text-xs text-gray-500">Ticket #{ticket.ticket_number}</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className={`px-2 py-1 rounded-full text-xs font-bold ${
+                        ticket.status === 'ready_for_pickup' ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600'
+                    }`}>
+                      {ticket.status.replace(/_/g, ' ').toUpperCase()}
+                    </span>
+                    <p className="text-sm font-bold text-gray-800 mt-1">${ticket.total_amount.toFixed(2)}</p>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
       )}
 
-      {/* --- STEP 2: DETAILS CONFIRMATION --- */}
+      {/* --- STEP 2: DETAILS --- */}
       {step === 'details' && selectedTicket && (
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex justify-between items-start mb-6">
-            <h3 className="text-lg font-semibold text-gray-900">Confirm Pickup Details</h3>
-            <button onClick={() => setStep('search')} className="text-gray-500 hover:text-gray-700">
-                Cancel
-            </button>
-          </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4">
+            
+            {/* Left: Ticket Info */}
+            <div className="lg:col-span-2 space-y-6">
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
+                    <div className="flex justify-between items-start mb-6">
+                        <div>
+                            <h2 className="text-2xl font-bold text-gray-800">Ticket #{selectedTicket.ticket_number}</h2>
+                            <p className="text-gray-500 flex items-center gap-2 mt-1">
+                                <User size={16} /> {selectedTicket.customer_name}
+                            </p>
+                        </div>
+                        <div className="text-right">
+                             <div className="flex items-center text-blue-800 bg-blue-50 px-3 py-1 rounded-full mb-2">
+                                <MapPin className="w-4 h-4 mr-1" />
+                                <span className="font-bold">{selectedTicket.rack_number || 'Unassigned'}</span>
+                             </div>
+                             <span className="text-xs text-gray-400">{selectedTicket.items?.length || 0} Items</span>
+                        </div>
+                    </div>
 
-          {/* CHECK ELIGIBILITY */}
-          {(() => {
-              const { allowed, error } = getPickupEligibility(selectedTicket);
-              if (!allowed) {
-                  return (
-                      <div className="mb-6 bg-red-50 border-l-4 border-red-500 p-4 rounded-r flex items-start">
-                          <Ban className="w-5 h-5 text-red-500 mr-3 mt-0.5" />
-                          <div>
-                              <h4 className="font-bold text-red-800">Cannot Process Pickup</h4>
-                              <p className="text-sm text-red-700">{error}</p>
-                          </div>
-                      </div>
-                  );
-              }
-              return null;
-          })()}
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            <div className="bg-gray-50 p-4 rounded-lg">
-                <h4 className="font-medium text-gray-700 mb-2">Customer Info</h4>
-                <p className="text-lg font-bold">{selectedTicket.customer_name}</p>
-                <p className="text-gray-600">{selectedTicket.customer_phone}</p>
-            </div>
-            <div className={`p-4 rounded-lg ${!selectedTicket.rack_number ? 'bg-red-50 border border-red-200' : 'bg-blue-50'}`}>
-                <h4 className={`font-medium mb-2 ${!selectedTicket.rack_number ? 'text-red-800' : 'text-blue-800'}`}>
-                    Rack Location
-                </h4>
-                <div className="flex items-center">
-                    {selectedTicket.rack_number ? (
-                        <>
-                            <MapPin className="w-5 h-5 text-blue-600 mr-2" />
-                            <span className="text-2xl font-bold text-blue-900">
-                                {selectedTicket.rack_number}
-                            </span>
-                        </>
-                    ) : (
-                        <>
-                            <AlertCircle className="w-5 h-5 text-red-600 mr-2" />
-                            <span className="text-xl font-bold text-red-600">Unassigned</span>
-                        </>
-                    )}
+                    <div className="space-y-3">
+                        {selectedTicket.items?.map((item: any, idx: number) => (
+                            <div key={idx} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg border border-gray-100">
+                                <div className="flex items-center gap-3">
+                                    <span className="w-6 h-6 flex items-center justify-center bg-gray-200 text-gray-600 rounded-full text-xs font-bold">
+                                        {item.quantity}
+                                    </span>
+                                    <span className="text-gray-700 font-medium">
+                                        {item.clothing_name || item.custom_name}
+                                    </span>
+                                </div>
+                                <span className="text-gray-900 font-semibold">${parseFloat(item.item_total || 0).toFixed(2)}</span>
+                            </div>
+                        ))}
+                    </div>
                 </div>
             </div>
-          </div>
 
-          <div className="border-t pt-4">
-             {(() => {
-               const charges = computeCharges(selectedTicket);
-               return (
-                 <>
-                   <div className="flex justify-between items-center mb-2">
-                     <span className="text-gray-600">Subtotal:</span>
-                     <span className="font-semibold">${charges.subtotal.toFixed(2)}</span>
-                   </div>
-                   <div className="flex justify-between items-center mb-2">
-                     <span className="text-gray-600">Env Charge (4.7%):</span>
-                     <span className="text-gray-800">${charges.envCharge.toFixed(2)}</span>
-                   </div>
-                   <div className="flex justify-between items-center mb-4">
-                     <span className="text-gray-600">Tax (8.25%):</span>
-                     <span className="text-gray-800">${charges.tax.toFixed(2)}</span>
-                   </div>
-                   <div className="flex justify-between items-center mb-4">
-                     <span className="text-gray-600">Already Paid:</span>
-                     <span className="text-xl font-bold text-green-600">-${charges.paid.toFixed(2)}</span>
-                   </div>
-                   <div className="flex justify-between items-center pt-4 border-t">
-                     <span className="text-lg font-bold text-gray-900">Balance Due:</span>
-                     <span className="text-2xl font-bold text-red-600">${charges.balance.toFixed(2)}</span>
-                   </div>
-                 </>
-               );
-             })()}
-          </div>
+            {/* Right: Summary & Action */}
+            <div className="space-y-6">
+                {checkoutProfile && checkoutProfile.total_debt > 0.01 && (
+                      <div className="bg-red-50 border border-red-200 p-4 rounded-xl flex gap-3 shadow-sm">
+                        <AlertCircle className="text-red-600 flex-shrink-0" size={24} />
+                        <div>
+                            <h3 className="text-red-800 font-bold">Previous Debt Found</h3>
+                            <p className="text-red-600 text-sm mt-1">
+                                Customer owes <span className="font-bold">${checkoutProfile.total_debt.toFixed(2)}</span> from previous tickets.
+                            </p>
+                        </div>
+                      </div>
+                )}
 
-          <div className="mt-8 flex justify-end gap-3">
-             <button 
-                onClick={() => setStep('search')}
-                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-             >
-                Back
-             </button>
-             {/* Disable button if not allowed */}
-             {(() => {
-                 const { allowed } = getPickupEligibility(selectedTicket);
-                 return (
-                     <button
-                        onClick={handleProceedToPayment}
-                        disabled={!allowed}
-                        className={`px-6 py-2 rounded-lg font-medium flex items-center
-                            ${allowed 
-                                ? 'bg-blue-600 text-white hover:bg-blue-700' 
-                                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                            }`}
-                     >
-                        <CreditCard className="w-4 h-4 mr-2" />
-                        Proceed to Payment
-                     </button>
-                 );
-             })()}
-          </div>
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
+                    {/* Financial Breakdown */}
+                    <div className="flex justify-between mb-2 text-gray-500 text-sm">
+                        <span>Subtotal</span>
+                        <span>${financials.subtotal.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between mb-2 text-gray-500 text-sm">
+                        <span>Env Charge (4.7%)</span>
+                        <span>${financials.env.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between mb-2 text-gray-500 text-sm">
+                        <span>Tax (8.25%)</span>
+                        <span>${financials.tax.toFixed(2)}</span>
+                    </div>
+                    <div className="border-t my-2 border-dashed"></div>
+                    <div className="flex justify-between mb-2 text-gray-800 font-bold">
+                        <span>Total</span>
+                        <span>${financials.total.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between mb-4 text-green-600">
+                        <span>Paid So Far</span>
+                        <span>- ${financials.paid.toFixed(2)}</span>
+                    </div>
+
+                    <div className="border-t pt-4 flex justify-between items-end">
+                        <span className="text-gray-800 font-medium">Balance Due</span>
+                        <span className="text-3xl font-bold text-gray-900">
+                            ${financials.balance.toFixed(2)}
+                        </span>
+                    </div>
+
+                    <div className="mt-8 flex gap-3">
+                        <button 
+                            onClick={handleBack}
+                            className="flex-1 px-4 py-3 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 font-medium transition-colors"
+                        >
+                            Back
+                        </button>
+                        <button 
+                            onClick={proceedToPayment}
+                            className="flex-1 px-4 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 font-bold shadow-lg shadow-indigo-200 transition-all transform hover:-translate-y-0.5"
+                        >
+                            Pay & Pickup
+                        </button>
+                    </div>
+                </div>
+            </div>
         </div>
       )}
 
-      {/* --- STEP 3: PAYMENT & CHANGE CALCULATION --- */}
+      {/* --- STEP 3: PAYMENT & FINANCIALS --- */}
       {step === 'payment' && selectedTicket && (
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 max-w-md mx-auto">
-            <h3 className="text-xl font-bold text-gray-900 mb-6 text-center">Collect Payment</h3>
+        <div className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in zoom-in-95">
             
-            {(() => {
-                const { balance } = computeCharges(selectedTicket);
-                const tendered = parseFloat(cashTendered) || 0;
-                const change = tendered - balance;
-                const isInsufficient = tendered < balance;
-                const isValidInput = cashTendered !== ''; 
+            {/* --- LEFT: WALLET / HISTORY --- */}
+            <div className="space-y-6">
+                <button 
+                    onClick={handleBack} 
+                    className="flex items-center text-gray-500 hover:text-gray-800 transition-colors mb-2 gap-1 font-medium"
+                >
+                    <ArrowLeft size={16} /> Cancel Payment
+                </button>
 
-                return (
-                    <>
-                        <div className="mb-6 text-center p-4 bg-gray-50 rounded-lg">
-                            <p className="text-gray-500 mb-1 text-sm uppercase tracking-wide">Balance Due</p>
-                            <p className="text-4xl font-extrabold text-gray-800">
-                                ${balance.toFixed(2)}
-                            </p>
+                {/* Customer Wallet Card */}
+                <div className="bg-gradient-to-br from-slate-800 to-slate-900 text-white p-6 rounded-2xl shadow-xl relative overflow-hidden border border-slate-700">
+                    <div className="absolute top-0 right-0 p-32 bg-white opacity-5 rounded-full -mr-16 -mt-16 pointer-events-none"></div>
+                    
+                    <div className="flex items-center gap-3 mb-6">
+                        <div className="p-2 bg-slate-700/50 rounded-lg">
+                           <Wallet className="text-indigo-300" size={20} />
                         </div>
+                        <h3 className="font-bold text-lg">Customer Wallet</h3>
+                    </div>
 
-                        <div className="mb-6">
-                            <label className="block text-sm font-bold text-gray-700 mb-2">Cash Tendered (From Customer)</label>
-                            <div className="relative">
-                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                    <span className="text-gray-500 sm:text-lg font-bold">$</span>
+                    {loadingProfile ? (
+                        <div className="animate-pulse space-y-3">
+                           <div className="h-4 bg-slate-700 rounded w-1/2"></div>
+                           <div className="h-8 bg-slate-700 rounded w-3/4"></div>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-2 gap-4">
+                             <div>
+                                <p className="text-slate-400 text-xs uppercase tracking-wide font-semibold">Previous Debt</p>
+                                <p className="text-2xl font-bold text-red-300">
+                                    ${checkoutProfile?.total_debt.toFixed(2) || '0.00'}
+                                </p>
+                             </div>
+                             <div>
+                                <p className="text-slate-400 text-xs uppercase tracking-wide font-semibold">Credit</p>
+                                <p className="text-2xl font-bold text-green-300">
+                                    ${checkoutProfile?.total_credit.toFixed(2) || '0.00'}
+                                </p>
+                             </div>
+                             <div className="col-span-2 pt-4 border-t border-slate-700/50 mt-2">
+                                <div className="flex justify-between items-center">
+                                    <p className="text-slate-300 font-medium">Net Account Balance</p>
+                                    <p className={`text-xl font-bold ${(checkoutProfile?.net_balance || 0) > 0.01 ? 'text-red-400' : 'text-green-400'}`}>
+                                        {(checkoutProfile?.net_balance || 0) > 0.01 ? '-' : '+'}
+                                        ${Math.abs(checkoutProfile?.net_balance || 0).toFixed(2)}
+                                    </p>
                                 </div>
-                                <input
-                                    type="number"
-                                    step="0.01"
-                                    autoFocus
-                                    placeholder="0.00"
-                                    value={cashTendered}
-                                    onChange={(e) => setCashTendered(e.target.value)}
-                                    className={`
-                                        block w-full pl-8 pr-4 py-3 text-xl font-bold rounded-lg border focus:ring-2 focus:outline-none
-                                        ${isInsufficient && isValidInput ? 'border-red-300 ring-red-200 text-red-600' : 'border-gray-300 ring-blue-500 text-gray-900'}
-                                    `}
-                                />
+                             </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* Other Unpaid Tickets List */}
+                {checkoutProfile && checkoutProfile.tickets.some(t => !t.is_fully_paid && t.id !== selectedTicket.id) && (
+                    <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+                        <h4 className="font-bold text-gray-700 mb-3 flex items-center gap-2">
+                            <History size={16} /> Other Unpaid Tickets
+                        </h4>
+                        <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                            {checkoutProfile.tickets
+                                .filter(t => !t.is_fully_paid && t.id !== selectedTicket.id)
+                                .map(t => (
+                                <div key={t.id} className="flex justify-between text-sm p-3 bg-gray-50 rounded-lg border border-gray-100">
+                                    <span>#{t.ticket_number} <span className="text-gray-400 text-xs ml-1">({new Date(t.created_at).toLocaleDateString()})</span></span>
+                                    <span className="font-bold text-red-600">${t.remaining_balance.toFixed(2)}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* --- RIGHT: PAYMENT INPUT --- */}
+            <div className="bg-white p-8 rounded-2xl shadow-lg border border-gray-100 flex flex-col justify-between h-full">
+                <div>
+                    <h2 className="text-2xl font-bold text-gray-800 mb-6">Payment Details</h2>
+                    
+                    {/* Ticket Summary Small */}
+                    <div className="flex justify-between items-center mb-6 p-4 bg-indigo-50 rounded-xl border border-indigo-100">
+                        <div>
+                            <p className="text-indigo-600 font-bold">Current Ticket</p>
+                            <p className="text-xs text-indigo-400">#{selectedTicket.ticket_number}</p>
+                        </div>
+                        <p className="text-2xl font-bold text-indigo-700">${financials.balance.toFixed(2)}</p>
+                    </div>
+
+                    <label className="block text-sm font-medium text-gray-600 mb-2">Amount Paying Now ($)</label>
+                    <div className="relative">
+                        <DollarSign className="absolute left-4 top-4 text-gray-400" />
+                        <input 
+                            type="number" 
+                            step="0.01"
+                            value={cashTendered}
+                            onChange={(e) => setCashTendered(e.target.value)}
+                            className="w-full pl-12 pr-4 py-4 bg-gray-50 border border-gray-200 rounded-xl text-2xl font-bold text-gray-800 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none transition-all"
+                            placeholder="0.00"
+                            autoFocus
+                        />
+                    </div>
+
+                    {/* Dynamic Calculation Feedback */}
+                    <div className="mt-6 space-y-3">
+                        {paymentCalc.status === 'PARTIAL' && (
+                            <div className="flex justify-between items-center p-3 bg-amber-50 text-amber-800 rounded-lg border border-amber-100">
+                                <span className="flex items-center gap-2 font-medium"><AlertCircle size={16}/> Remaining Debt</span>
+                                <span className="font-bold">${paymentCalc.amount.toFixed(2)}</span>
                             </div>
-                            
-                            <button 
-                                type="button"
-                                onClick={() => setCashTendered(balance.toFixed(2))}
-                                className="mt-2 text-xs text-blue-600 hover:text-blue-800 font-medium underline"
-                            >
-                                Exact Amount
-                            </button>
-                        </div>
+                        )}
+                        {paymentCalc.status === 'OVERPAID' && (
+                            <div className="flex justify-between items-center p-3 bg-green-50 text-green-800 rounded-lg border border-green-100">
+                                <span className="flex items-center gap-2 font-medium"><CheckCircle size={16}/> Change Due</span>
+                                <span className="font-bold">${paymentCalc.amount.toFixed(2)}</span>
+                            </div>
+                        )}
+                         {paymentCalc.status === 'FULL' && (
+                            <div className="flex justify-between items-center p-3 bg-blue-50 text-blue-800 rounded-lg border border-blue-100">
+                                <span className="flex items-center gap-2 font-medium"><CheckCircle size={16}/> Payment Status</span>
+                                <span className="font-bold">Fully Settled</span>
+                            </div>
+                        )}
+                    </div>
+                </div>
 
-                        <div className={`mb-8 p-4 rounded-lg text-center transition-colors duration-200 ${isValidInput && !isInsufficient ? 'bg-green-50 border border-green-200' : 'bg-gray-50 border border-gray-100'}`}>
-                            {isValidInput ? (
-                                isInsufficient ? (
-                                    <>
-                                        <p className="text-red-600 font-bold mb-1 flex items-center justify-center gap-2">
-                                            <AlertCircle size={18} /> Insufficient Funds
-                                        </p>
-                                        <p className="text-sm text-gray-600">
-                                            Still needs: <span className="font-bold">${(balance - tendered).toFixed(2)}</span>
-                                        </p>
-                                    </>
-                                ) : (
-                                    <>
-                                        <p className="text-green-700 font-bold text-sm uppercase tracking-wide mb-1">Change Due</p>
-                                        <p className="text-3xl font-extrabold text-green-600">
-                                            ${change.toFixed(2)}
-                                        </p>
-                                    </>
-                                )
-                            ) : (
-                                <p className="text-gray-400 text-sm italic">Enter cash amount to calculate change</p>
-                            )}
-                        </div>
-
-                        <button
-                            onClick={handleProcessPickup}
-                            disabled={loading || isInsufficient || !isValidInput}
-                            className={`
-                                w-full py-3 rounded-lg font-bold text-lg flex justify-center items-center transition-all
-                                ${loading || isInsufficient || !isValidInput 
-                                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
-                                    : 'bg-green-600 text-white hover:bg-green-700 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5'
-                                }
-                            `}
-                        >
-                            {loading ? 'Processing...' : 'Complete Transaction'}
-                        </button>
-                        
-                        <button 
-                            onClick={() => setStep('details')}
-                            className="w-full mt-4 py-2 text-gray-500 hover:text-gray-700 text-sm"
-                        >
-                            Cancel
-                        </button>
-                    </>
-                );
-            })()}
+                <div className="mt-8">
+                    <button 
+                        onClick={handleCompletePickup}
+                        disabled={loading || !cashTendered}
+                        className={`w-full py-4 rounded-xl text-lg font-bold text-white shadow-lg transition-all transform hover:-translate-y-1 flex justify-center items-center gap-2
+                            ${paymentCalc.status === 'PARTIAL' ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-200' : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200'}
+                        `}
+                    >
+                        {loading ? 'Processing...' : (
+                            <>
+                                <CreditCard size={20} />
+                                {paymentCalc.status === 'PARTIAL' ? 'Confirm Partial Payment' : 'Complete Pickup'}
+                            </>
+                        )}
+                    </button>
+                    {paymentCalc.status === 'PARTIAL' && (
+                        <p className="text-center text-xs text-gray-400 mt-3">
+                            The ticket will remain with an outstanding balance.
+                        </p>
+                    )}
+                </div>
+            </div>
         </div>
       )}
 
       {/* --- MODALS --- */}
       {modal.isOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full mx-4">
-                <div className={`flex items-center mb-4 ${modal.type === 'error' ? 'text-red-600' : 'text-green-600'}`}>
-                    {modal.type === 'error' ? <AlertCircle className="w-6 h-6 mr-2" /> : <CheckCircle className="w-6 h-6 mr-2" />}
-                    <h3 className="text-lg font-bold">{modal.title}</h3>
-                </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in">
+            <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl scale-100 transform transition-all">
+                <h3 className={`text-xl font-bold mb-2 ${modal.type === 'error' ? 'text-red-600' : 'text-green-600'}`}>
+                    {modal.title}
+                </h3>
                 <p className="text-gray-600 mb-6">{modal.message}</p>
-                <button
+                <button 
                     onClick={() => setModal({ ...modal, isOpen: false })}
                     className="w-full py-2 bg-gray-100 text-gray-800 rounded hover:bg-gray-200 font-medium"
                 >
@@ -512,7 +600,7 @@ export default function PickUp() {
         </div>
       )}
 
-      {/* Print Preview Modal */}
+      {/* Print Preview Modal - USING IFRAME LOGIC */}
       <PrintPreviewModal
         isOpen={showPrintPreview}
         onClose={() => setShowPrintPreview(false)}
@@ -523,7 +611,8 @@ export default function PickUp() {
             <>
                 <button
                     onClick={() => {
-                        const combined = `${printContent}<div class="page-break"></div>${plantPrintContent}`;
+                        // Concatenate both receipts with a page break
+                        const combined = `${printContent}<div class="page-break" style="page-break-before: always; height: 1px; display: block;"></div>${plantPrintContent}`;
                         handlePrintJob(combined);
                     }}
                     className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center gap-2"
@@ -540,7 +629,7 @@ export default function PickUp() {
                 </button>
             </>
         }
-        note="Pickup processed successfully! Please print the receipt below."
+        note="Pickup processed successfully! Please select a print option."
       />
 
     </div>
