@@ -62,6 +62,7 @@ export default function CustomerManagement() {
         headers: { Authorization: `Bearer ${token}` }
       });
       setCustomers(response.data);
+      console.log("Fetched customers:", response.data);
     } catch (error) {
       console.error("Error fetching customers:", error);
     } finally {
@@ -109,42 +110,72 @@ export default function CustomerManagement() {
   // --- 3. UPDATE CUSTOMER ---
   const handleUpdateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedCustomer) return;
+    
+    // Safety check
+    if (!selectedCustomer) {
+        showNotification('error', 'No customer selected.');
+        return;
+    }
     
     setActionLoading(true);
+    
     try {
-      const token = localStorage.getItem("accessToken");
-      
-      const cleanPhone = formData.phone.replace(/\D/g, '');
+        const token = localStorage.getItem("accessToken");
+        if (!token) {
+            showNotification('error', 'Authentication token missing. Please login again.');
+            return;
+        }
 
-      // Payload must match the backend schema (usually doesn't need password for edit)
-      const payload = {
-        first_name: formData.first_name,
-        last_name: formData.last_name,
-        email: formData.email,
-        address: formData.address,
-        phone: cleanPhone
-      };
+        // 1. Clean data to match Backend Sanitization
+        // Backend: clean_phone = ''.join(filter(str.isdigit, data.phone))
+        const cleanPhone = formData.phone.replace(/\D/g, '');
 
-      const response = await axios.put(
-        `${baseURL}/api/organizations/customers/${selectedCustomer.id}`, 
-        payload, 
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+        // 2. Construct Payload matching 'CustomerUpdate' Pydantic model
+        const payload = {
+            first_name: formData.first_name.trim(),
+            last_name: formData.last_name.trim(),
+            email: formData.email.trim(),
+            // Backend SQL expects a value for address. Send empty string if null.
+            address: formData.address ? formData.address.trim() : "", 
+            phone: cleanPhone
+        };
+
+        // 3. Send PUT Request
+        // Ensure 'baseURL' includes '/api/organizations' if your router is prefixed that way
+        const response = await axios.put(
+            `${baseURL}/api/organizations/customers/${selectedCustomer.id}`, 
+            payload, 
+            { 
+                headers: { 
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                } 
+            }
+        );
       
-      setSelectedCustomer(response.data); // Update local details view
-      showNotification('success', 'Customer updated successfully!');
-      setViewMode('details');
-      fetchCustomers(); // Refresh main list
+        // 4. Handle Success
+        // The backend returns the updated customer object directly (updated_customer._mapping)
+        setSelectedCustomer(response.data); 
+        showNotification('success', 'Customer updated successfully!');
+        setViewMode('details'); // Switch back to view mode
+      
+        // 5. Refresh the main list so the table updates immediately
+        if (typeof fetchCustomers === 'function') {
+            fetchCustomers(); 
+        }
+
     } catch (error: any) {
-      console.error("Update failed", error);
-      const msg = error.response?.data?.detail || "Failed to update customer.";
-      showNotification('error', msg);
+        console.error("Update failed", error);
+      
+        // 6. Intelligent Error Handling
+        // Captures backend 409 errors (Duplicate Email/Phone) or 403 (Permission denied)
+        const msg = error.response?.data?.detail || "Failed to update customer.";
+        showNotification('error', msg);
+        
     } finally {
-      setActionLoading(false);
+        setActionLoading(false);
     }
-  };
-
+};
   // --- HELPER FUNCTIONS ---
   const showNotification = (type: 'success'|'error', message: string) => {
     setNotification({ type, message });

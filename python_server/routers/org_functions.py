@@ -227,73 +227,73 @@ async def get_clothing_types_for_organization(
         raise HTTPException(status_code=500, detail=str(e))
         
 
-@router.get("/customers", response_model=List[CustomerResponse], summary="Get all customers for organization")
-def get_customers(
-    search: Optional[str] = None,
-    db: Session = Depends(get_db),
-    payload: Dict[str, Any] = Depends(get_current_user_payload)
-):
-    """
-    Retrieves all customers for the logged-in user's organization.
-    Includes 'joined_at' date and calculated 'tenure'.
-    """
-    org_id = payload.get("organization_id")
+# @router.get("/customers", response_model=List[CustomerResponse], summary="Get all customers for organization")
+# def get_customers(
+#     search: Optional[str] = None,
+#     db: Session = Depends(get_db),
+#     payload: Dict[str, Any] = Depends(get_current_user_payload)
+# ):
+#     """
+#     Retrieves all customers for the logged-in user's organization.
+#     Includes 'joined_at' date and calculated 'tenure'.
+#     """
+#     org_id = payload.get("organization_id")
     
-    if not org_id:
-        raise HTTPException(status_code=400, detail="Organization ID missing.")
+#     if not org_id:
+#         raise HTTPException(status_code=400, detail="Organization ID missing.")
 
-    # Base query
-    query_str = """
-        SELECT id, first_name, last_name, email, phone, address, role, organization_id, joined_at 
-        FROM allUsers 
-        WHERE organization_id = :org_id AND role = 'customer'
-    """
+#     # Base query
+#     query_str = """
+#         SELECT id, first_name, last_name, email, phone, address, role, organization_id, joined_at 
+#         FROM allUsers 
+#         WHERE organization_id = :org_id AND role = 'customer'
+#     """
     
-    params = {"org_id": org_id}
+#     params = {"org_id": org_id}
 
-    # Add search filter if provided
-    if search:
-        search_term = f"%{search}%"
-        query_str += """
-            AND (
-                LOWER(first_name) LIKE LOWER(:search) OR 
-                LOWER(last_name) LIKE LOWER(:search) OR 
-                LOWER(email) LIKE LOWER(:search) OR 
-                phone LIKE :search
-            )
-        """
-        params["search"] = search_term
+#     # Add search filter if provided
+#     if search:
+#         search_term = f"%{search}%"
+#         query_str += """
+#             AND (
+#                 LOWER(first_name) LIKE LOWER(:search) OR 
+#                 LOWER(last_name) LIKE LOWER(:search) OR 
+#                 LOWER(email) LIKE LOWER(:search) OR 
+#                 phone LIKE :search
+#             )
+#         """
+#         params["search"] = search_term
         
-    query_str += " ORDER BY first_name ASC"
+#     query_str += " ORDER BY first_name ASC"
 
-    try:
-        results = db.execute(text(query_str), params).fetchall()
+#     try:
+#         results = db.execute(text(query_str), params).fetchall()
         
-        response = []
-        for row in results:
-            # --- CALCULATE TENURE HERE ---
-            tenure_str = calculate_tenure(row.joined_at)
+#         response = []
+#         for row in results:
+#             # --- CALCULATE TENURE HERE ---
+#             tenure_str = calculate_tenure(row.joined_at)
             
-            response.append(CustomerResponse(
-                id=row.id,
-                first_name=row.first_name,
-                last_name=row.last_name,
-                email=row.email,
-                phone=row.phone or "",
-                address=row.address,
-                role=row.role,
-                organization_id=row.organization_id,
+#             response.append(CustomerResponse(
+#                 id=row.id,
+#                 first_name=row.first_name,
+#                 last_name=row.last_name,
+#                 email=row.email,
+#                 phone=row.phone or "",
+#                 address=row.address,
+#                 role=row.role,
+#                 organization_id=row.organization_id,
                 
-                # --- NEW FIELDS MAPPED ---
-                joined_at=row.joined_at, 
-                tenure=tenure_str
-            ))
+#                 # --- NEW FIELDS MAPPED ---
+#                 joined_at=row.joined_at, 
+#                 tenure=tenure_str
+#             ))
             
-        return response
+#         return response
 
-    except Exception as e:
-        print(f"Error fetching customers: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch customers.")
+#     except Exception as e:
+#         print(f"Error fetching customers: {e}")
+#         raise HTTPException(status_code=500, detail="Failed to fetch customers.")
         
         
 # Route name: use plural to match frontend (/register-customers)

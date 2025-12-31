@@ -371,6 +371,8 @@ class CustomerResponse(BaseModel):
     last_visit_date: Optional[datetime] = None
     
     tenure: Optional[str] = "Prospect"
+    phone: str
+
     
 class CustomerUpdate(BaseModel):
     first_name: str
