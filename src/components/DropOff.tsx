@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Plus, Search, Trash2, User, Phone, Calendar, Grid, List, Shirt,
-  Image as LucideImage, Mail, Printer, PenTool, Loader2, Settings
+  Image as LucideImage, Mail, Printer, PenTool, Loader2, Settings,
+  Calculator, DollarSign
 } from 'lucide-react';
 import axios from "axios";
 import baseURL from "../lib/config";
@@ -228,6 +229,9 @@ export default function DropOff() {
 
   const [specialInstructions, setSpecialInstructions] = useState('');
   const [paidAmount, setPaidAmount] = useState<number>(0);
+  // NEW: State for the actual cash/amount tendered by user for change calc
+  const [tenderedAmount, setTenderedAmount] = useState<string>('');
+
   const [pickupDate, setPickupDate] = useState<string>(new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().substring(0, 16));
   const [showNewCustomerForm, setShowNewCustomerForm] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -361,6 +365,7 @@ export default function DropOff() {
     setSelectedTicketIndex(null);
     setSpecialInstructions('');
     setPaidAmount(0);
+    setTenderedAmount('');
     setCustomerSearch('');
     setCustomers([]);
     setPickupDate(new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().substring(0, 16));
@@ -1121,16 +1126,70 @@ export default function DropOff() {
             />
           </div>
 
-          <div className="mb-6">
-            <label className="block text-gray-700 font-medium mb-2">Amount Paid Today ($)</label>
-            <input
-              type="number"
-              step="0.01"
-              value={paidAmount}
-              onChange={(e) => setPaidAmount(parseFloat(e.target.value))}
-              className="w-full px-3 py-2 border rounded-lg font-mono"
-            />
+          {/* --- NEW PAYMENT & CHANGE CALCULATOR SECTION --- */}
+          <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mb-6">
+            <div className="flex items-center gap-2 mb-3 border-b pb-2 border-gray-200">
+              <Calculator className="w-5 h-5 text-gray-600" />
+              <h4 className="font-bold text-gray-800">Payment & Change Calculator</h4>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Total Due Display */}
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">Total Due</label>
+                <div className="text-3xl font-extrabold text-gray-900">${finalTotal.toFixed(2)}</div>
+              </div>
+
+              {/* Amount Tendered Input */}
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">Amount Tendered (Cash Given)</label>
+                <div className="relative">
+                  <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={tenderedAmount}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setTenderedAmount(val);
+
+                      // Logic: Update recorded paidAmount but Cap at Final Total
+                      const numVal = parseFloat(val) || 0;
+                      const cappedPayment = Math.min(numVal, finalTotal);
+                      setPaidAmount(cappedPayment);
+                    }}
+                    className="w-full pl-10 pr-3 py-3 border-2 border-blue-200 rounded-lg focus:border-blue-500 focus:ring-0 font-mono text-xl font-bold text-gray-800"
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Change & Balance Display */}
+            <div className="grid grid-cols-2 gap-4 mt-4 pt-3 border-t border-gray-200">
+              {/* Change Display */}
+              <div className="bg-white p-3 rounded border border-gray-200 shadow-sm">
+                <span className="block text-xs text-gray-500 uppercase font-bold tracking-wider">Change To Return</span>
+                <span className={`block text-xl font-bold ${(parseFloat(tenderedAmount) || 0) > finalTotal ? 'text-green-600' : 'text-gray-400'}`}>
+                  ${Math.max(0, (parseFloat(tenderedAmount) || 0) - finalTotal).toFixed(2)}
+                </span>
+              </div>
+
+              {/* Remaining Balance Display */}
+              <div className="bg-white p-3 rounded border border-gray-200 shadow-sm">
+                <span className="block text-xs text-gray-500 uppercase font-bold tracking-wider">Balance Remaining</span>
+                <span className={`block text-xl font-bold ${(parseFloat(tenderedAmount) || 0) < finalTotal ? 'text-red-600' : 'text-gray-900'}`}>
+                  ${Math.max(0, finalTotal - (parseFloat(tenderedAmount) || 0)).toFixed(2)}
+                </span>
+              </div>
+            </div>
+
+            <p className="text-xs text-center text-gray-500 mt-3 italic">
+              * Payment recorded in system: <span className="font-bold">${paidAmount.toFixed(2)}</span> (Cannot exceed total)
+            </p>
           </div>
+          {/* ----------------------------------------------- */}
 
           <div className="flex gap-4">
             <button onClick={() => setStep('items')} className="flex-1 px-4 py-3 border border-gray-300 rounded-lg font-medium hover:bg-gray-50">Back to Items</button>
