@@ -47,6 +47,15 @@ class OrganizationSettingsResponse(BaseModel):
     starch_price_heavy: float = 0.0
     starch_price_extra_heavy: float = 0.0
     
+    
+class WorkerUpdate(BaseModel):
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    email: Optional[EmailStr] = None  # ✅ Added Email
+    phone: Optional[str] = None
+    role: Optional[str] = None
+    is_deactivated: Optional[bool] = None
+    
 router = APIRouter()
 
 @router.get("/workers")
@@ -57,6 +66,7 @@ async def get_all_workers(
     """
     Retrieves all workers for the organization.
     Includes 'is_deactivated' status so the UI can grey them out.
+    Excludes users with the role 'customer'.
     """
     org_id = payload.get("organization_id")
     role = payload.get("role")
@@ -75,7 +85,7 @@ async def get_all_workers(
         )
 
     try:
-        # ✅ MODIFIED: Added 'is_deactivated' to the SELECT statement
+        # ✅ MODIFIED: Added check to exclude 'customer' role
         query = text("""
             SELECT 
                 id, 
@@ -89,6 +99,7 @@ async def get_all_workers(
                 is_deactivated 
             FROM allUsers
             WHERE organization_id = :org_id
+            AND role != 'customer'
         """)
         
         results = db.execute(query, {"org_id": org_id}).fetchall()
@@ -104,6 +115,103 @@ async def get_all_workers(
             detail="Failed to fetch workers."
         )
 
+
+@router.put("/workers/{worker_id}")
+async def update_worker(
+    worker_id: str,
+    worker_data: WorkerUpdate,
+    db: Session = Depends(get_db),
+    payload: Dict[str, Any] = Depends(get_current_user_payload)
+):
+    """
+    Updates details of a specific worker.
+    - RESTRICTION: Only 'org_owner' can change the 'role' of a worker.
+    - RESTRICTION: Cannot update users with the role 'customer'.
+    """
+    org_id = payload.get("organization_id")
+    current_user_role = payload.get("role") # Renamed for clarity
+
+    if not org_id:
+        raise HTTPException(status_code=400, detail="Organization ID missing.")
+
+    # 1. General Access: Org Owners and Store Admins can enter this route
+    if current_user_role not in ["org_owner", "store_admin", "STORE_OWNER"]:
+        raise HTTPException(status_code=403, detail="Insufficient permissions.")
+
+    # ✅ NEW SECURITY CHECK: Prevent Role Escalation
+    # If the user is trying to change the 'role' field...
+    if worker_data.role is not None:
+        # ...we strictly ensure the requester is the 'org_owner'
+        if current_user_role != "org_owner":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only Organization Owners are allowed to change worker roles."
+            )
+
+    try:
+        # 2. Verify target worker exists, belongs to Org, and is NOT a customer
+        check_query = text("""
+            SELECT id FROM allUsers 
+            WHERE id = :worker_id 
+            AND organization_id = :org_id
+            AND role != 'customer'
+        """)
+        
+        target_worker = db.execute(check_query, {
+            "worker_id": worker_id, 
+            "org_id": org_id
+        }).fetchone()
+
+        if not target_worker:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Worker not found or cannot be edited."
+            )
+
+        # 3. Dynamic SQL Construction
+        update_data = worker_data.dict(exclude_unset=True)
+
+        if not update_data:
+            raise HTTPException(status_code=400, detail="No fields provided for update.")
+
+        set_clause = ", ".join([f"{key} = :{key}" for key in update_data.keys()])
+        
+        params = update_data.copy()
+        params["worker_id"] = worker_id
+
+        update_stmt = text(f"""
+            UPDATE allUsers
+            SET {set_clause}
+            WHERE id = :worker_id
+        """)
+
+        db.execute(update_stmt, params)
+        db.commit()
+
+        return {
+            "message": "Worker updated successfully", 
+            "updated_fields": list(update_data.keys())
+        }
+
+    except IntegrityError as e:
+        db.rollback()
+        if "email" in str(e.orig).lower():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This email address is already in use by another user."
+            )
+        else:
+            raise HTTPException(status_code=400, detail="Database integrity error.")
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        print("Error updating worker:", e)
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update worker."
+        )
 
 @router.get("/organizations/all")
 async def get_all_organizations(
