@@ -1703,7 +1703,7 @@ def create_ticket(
 @router.post("/tickets/bulk", status_code=status.HTTP_201_CREATED, tags=["Tickets"])
 def bulk_create_tickets(
     tickets_data: List[TicketCreateBulk],
-    background_tasks: BackgroundTasks,  # <--- Added BackgroundTasks
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     payload: Dict[str, Any] = Depends(get_current_user_payload)
 ):
@@ -1712,27 +1712,27 @@ def bulk_create_tickets(
         raise HTTPException(status_code=401, detail="Invalid token.")
 
     try:
-        # --- 1. GLOBAL TIMEZONE SETUP (Single Source of Truth) ---
+        # --- 1. GLOBAL TIMEZONE SETUP ---
         now_utc = datetime.now(timezone.utc)
         date_prefix = now_utc.strftime("%y%m%d")
 
-        # --- 2. RESOLVE CUSTOMERS (Hybrid: Phone OR ID) ---
-        # Collect inputs
+        # --- 2. RESOLVE CUSTOMERS ---
         provided_ids = {t.customer_id for t in tickets_data if t.customer_id and t.customer_id > 0}
         provided_phones = {t.customer_phone for t in tickets_data if t.customer_phone}
         
-        # Fetch matching customers
         customers_db = []
         if provided_ids or provided_phones:
+            # UPDATED: We now select 'phone' and filter by 'phone'
+            # We assume your column is named 'phone'. If it is 'mobile' or 'phone_number', change it below.
             customers_db = db.execute(text("""
-                SELECT id, first_name, last_name, email, joined_at, is_deactivated 
+                SELECT id, phone, email, joined_at, is_deactivated 
                 FROM allusers 
                 WHERE organization_id = :org_id 
                   AND role = 'customer'
                   AND (
                       id = ANY(:ids) 
                       OR 
-                      REGEXP_REPLACE(email, '[^0-9]', '', 'g') = ANY(:phones)
+                      REGEXP_REPLACE(phone, '[^0-9]', '', 'g') = ANY(:phones)
                   )
             """), {
                 "ids": list(provided_ids),
@@ -1740,13 +1740,14 @@ def bulk_create_tickets(
                 "org_id": organization_id
             }).fetchall()
         
-        # Create Lookup Maps
         id_map = {row.id: row for row in customers_db}
         phone_map = {}
         for row in customers_db:
-            # Clean DB phone to ensure matching works
-            clean_db_phone = re.sub(r'[^0-9]', '', str(row.email))
-            phone_map[clean_db_phone] = row
+            # Clean the DB phone so it matches our clean input
+            # Note: We are now using row.phone, not row.email
+            if row.phone:
+                clean_db_phone = re.sub(r'[^0-9]', '', str(row.phone))
+                phone_map[clean_db_phone] = row
 
         # --- 3. PRE-FETCH PRICES ---
         all_type_ids = set()
@@ -1774,15 +1775,12 @@ def bulk_create_tickets(
             }
 
         # --- 4. TAG CONFIG (SEQUENCE) ---
-        # Determine how many tickets need auto-generated numbers
         tickets_needing_numbers = [t for t in tickets_data if not t.ticket_number_override]
         count_needed = len(tickets_needing_numbers)
-        
         current_seq_pointer = 0
         tag_config = None
 
         if count_needed > 0:
-            # Lock the sequence row
             tag_config = db.execute(text("""
                 SELECT current_sequence FROM tag_configurations 
                 WHERE organization_id = :org_id FOR UPDATE
@@ -1790,47 +1788,36 @@ def bulk_create_tickets(
 
             if tag_config:
                 current_seq_pointer = tag_config.current_sequence
-                # Reserve the block of numbers immediately
                 db.execute(text("""
                     UPDATE tag_configurations 
                     SET current_sequence = current_sequence + :count 
                     WHERE organization_id = :org_id
                 """), {"count": count_needed, "org_id": organization_id})
-            else:
-                # Fallback: Date-based logic (simple sequential fallback)
-                # Note: In high-volume bulk, date-based lookup per row is slow. 
-                # Ideally, you should have a tag_configuration.
-                # For safety, we will just start from 0 if no config exists, or handle logic per row.
-                pass
 
         # --- 5. PROCESS TICKETS ---
         audit_logs_to_queue = []
         loyalty_ids_to_update = set()
-        
-        # We will collect all items for a single bulk insert at the end
         all_items_to_insert = []
 
         for ticket_req in tickets_data:
             
             # A. RESOLVE CUSTOMER
             final_customer = None
-            
-            # Try ID
             if ticket_req.customer_id and ticket_req.customer_id > 0:
                 final_customer = id_map.get(ticket_req.customer_id)
-            # Try Phone
             elif ticket_req.customer_phone:
                 input_phone = re.sub(r'[^0-9]', '', str(ticket_req.customer_phone))
                 final_customer = phone_map.get(input_phone)
             
             if not final_customer:
-                # Fail the whole batch, or skip? usually fail is safer for data integrity
-                raise HTTPException(status_code=404, detail=f"Customer not found (ID: {ticket_req.customer_id} / Phone: {ticket_req.customer_phone})")
+                logger.warning(f"Customer Missing - ID: {ticket_req.customer_id}, Phone: {ticket_req.customer_phone}")
+                # Helpful error message including the cleaned phone we looked for
+                cleaned_input = re.sub(r'[^0-9]', '', str(ticket_req.customer_phone or ''))
+                raise HTTPException(status_code=404, detail=f"Customer not found (Phone: {cleaned_input}). Ensure the number exists in the 'phone' column for this Organization.")
 
             if final_customer.is_deactivated:
-                raise HTTPException(status_code=400, detail=f"Customer {final_customer.first_name} is deactivated.")
+                raise HTTPException(status_code=400, detail=f"Customer {final_customer.email} is deactivated.")
 
-            # Loyalty Trigger Check
             if final_customer.joined_at is None:
                 loyalty_ids_to_update.add(final_customer.id)
 
@@ -1842,8 +1829,6 @@ def bulk_create_tickets(
                     final_ticket_number = str(current_seq_pointer)
                     current_seq_pointer += 1
                 else:
-                    # Fallback if no tag config (Date prefix)
-                    # NOTE: This is slow inside a loop, but necessary if no config
                     latest_ticket = db.execute(text("SELECT ticket_number FROM tickets WHERE ticket_number LIKE :prefix AND organization_id = :org_id ORDER BY created_at DESC LIMIT 1"), 
                                              {"prefix": f"{date_prefix}-%", "org_id": organization_id}).fetchone()
                     last_seq = int(latest_ticket[0].split('-')[-1]) if latest_ticket else 0
@@ -1856,46 +1841,40 @@ def bulk_create_tickets(
             else:
                 pickup_date_utc = pickup_date_utc.astimezone(timezone.utc)
 
-            # D. CALCULATE ITEMS & TOTALS
+            # D. CALCULATE ITEMS
             ticket_total = decimal.Decimal('0.00')
             temp_items = []
 
             for item_req in ticket_req.items:
                 quantity = decimal.Decimal(str(item_req.quantity))
                 
-                # --- LOGIC BRANCH: CUSTOM VS STANDARD ---
+                # Pricing Logic
                 if item_req.clothing_type_id is None:
-                    # Custom Item
                     if not item_req.unit_price or not item_req.custom_name:
                          raise HTTPException(status_code=400, detail="Custom items require name and price.")
-                    
                     clothing_name = item_req.custom_name
                     plant_price = decimal.Decimal(str(item_req.unit_price))
-                    margin_input = getattr(item_req, 'margin', 0.0)
-                    margin = decimal.Decimal(str(margin_input))
+                    margin = decimal.Decimal(str(getattr(item_req, 'margin', 0.0)))
                     base_wash_price = plant_price + margin
                 else:
-                    # Standard Item
                     if item_req.clothing_type_id not in type_prices:
                         raise HTTPException(status_code=400, detail=f"Invalid Type ID {item_req.clothing_type_id}")
-                    
                     prices = type_prices[item_req.clothing_type_id]
                     clothing_name = prices["name"]
                     plant_price = prices["plant_price"]
                     margin = prices["margin"]
                     base_wash_price = prices["total_price"]
 
-                # --- COMMON CALCULATION ---
+                # Extra Charges
                 alteration_charge = decimal.Decimal(str(item_req.additional_charge or 0.0))
                 instruction_charge = decimal.Decimal(str(getattr(item_req, 'instruction_charge', 0.0)))
                 starch_charge = decimal.Decimal(str(getattr(item_req, 'starch_charge', 0.0)))
                 size_charge = decimal.Decimal(str(getattr(item_req, 'size_charge', 0.0)))
-
+                
                 total_extra_charges = alteration_charge + instruction_charge + starch_charge + size_charge
 
-                # Check Behavior (Alteration Only vs Normal)
+                # Calc Item Total
                 raw_behavior = getattr(item_req, 'alteration_behavior', 'none')
-                # Handle Enum if passed, or string
                 behavior_val = raw_behavior.value if hasattr(raw_behavior, 'value') else raw_behavior
 
                 if behavior_val == 'alteration_only':
@@ -1905,11 +1884,9 @@ def bulk_create_tickets(
 
                 ticket_total += item_total_price
 
-                # Prepare Item Data (Staging)
-                # We handle Enum values carefully
+                # Safe Enum Extraction
                 raw_starch = item_req.starch_level
                 starch_val = raw_starch.value if hasattr(raw_starch, 'value') else raw_starch
-                
                 raw_size = getattr(item_req, 'clothing_size', 'standard')
                 size_val = raw_size.value if hasattr(raw_size, 'value') else raw_size
 
@@ -1934,7 +1911,6 @@ def bulk_create_tickets(
                 })
 
             # E. INSERT TICKET
-            # We insert the ticket individually to get its ID safely
             ticket_res = db.execute(text("""
                 INSERT INTO tickets (
                     ticket_number, customer_id, total_amount, rack_number, 
@@ -1955,18 +1931,18 @@ def bulk_create_tickets(
                 "special_instructions": ticket_req.special_instructions,
                 "paid_amount": decimal.Decimal(str(ticket_req.paid_amount)),
                 "pickup_date": pickup_date_utc,
-                "created_at": now_utc, # Use the global UTC time
+                "created_at": now_utc,
                 "org_id": organization_id
             }).fetchone()
 
             new_ticket_id = ticket_res[0]
 
-            # F. LINK ITEMS TO TICKET
+            # Stage items for batch insert
             for item_dict in temp_items:
                 item_dict["ticket_id"] = new_ticket_id
                 all_items_to_insert.append(item_dict)
 
-            # G. PREPARE AUDIT LOG
+            # Stage Audit Log
             audit_logs_to_queue.append({
                 "org_id": organization_id,
                 "actor_id": payload.get("id") or payload.get("user_id") or 0,
@@ -1999,27 +1975,24 @@ def bulk_create_tickets(
         # --- 7. LOYALTY UPDATES ---
         if loyalty_ids_to_update:
             db.execute(text("""
-                UPDATE users SET joined_at = :now WHERE id = ANY(:ids) AND organization_id = :org_id
+                UPDATE allusers SET joined_at = :now WHERE id = ANY(:ids) AND organization_id = :org_id
             """), {"now": now_utc, "ids": list(loyalty_ids_to_update), "org_id": organization_id})
 
         db.commit()
 
-        # --- 8. QUEUE BACKGROUND TASKS ---
-        # Note: Ensure you import create_audit_log
+        # --- 8. TRIGGER AUDIT LOGS ---
         for log_entry in audit_logs_to_queue:
             background_tasks.add_task(create_audit_log, **log_entry)
 
         return {"message": f"Successfully imported {len(tickets_data)} tickets."}
 
     except HTTPException as he:
-        # Pass through expected errors (400/401/404)
         raise he
     except Exception as e:
         db.rollback()
         logger.error(f"❌ BULK IMPORT FAILED: {str(e)}")
         traceback.print_exc(file=sys.stderr)
         raise HTTPException(status_code=500, detail=f"Database Error: {str(e)}")
-    
     
       
 @router.get("/tickets", response_model=List[TicketSummaryResponse], summary="Get all tickets for *your* organization")
