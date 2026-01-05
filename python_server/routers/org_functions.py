@@ -10,9 +10,13 @@ from datetime import date, datetime, timezone
 from sqlalchemy.exc import IntegrityError
 from dateutil.relativedelta import relativedelta
 
+import logging
+import traceback
+import sys
+import re
 
 
-
+logger = logging.getLogger("uvicorn.error")
 
 from utils.common import (
     hash_password,
@@ -1699,6 +1703,7 @@ def create_ticket(
 @router.post("/tickets/bulk", status_code=status.HTTP_201_CREATED, tags=["Tickets"])
 def bulk_create_tickets(
     tickets_data: List[TicketCreateBulk],
+    background_tasks: BackgroundTasks,  # <--- Added BackgroundTasks
     db: Session = Depends(get_db),
     payload: Dict[str, Any] = Depends(get_current_user_payload)
 ):
@@ -1707,31 +1712,43 @@ def bulk_create_tickets(
         raise HTTPException(status_code=401, detail="Invalid token.")
 
     try:
-        # --- 1. RESOLVE CUSTOMERS (BY ID OR PHONE) ---
-        
-        # Group inputs
+        # --- 1. GLOBAL TIMEZONE SETUP (Single Source of Truth) ---
+        now_utc = datetime.now(timezone.utc)
+        date_prefix = now_utc.strftime("%y%m%d")
+
+        # --- 2. RESOLVE CUSTOMERS (Hybrid: Phone OR ID) ---
+        # Collect inputs
         provided_ids = {t.customer_id for t in tickets_data if t.customer_id and t.customer_id > 0}
         provided_phones = {t.customer_phone for t in tickets_data if t.customer_phone}
         
-        # Fetch matching customers from DB
-        # We search for anyone matching the IDs OR the Phones within this Org
-        customers_db = db.execute(text("""
-            SELECT id, email, is_deactivated 
-            FROM allUsers 
-            WHERE organization_id = :org_id 
-              AND role = 'customer'
-              AND (id = ANY(:ids) OR email = ANY(:phones)) 
-        """), {
-            "ids": list(provided_ids), 
-            "phones": list(provided_phones), 
-            "org_id": organization_id
-        }).fetchall()
+        # Fetch matching customers
+        customers_db = []
+        if provided_ids or provided_phones:
+            customers_db = db.execute(text("""
+                SELECT id, first_name, last_name, email, joined_at, is_deactivated 
+                FROM allusers 
+                WHERE organization_id = :org_id 
+                  AND role = 'customer'
+                  AND (
+                      id = ANY(:ids) 
+                      OR 
+                      REGEXP_REPLACE(email, '[^0-9]', '', 'g') = ANY(:phones)
+                  )
+            """), {
+                "ids": list(provided_ids),
+                "phones": list(provided_phones), 
+                "org_id": organization_id
+            }).fetchall()
         
         # Create Lookup Maps
         id_map = {row.id: row for row in customers_db}
-        phone_map = {row.email: row for row in customers_db} # Assuming 'email' column holds phone number in your system
+        phone_map = {}
+        for row in customers_db:
+            # Clean DB phone to ensure matching works
+            clean_db_phone = re.sub(r'[^0-9]', '', str(row.email))
+            phone_map[clean_db_phone] = row
 
-        # --- 2. PRE-FETCH PRICES ---
+        # --- 3. PRE-FETCH PRICES ---
         all_type_ids = set()
         for t in tickets_data:
             for item in t.items:
@@ -1748,89 +1765,261 @@ def bulk_create_tickets(
             
             type_prices = {
                 row.id: {
-                    "name": row.name, "plant_price": decimal.Decimal(str(row.plant_price)),
-                    "margin": decimal.Decimal(str(row.margin)), "total_price": decimal.Decimal(str(row.total_price)),
+                    "name": row.name, 
+                    "plant_price": decimal.Decimal(str(row.plant_price)),
+                    "margin": decimal.Decimal(str(row.margin)), 
+                    "total_price": decimal.Decimal(str(row.total_price)),
                     "pieces": row.pieces
                 } for row in types_result
             }
 
-        # --- 3. TAG CONFIG (SEQUENCE) ---
+        # --- 4. TAG CONFIG (SEQUENCE) ---
+        # Determine how many tickets need auto-generated numbers
         tickets_needing_numbers = [t for t in tickets_data if not t.ticket_number_override]
         count_needed = len(tickets_needing_numbers)
         
-        start_seq = 0
+        current_seq_pointer = 0
         tag_config = None
-        date_prefix = datetime.now().strftime("%y%m%d")
 
         if count_needed > 0:
+            # Lock the sequence row
             tag_config = db.execute(text("""
                 SELECT current_sequence FROM tag_configurations 
                 WHERE organization_id = :org_id FOR UPDATE
             """), {"org_id": organization_id}).fetchone()
 
             if tag_config:
-                start_seq = tag_config.current_sequence
+                current_seq_pointer = tag_config.current_sequence
+                # Reserve the block of numbers immediately
                 db.execute(text("""
                     UPDATE tag_configurations 
                     SET current_sequence = current_sequence + :count 
                     WHERE organization_id = :org_id
                 """), {"count": count_needed, "org_id": organization_id})
+            else:
+                # Fallback: Date-based logic (simple sequential fallback)
+                # Note: In high-volume bulk, date-based lookup per row is slow. 
+                # Ideally, you should have a tag_configuration.
+                # For safety, we will just start from 0 if no config exists, or handle logic per row.
+                pass
 
-        # --- 4. PROCESS TICKETS ---
-        tickets_to_insert = []
+        # --- 5. PROCESS TICKETS ---
+        audit_logs_to_queue = []
+        loyalty_ids_to_update = set()
+        
+        # We will collect all items for a single bulk insert at the end
         all_items_to_insert = []
-        current_seq_pointer = start_seq
 
         for ticket_req in tickets_data:
             
-            # RESOLVE CUSTOMER ID
-            final_customer_id = None
+            # A. RESOLVE CUSTOMER
+            final_customer = None
             
-            # Case A: ID provided
+            # Try ID
             if ticket_req.customer_id and ticket_req.customer_id > 0:
-                if ticket_req.customer_id not in id_map:
-                    raise HTTPException(status_code=404, detail=f"Customer ID {ticket_req.customer_id} not found.")
-                final_customer_id = ticket_req.customer_id
-                
-            # Case B: Phone provided
+                final_customer = id_map.get(ticket_req.customer_id)
+            # Try Phone
             elif ticket_req.customer_phone:
-                if ticket_req.customer_phone not in phone_map:
-                    raise HTTPException(status_code=404, detail=f"Customer Phone {ticket_req.customer_phone} not found.")
-                final_customer_id = phone_map[ticket_req.customer_phone].id
+                input_phone = re.sub(r'[^0-9]', '', str(ticket_req.customer_phone))
+                final_customer = phone_map.get(input_phone)
             
+            if not final_customer:
+                # Fail the whole batch, or skip? usually fail is safer for data integrity
+                raise HTTPException(status_code=404, detail=f"Customer not found (ID: {ticket_req.customer_id} / Phone: {ticket_req.customer_phone})")
+
+            if final_customer.is_deactivated:
+                raise HTTPException(status_code=400, detail=f"Customer {final_customer.first_name} is deactivated.")
+
+            # Loyalty Trigger Check
+            if final_customer.joined_at is None:
+                loyalty_ids_to_update.add(final_customer.id)
+
+            # B. DETERMINE TICKET NUMBER
+            if ticket_req.ticket_number_override:
+                final_ticket_number = ticket_req.ticket_number_override
             else:
-                 raise HTTPException(status_code=400, detail="Ticket missing both Customer ID and Phone.")
+                if tag_config:
+                    final_ticket_number = str(current_seq_pointer)
+                    current_seq_pointer += 1
+                else:
+                    # Fallback if no tag config (Date prefix)
+                    # NOTE: This is slow inside a loop, but necessary if no config
+                    latest_ticket = db.execute(text("SELECT ticket_number FROM tickets WHERE ticket_number LIKE :prefix AND organization_id = :org_id ORDER BY created_at DESC LIMIT 1"), 
+                                             {"prefix": f"{date_prefix}-%", "org_id": organization_id}).fetchone()
+                    last_seq = int(latest_ticket[0].split('-')[-1]) if latest_ticket else 0
+                    final_ticket_number = f"{date_prefix}-{last_seq + 1:03d}"
 
-            # Validate Deactivation
-            if id_map[final_customer_id].is_deactivated:
-                raise HTTPException(status_code=400, detail=f"Customer {final_customer_id} is deactivated.")
+            # C. TIMEZONE NORMALIZE PICKUP DATE
+            pickup_date_utc = ticket_req.pickup_date
+            if pickup_date_utc.tzinfo is None:
+                pickup_date_utc = pickup_date_utc.replace(tzinfo=timezone.utc)
+            else:
+                pickup_date_utc = pickup_date_utc.astimezone(timezone.utc)
 
-            # ... [REST OF LOGIC IS SAME AS BEFORE: TOTALS, ITEMS, ETC] ...
-            # ... Copy the item calculation logic from previous turn ...
-            
-            # (Simplified for brevity - insert the Price Calculation Logic here)
-            total_amount = decimal.Decimal('0.00')
+            # D. CALCULATE ITEMS & TOTALS
+            ticket_total = decimal.Decimal('0.00')
             temp_items = []
-            
+
             for item_req in ticket_req.items:
-                 # ... [Insert Item Calculation Logic Here] ...
-                 # (Use code from previous response for item loop)
-                 pass 
+                quantity = decimal.Decimal(str(item_req.quantity))
+                
+                # --- LOGIC BRANCH: CUSTOM VS STANDARD ---
+                if item_req.clothing_type_id is None:
+                    # Custom Item
+                    if not item_req.unit_price or not item_req.custom_name:
+                         raise HTTPException(status_code=400, detail="Custom items require name and price.")
+                    
+                    clothing_name = item_req.custom_name
+                    plant_price = decimal.Decimal(str(item_req.unit_price))
+                    margin_input = getattr(item_req, 'margin', 0.0)
+                    margin = decimal.Decimal(str(margin_input))
+                    base_wash_price = plant_price + margin
+                else:
+                    # Standard Item
+                    if item_req.clothing_type_id not in type_prices:
+                        raise HTTPException(status_code=400, detail=f"Invalid Type ID {item_req.clothing_type_id}")
+                    
+                    prices = type_prices[item_req.clothing_type_id]
+                    clothing_name = prices["name"]
+                    plant_price = prices["plant_price"]
+                    margin = prices["margin"]
+                    base_wash_price = prices["total_price"]
 
-            # ... [Insert Logic for Sequence Number Generation] ...
-            
-            # Append to lists
-            # tickets_to_insert.append({ "customer_id": final_customer_id, ... })
+                # --- COMMON CALCULATION ---
+                alteration_charge = decimal.Decimal(str(item_req.additional_charge or 0.0))
+                instruction_charge = decimal.Decimal(str(getattr(item_req, 'instruction_charge', 0.0)))
+                starch_charge = decimal.Decimal(str(getattr(item_req, 'starch_charge', 0.0)))
+                size_charge = decimal.Decimal(str(getattr(item_req, 'size_charge', 0.0)))
 
-        # ... [Insert Tickets & Items SQL] ...
-        
+                total_extra_charges = alteration_charge + instruction_charge + starch_charge + size_charge
+
+                # Check Behavior (Alteration Only vs Normal)
+                raw_behavior = getattr(item_req, 'alteration_behavior', 'none')
+                # Handle Enum if passed, or string
+                behavior_val = raw_behavior.value if hasattr(raw_behavior, 'value') else raw_behavior
+
+                if behavior_val == 'alteration_only':
+                    item_total_price = total_extra_charges
+                else:
+                    item_total_price = (base_wash_price * quantity) + total_extra_charges
+
+                ticket_total += item_total_price
+
+                # Prepare Item Data (Staging)
+                # We handle Enum values carefully
+                raw_starch = item_req.starch_level
+                starch_val = raw_starch.value if hasattr(raw_starch, 'value') else raw_starch
+                
+                raw_size = getattr(item_req, 'clothing_size', 'standard')
+                size_val = raw_size.value if hasattr(raw_size, 'value') else raw_size
+
+                temp_items.append({
+                    "clothing_type_id": item_req.clothing_type_id,
+                    "custom_name": clothing_name if item_req.clothing_type_id is None else None,
+                    "quantity": item_req.quantity,
+                    "starch_level": starch_val,
+                    "starch_charge": float(starch_charge),
+                    "clothing_size": size_val,
+                    "size_charge": float(size_charge),
+                    "crease": item_req.crease,
+                    "alterations": item_req.alterations,
+                    "item_instructions": item_req.item_instructions,
+                    "alteration_behavior": behavior_val,
+                    "additional_charge": float(alteration_charge),
+                    "instruction_charge": float(instruction_charge),
+                    "plant_price": float(plant_price),
+                    "margin": float(margin),
+                    "item_total": float(item_total_price),
+                    "organization_id": organization_id
+                })
+
+            # E. INSERT TICKET
+            # We insert the ticket individually to get its ID safely
+            ticket_res = db.execute(text("""
+                INSERT INTO tickets (
+                    ticket_number, customer_id, total_amount, rack_number, 
+                    special_instructions, paid_amount, 
+                    pickup_date, created_at, 
+                    organization_id, status
+                ) VALUES (
+                    :ticket_number, :customer_id, :total_amount, :rack_number, 
+                    :special_instructions, :paid_amount, 
+                    :pickup_date, :created_at, 
+                    :org_id, 'received'
+                ) RETURNING id
+            """), {
+                "ticket_number": final_ticket_number,
+                "customer_id": final_customer.id,
+                "total_amount": ticket_total,
+                "rack_number": ticket_req.rack_number,
+                "special_instructions": ticket_req.special_instructions,
+                "paid_amount": decimal.Decimal(str(ticket_req.paid_amount)),
+                "pickup_date": pickup_date_utc,
+                "created_at": now_utc, # Use the global UTC time
+                "org_id": organization_id
+            }).fetchone()
+
+            new_ticket_id = ticket_res[0]
+
+            # F. LINK ITEMS TO TICKET
+            for item_dict in temp_items:
+                item_dict["ticket_id"] = new_ticket_id
+                all_items_to_insert.append(item_dict)
+
+            # G. PREPARE AUDIT LOG
+            audit_logs_to_queue.append({
+                "org_id": organization_id,
+                "actor_id": payload.get("id") or payload.get("user_id") or 0,
+                "actor_name": payload.get("sub", "Unknown"),
+                "actor_role": payload.get("role", "Unknown"),
+                "action": "CREATE_TICKET_BULK",
+                "ticket_id": new_ticket_id,
+                "customer_id": final_customer.id,
+                "details": {"item_count": len(temp_items), "total": float(ticket_total)}
+            })
+
+        # --- 6. BATCH INSERT ITEMS ---
+        if all_items_to_insert:
+            db.execute(text("""
+                INSERT INTO ticket_items (
+                    ticket_id, clothing_type_id, custom_name, quantity, 
+                    starch_level, starch_charge, 
+                    clothing_size, size_charge,
+                    crease, alterations, item_instructions, additional_charge, instruction_charge,
+                    plant_price, margin, item_total, organization_id, alteration_behavior
+                ) VALUES (
+                    :ticket_id, :clothing_type_id, :custom_name, :quantity, 
+                    :starch_level, :starch_charge, 
+                    :clothing_size, :size_charge,
+                    :crease, :alterations, :item_instructions, :additional_charge, :instruction_charge,
+                    :plant_price, :margin, :item_total, :organization_id, :alteration_behavior
+                )
+            """), all_items_to_insert)
+
+        # --- 7. LOYALTY UPDATES ---
+        if loyalty_ids_to_update:
+            db.execute(text("""
+                UPDATE users SET joined_at = :now WHERE id = ANY(:ids) AND organization_id = :org_id
+            """), {"now": now_utc, "ids": list(loyalty_ids_to_update), "org_id": organization_id})
+
         db.commit()
-        return {"message": "Success"}
 
+        # --- 8. QUEUE BACKGROUND TASKS ---
+        # Note: Ensure you import create_audit_log
+        for log_entry in audit_logs_to_queue:
+            background_tasks.add_task(create_audit_log, **log_entry)
+
+        return {"message": f"Successfully imported {len(tickets_data)} tickets."}
+
+    except HTTPException as he:
+        # Pass through expected errors (400/401/404)
+        raise he
     except Exception as e:
         db.rollback()
-        print(f"Bulk Import Error: {str(e)}")
+        logger.error(f"❌ BULK IMPORT FAILED: {str(e)}")
+        traceback.print_exc(file=sys.stderr)
         raise HTTPException(status_code=500, detail=f"Database Error: {str(e)}")
+    
     
       
 @router.get("/tickets", response_model=List[TicketSummaryResponse], summary="Get all tickets for *your* organization")
