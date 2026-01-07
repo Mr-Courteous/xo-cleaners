@@ -28,7 +28,7 @@ const createSingleTagBlock = (
   // CSS is inlined to ensure print compatibility
   // Changed width to max-width: 48mm to prevent cutoff on 55mm paper
   return `
-    <div style="${breakStyle} font-family: 'VT323', monospace; width: 100%; max-width: 40mm; margin: 0 auto; box-sizing: border-box; padding: 2px 0; overflow: hidden;">
+    <div style="${breakStyle} font-family: 'VT323', monospace; width: 100%; max-width: 45mm; margin: 0 auto; box-sizing: border-box; padding: 2px 0; overflow: hidden;">
       <div style="box-sizing:border-box;">
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px; align-items:start;">
           <div style="text-align:left;">
@@ -37,7 +37,7 @@ const createSingleTagBlock = (
           </div>
           <div style="text-align:right;">
             <div style="font-size:10pt;">${ticketId}</div>
-            <div style="font-size:${nameFontSize}; color:#000; margin-top:2px; word-wrap: break-word; line-height: 1.1;">${fullName.substring(0, 5)}</div>          </div>
+            <div style="font-size:${nameFontSize}; color:#000; margin-top:2px; word-wrap: break-word; line-height: 1.1;">${fullName.split(' ')[1]}, ${fullName.split(' ')[0].charAt(0)}</div>          </div>
         </div>
       </div>
     </div>
