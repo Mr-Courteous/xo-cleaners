@@ -26,8 +26,15 @@ export function renderPlantReceiptHtml(ticket: Ticket, organizationName: string 
   const isPaid = balance <= 0.05;
 
   const totalPieces = items.reduce((sum, item) => sum + (Number(item.quantity) * (Number(item.pieces) || 1)), 0);
-  const dateStr = new Date(ticket.created_at || Date.now()).toLocaleDateString();
-  const timeStr = new Date(ticket.created_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+let createdAt = ticket.created_at || Date.now();
+if (typeof createdAt === 'string' && !createdAt.endsWith('Z')) {
+    createdAt += 'Z';
+}
+
+const dateObj = new Date(createdAt);
+
+const dateStr = dateObj.toLocaleDateString();
+const timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   // --- ITEMS LIST ---
   const itemsHtml = items.map(item => {

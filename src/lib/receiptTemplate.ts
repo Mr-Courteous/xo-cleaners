@@ -16,11 +16,18 @@ export function renderReceiptHtml(ticket: Ticket, organizationName: string = "Yo
   const finalTotal = subtotal + envCharge + tax;
 
   const balance = finalTotal - paid;
-  const isPaid = balance <= 0.05; 
+  const isPaid = balance <= 0.05;
   const totalPieces = items.reduce((sum, item) => sum + (Number(item.quantity) * (Number(item.pieces) || 1)), 0);
-  
-  const dateStr = new Date(ticket.created_at || Date.now()).toLocaleDateString();
-  const timeStr = new Date(ticket.created_at || Date.now()).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+
+  let createdAt = ticket.created_at || Date.now();
+  if (typeof createdAt === 'string' && !createdAt.endsWith('Z')) {
+    createdAt += 'Z';
+  }
+
+  const dateObj = new Date(createdAt);
+
+  const dateStr = dateObj.toLocaleDateString();
+  const timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
   const greetingText = ticket.receipt_header ? ticket.receipt_header.replace(/\n/g, '<br>') : `Welcome!`;
   const footerText = ticket.receipt_footer ? ticket.receipt_footer.replace(/\n/g, '<br>') : `Thank you for choosing us!`;
@@ -32,24 +39,24 @@ export function renderReceiptHtml(ticket: Ticket, organizationName: string = "Yo
     const details = [];
 
     if (item.starch_level && item.starch_level !== 'none' && item.starch_level !== 'no_starch') {
-        const cost = item.starch_charge ? `(+$${Number(item.starch_charge).toFixed(2)})` : '';
-        details.push(`STARCH: ${item.starch_level.toUpperCase()} ${cost}`);
+      const cost = item.starch_charge ? `(+$${Number(item.starch_charge).toFixed(2)})` : '';
+      details.push(`STARCH: ${item.starch_level.toUpperCase()} ${cost}`);
     }
     if (item.size_charge > 0 || (item.clothing_size && item.clothing_size !== 'm' && item.clothing_size !== 'standard')) {
-        const sizeName = (item.clothing_size || 'Std').toUpperCase();
-        const cost = item.size_charge ? `(+$${Number(item.size_charge).toFixed(2)})` : '';
-        details.push(`SIZE: ${sizeName} ${cost}`);
+      const sizeName = (item.clothing_size || 'Std').toUpperCase();
+      const cost = item.size_charge ? `(+$${Number(item.size_charge).toFixed(2)})` : '';
+      details.push(`SIZE: ${sizeName} ${cost}`);
     }
     if (item.crease === true || item.crease === 'true' || item.crease === 'crease') {
-        details.push('CREASE INCLUDED');
+      details.push('CREASE INCLUDED');
     }
     if (item.alterations) {
-        const cost = item.additional_charge ? `(+$${Number(item.additional_charge).toFixed(2)})` : '';
-        details.push(`ALT: ${item.alterations} ${cost}`);
+      const cost = item.additional_charge ? `(+$${Number(item.additional_charge).toFixed(2)})` : '';
+      details.push(`ALT: ${item.alterations} ${cost}`);
     }
     if (item.item_instructions) {
-        const cost = item.instruction_charge ? `(+$${Number(item.instruction_charge).toFixed(2)})` : '';
-        details.push(`NOTE: ${item.item_instructions} ${cost}`);
+      const cost = item.instruction_charge ? `(+$${Number(item.instruction_charge).toFixed(2)})` : '';
+      details.push(`NOTE: ${item.item_instructions} ${cost}`);
     }
 
     const detailsHtml = details.length > 0
@@ -128,13 +135,13 @@ export function renderReceiptHtml(ticket: Ticket, organizationName: string = "Yo
             <div>$${paid.toFixed(2)}</div> 
         </div>
 
-        ${isPaid 
-            ? `<div style="text-align:center; margin-top:12px; padding: 4px; font-weight:400; font-size: 14pt;">PAID IN FULL</div>`
-            : `<div style="display:flex; justify-content:space-between; font-weight:400; margin-top:8px; font-size:8pt; padding: 6px 0;"> 
+        ${isPaid
+      ? `<div style="text-align:center; margin-top:12px; padding: 4px; font-weight:400; font-size: 14pt;">PAID IN FULL</div>`
+      : `<div style="display:flex; justify-content:space-between; font-weight:400; margin-top:8px; font-size:8pt; padding: 6px 0;"> 
                  <div>BALANCE:</div> 
                  <div>$${balance.toFixed(2)}</div> 
                </div>`
-        }
+    }
       </div>
       
       <div style="margin-top:15px; text-align:center;">
