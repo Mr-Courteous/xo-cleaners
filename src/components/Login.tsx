@@ -111,6 +111,7 @@ const LoginPage: React.FC = () => {
       });
 
       const data = await response.json();
+      
 
       if (response.ok) {
         const {
@@ -131,10 +132,12 @@ const LoginPage: React.FC = () => {
         setMessage("Login successful! Redirecting...");
         setMessageType("success");
         console.log(data)
+        
 
         setTimeout(() => {
           const destination = getRouteByRole(user_role);
           navigate(destination);
+          window.location.reload(); // ✅ Reload to update state across app
         }, 1000);
       } else {
         let errorMsg = "Invalid email or password.";

@@ -64,6 +64,7 @@ export default function StoreOwner() {
     }
   }, [navigate]);
 
+
   useEffect(() => {
     const handleResize = () => {
       const mobile = window.innerWidth < 768;

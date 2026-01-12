@@ -60,6 +60,8 @@ const WorkersLogin: React.FC = () => {
             const destination = getRouteByRole(data.user.role);
             navigate(destination);
 
+            window.location.reload(); // ✅ Reload to update state across app
+
         } catch (err: any) {
             if (axios.isAxiosError(err) && err.response) {
                 setErrorMsg(err.response.data.detail || "An unknown error occurred.");
