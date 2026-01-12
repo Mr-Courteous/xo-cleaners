@@ -119,7 +119,7 @@ function AppContent() {
       <Route path="/services" element={<Services />} />
       <Route path="/contact" element={<Contact />} />
       <Route path="/add-worker" element={<AddWorker />} />
-      <Route path="/workers-login" element={<WorkersLogin />} />
+      <Route path="/store-worker-login" element={<WorkersLogin />} />
       <Route path="/cashier" element={<Cashier />} />
       <Route path="/customer" element={<CustomerDashboard />} />
       <Route path="/org-settings" element={<OrganizationSettings />} />
