@@ -21,6 +21,7 @@ from routers.org_functions4 import router as org_functions4_router
 from routers.customer_routes import router as customer_router
 from routers.platform_admin import router as platform_admin_router
 from routers.org_functions5 import router as org_functions5_router
+from routers.org_functions6 import router as org_functions6_router  
 
 
 import uvicorn
@@ -93,6 +94,7 @@ app.include_router(org_functions4_router)
 app.include_router(customer_router)
 app.include_router(platform_admin_router)
 app.include_router(org_functions5_router)
+app.include_router(org_functions6_router)
 
 
 @app.get("/")

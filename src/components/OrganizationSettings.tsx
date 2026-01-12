@@ -14,10 +14,11 @@ import {
   UploadCloud, // New Icon
   Package
 } from "lucide-react";
-import baseURL from "../lib/config"; 
+import baseURL from "../lib/config";
 import Header from "./Header";
 import BulkCustomerImport from "./BulkCustomerImport"; // ✅ 1. Import the component
 import BulkTicketImport from "./BulkTicketImport"; // ✅ 2. Import ticket bulk importer
+import AddBranch from "./AddBranch"; // Ensure the path matches your file structure
 
 export default function OrganizationSettings() {
   // ================= State Management =================
@@ -42,7 +43,7 @@ export default function OrganizationSettings() {
     address: "",
     phone: "",
     timezone: "UTC",
-    location_type: "Drop-off", 
+    location_type: "Drop-off",
     is_plant: false
   });
 
@@ -68,7 +69,7 @@ export default function OrganizationSettings() {
   const fetchSettings = async () => {
     try {
       const token = localStorage.getItem('accessToken');
-      const res = await axios.get(`${baseURL}/api/organizations/settings`, {
+      const res = await axios.get(`${baseURL}/api/settings`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.data) setBranding(prev => ({ ...prev, ...res.data }));
@@ -80,7 +81,7 @@ export default function OrganizationSettings() {
   const fetchBranches = async () => {
     try {
       const token = localStorage.getItem('accessToken');
-      const res = await axios.get(`${baseURL}/api/organizations/branches`, {
+      const res = await axios.get(`${baseURL}/api/branches`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setBranches(res.data);
@@ -94,7 +95,7 @@ export default function OrganizationSettings() {
     setLoading(true);
     try {
       const token = localStorage.getItem('accessToken');
-      await axios.put(`${baseURL}/api/organizations/settings`, branding, {
+      await axios.put(`${baseURL}/api/settings/branding`, branding, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setMsg({ type: 'success', text: 'Branding settings saved!' });
@@ -127,10 +128,10 @@ export default function OrganizationSettings() {
   // ================= Render =================
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      <Header />
-      
+      {/* <Header /> */}
+
       <div className="flex-1 max-w-7xl w-full mx-auto p-6">
-        
+
         {/* Page Title */}
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
@@ -142,42 +143,38 @@ export default function OrganizationSettings() {
 
         {/* Messages */}
         {msg && (
-          <div className={`mb-4 p-4 rounded-lg flex items-center gap-2 ${
-            msg.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'
-          }`}>
+          <div className={`mb-4 p-4 rounded-lg flex items-center gap-2 ${msg.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'
+            }`}>
             {msg.type === 'success' ? <CheckCircle size={20} /> : <AlertCircle size={20} />}
             {msg.text}
           </div>
         )}
 
         <div className="flex flex-col md:flex-row gap-8">
-          
+
           {/* Sidebar Navigation */}
           <nav className="w-full md:w-64 flex flex-col gap-1">
-            <button 
+            <button
               onClick={() => setActiveTab("branding")}
-              className={`text-left px-4 py-3 rounded-lg font-medium transition-colors flex items-center gap-3 ${
-                activeTab === "branding" ? "bg-blue-50 text-blue-700" : "text-gray-600 hover:bg-gray-100"
-              }`}
+              className={`text-left px-4 py-3 rounded-lg font-medium transition-colors flex items-center gap-3 ${activeTab === "branding" ? "bg-blue-50 text-blue-700" : "text-gray-600 hover:bg-gray-100"
+                }`}
             >
               <Tag size={18} /> Branding & Receipts
             </button>
-            
-            <button 
+
+            <button
               onClick={() => setActiveTab("branches")}
-              className={`text-left px-4 py-3 rounded-lg font-medium transition-colors flex items-center gap-3 ${
-                activeTab === "branches" ? "bg-blue-50 text-blue-700" : "text-gray-600 hover:bg-gray-100"
-              }`}
+              className={`text-left px-4 py-3 rounded-lg font-medium transition-colors flex items-center gap-3 ${activeTab === "branches" ? "bg-blue-50 text-blue-700" : "text-gray-600 hover:bg-gray-100"
+                }`}
             >
               <MapPin size={18} /> Locations / Branches
             </button>
 
             {/* ✅ New Tab for Imports */}
-            <button 
+            <button
               onClick={() => setActiveTab("data")}
-              className={`text-left px-4 py-3 rounded-lg font-medium transition-colors flex items-center gap-3 ${
-                activeTab === "data" ? "bg-blue-50 text-blue-700" : "text-gray-600 hover:bg-gray-100"
-              }`}
+              className={`text-left px-4 py-3 rounded-lg font-medium transition-colors flex items-center gap-3 ${activeTab === "data" ? "bg-blue-50 text-blue-700" : "text-gray-600 hover:bg-gray-100"
+                }`}
             >
               <Database size={18} /> Data & Imports
             </button>
@@ -185,138 +182,146 @@ export default function OrganizationSettings() {
 
           {/* Main Content Area */}
           <div className="flex-1 bg-white rounded-xl shadow-sm border border-gray-200 min-h-[500px]">
-            
+
             {/* --- TAB: BRANDING --- */}
             {activeTab === "branding" && (
               <div className="p-6 animate-in fade-in duration-200">
                 <h2 className="text-lg font-bold text-gray-900 mb-6 pb-2 border-b">Branding & Receipts</h2>
                 <form onSubmit={saveBranding} className="space-y-6 max-w-2xl">
-                   <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Primary Color</label>
-                        <div className="flex items-center gap-2">
-                           <input type="color" className="h-10 w-14 rounded cursor-pointer border p-1" 
-                                  value={branding.primary_color} onChange={e => setBranding({...branding, primary_color: e.target.value})} />
-                           <span className="text-sm text-gray-500">{branding.primary_color}</span>
-                        </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Primary Color</label>
+                      <div className="flex items-center gap-2">
+                        <input type="color" className="h-10 w-14 rounded cursor-pointer border p-1"
+                          value={branding.primary_color} onChange={e => setBranding({ ...branding, primary_color: e.target.value })} />
+                        <span className="text-sm text-gray-500">{branding.primary_color}</span>
                       </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Secondary Color</label>
-                        <div className="flex items-center gap-2">
-                           <input type="color" className="h-10 w-14 rounded cursor-pointer border p-1" 
-                                  value={branding.secondary_color} onChange={e => setBranding({...branding, secondary_color: e.target.value})} />
-                           <span className="text-sm text-gray-500">{branding.secondary_color}</span>
-                        </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Secondary Color</label>
+                      <div className="flex items-center gap-2">
+                        <input type="color" className="h-10 w-14 rounded cursor-pointer border p-1"
+                          value={branding.secondary_color} onChange={e => setBranding({ ...branding, secondary_color: e.target.value })} />
+                        <span className="text-sm text-gray-500">{branding.secondary_color}</span>
                       </div>
-                   </div>
+                    </div>
+                  </div>
 
-                   <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Receipt Header Message</label>
-                      <textarea rows={3} className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none" 
-                        placeholder="e.g. Thank you for choosing us!"
-                        value={branding.receipt_header || ''} onChange={e => setBranding({...branding, receipt_header: e.target.value})} />
-                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Receipt Header Message</label>
+                    <textarea rows={3} className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                      placeholder="e.g. Thank you for choosing us!"
+                      value={branding.receipt_header || ''} onChange={e => setBranding({ ...branding, receipt_header: e.target.value })} />
+                  </div>
 
-                   <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Receipt Footer Message</label>
-                      <textarea rows={3} className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none" 
-                        placeholder="e.g. No refunds after 30 days."
-                        value={branding.receipt_footer || ''} onChange={e => setBranding({...branding, receipt_footer: e.target.value})} />
-                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Receipt Footer Message</label>
+                    <textarea rows={3} className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                      placeholder="e.g. No refunds after 30 days."
+                      value={branding.receipt_footer || ''} onChange={e => setBranding({ ...branding, receipt_footer: e.target.value })} />
+                  </div>
 
-                   <button type="submit" disabled={loading} className="flex items-center gap-2 bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors font-medium">
-                      {loading ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
-                      Save Changes
-                   </button>
+                  <button type="submit" disabled={loading} className="flex items-center gap-2 bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors font-medium">
+                    {loading ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
+                    Save Changes
+                  </button>
                 </form>
               </div>
             )}
 
             {/* --- TAB: BRANCHES --- */}
+            {/* --- TAB: BRANCHES --- */}
             {activeTab === "branches" && (
               <div className="p-6 animate-in fade-in duration-200">
-                <div className="flex items-center justify-between mb-6 pb-2 border-b">
-                   <h2 className="text-lg font-bold text-gray-900">Locations</h2>
-                   <button onClick={() => setShowBranchModal(true)} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm font-medium">
-                      <Plus size={16} /> Add Branch
-                   </button>
+                <div className="mb-6 flex items-center justify-between border-b pb-4">
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-900">Branch Management</h2>
+                    <p className="text-sm text-gray-500">Register and configure new physical locations.</p>
+                  </div>
+                  {/* <button
+                    onClick={fetchBranches}
+                    className="text-sm text-blue-600 hover:underline flex items-center gap-1"
+                  >
+                    <Database size={14} /> View Existing Branches
+                  </button> */}
                 </div>
 
-                <div className="grid gap-4">
-                   {branches.length === 0 && <p className="text-gray-500 italic">No branches found.</p>}
-                   {branches.map((branch: any) => (
-                      <div key={branch.id} className="p-4 border border-gray-200 rounded-lg hover:border-blue-300 transition-colors flex justify-between items-center bg-gray-50/50">
-                         <div>
-                            <h3 className="font-bold text-gray-900">{branch.name}</h3>
-                            <div className="text-sm text-gray-500 flex items-center gap-2 mt-1">
-                               <MapPin size={14} /> {branch.address}
-                            </div>
-                         </div>
-                         <span className={`px-2 py-1 text-xs rounded-full font-medium border ${
-                           branch.location_type === 'Plant' ? 'bg-purple-100 text-purple-700 border-purple-200' : 'bg-green-100 text-green-700 border-green-200'
-                         }`}>
-                           {branch.location_type}
-                         </span>
+                {/* Directly rendering the component here */}
+                <AddBranch />
+
+                {/* Optional: Show a summary list below the form if needed */}
+                {/* <div className="mt-12">
+                  <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">
+                    Your Registered Branches ({branches.length})
+                  </h3>
+                  <div className="grid gap-3">
+                    {branches.map((branch: any) => (
+                      <div key={branch.id} className="p-3 border border-gray-100 rounded-lg flex justify-between items-center bg-gray-50/30">
+                        <span className="font-medium text-gray-700">{branch.name}</span>
+                        <span className="text-xs bg-white border px-2 py-1 rounded text-gray-500 uppercase">
+                          {branch.org_type || 'Branch'}
+                        </span>
                       </div>
-                   ))}
-                </div>
+                    ))}
+                  </div>
+                </div> */}
               </div>
             )}
 
             {/* --- ✅ TAB: DATA & IMPORTS (New) --- */}
             {activeTab === "data" && (
-               <div className="p-6 animate-in fade-in duration-200">
-                  <h2 className="text-lg font-bold text-gray-900 mb-6 pb-2 border-b">Data Management</h2>
-                  
-                  <div className="space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {/* Bulk Customer Import Card */}
-                      <div className="border border-gray-200 rounded-xl p-6 bg-gray-50/50 hover:bg-white hover:shadow-md transition-all">
-                        <div className="flex items-start gap-4">
-                          <div className="p-3 bg-blue-100 text-blue-600 rounded-lg">
-                            <UploadCloud size={24} />
-                          </div>
-                          <div>
-                            <h3 className="text-base font-bold text-gray-900">Bulk Customer Import</h3>
-                            <p className="text-sm text-gray-600 mt-1 mb-4 leading-relaxed max-w-lg">
-                              Upload multiple customers at once manually. Useful for migrating from an old system
-                              or adding a list of initial clients.
-                            </p>
-                            <button
-                             onClick={() => setShowBulkImport(true)}
-                             className="flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 hover:text-blue-600 transition-colors font-medium text-sm shadow-sm"
-                            >
-                              <Plus size={16} /> Open Import Tool
-                            </button>
-                          </div>
-                        </div>
-                      </div>
+              <div className="p-6 animate-in fade-in duration-200">
+                <h2 className="text-lg font-bold text-gray-900 mb-6 pb-2 border-b">Data Management</h2>
 
-                      {/* Bulk Ticket Import Card */}
-                      <div className="border border-gray-200 rounded-xl p-6 bg-gray-50/50 hover:bg-white hover:shadow-md transition-all">
-                        <div className="flex items-start gap-4">
-                          <div className="p-3 bg-purple-100 text-purple-600 rounded-lg">
-                            <Package size={24} />
-                          </div>
-                          <div>
-                            <h3 className="text-base font-bold text-gray-900">Bulk Ticket Import</h3>
-                            <p className="text-sm text-gray-600 mt-1 mb-4 leading-relaxed max-w-lg">
-                              Import historical tickets or migrate large ticket batches. Use the template to
-                              group items into tickets by a Ticket Ref.
-                            </p>
-                            <button
-                             onClick={() => setShowBulkTicketImport(true)}
-                             className="flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 hover:text-purple-600 transition-colors font-medium text-sm shadow-sm"
-                            >
-                              <Package size={16} /> Open Ticket Import
-                            </button>
-                          </div>
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Bulk Customer Import Card */}
+                    <div className="border border-gray-200 rounded-xl p-6 bg-gray-50/50 hover:bg-white hover:shadow-md transition-all">
+                      <div className="flex items-start gap-4">
+                        <div className="p-3 bg-blue-100 text-blue-600 rounded-lg">
+                          <UploadCloud size={24} />
+                        </div>
+                        <div>
+                          <h3 className="text-base font-bold text-gray-900">Bulk Customer Import</h3>
+                          <p className="text-sm text-gray-600 mt-1 mb-4 leading-relaxed max-w-lg">
+                            Upload multiple customers at once manually. Useful for migrating from an old system
+                            or adding a list of initial clients.
+                          </p>
+                          <button
+                            onClick={() => setShowBulkImport(true)}
+                            className="flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 hover:text-blue-600 transition-colors font-medium text-sm shadow-sm"
+                          >
+                            <Plus size={16} /> Open Import Tool
+                          </button>
                         </div>
                       </div>
                     </div>
-                     
-                     {/* Placeholder for future tools */}
-                     {/* <div className="border border-gray-200 rounded-xl p-6 bg-gray-50/50 opacity-60">
+
+                    {/* Bulk Ticket Import Card */}
+                    <div className="border border-gray-200 rounded-xl p-6 bg-gray-50/50 hover:bg-white hover:shadow-md transition-all">
+                      <div className="flex items-start gap-4">
+                        <div className="p-3 bg-purple-100 text-purple-600 rounded-lg">
+                          <Package size={24} />
+                        </div>
+                        <div>
+                          <h3 className="text-base font-bold text-gray-900">Bulk Ticket Import</h3>
+                          <p className="text-sm text-gray-600 mt-1 mb-4 leading-relaxed max-w-lg">
+                            Import historical tickets or migrate large ticket batches. Use the template to
+                            group items into tickets by a Ticket Ref.
+                          </p>
+                          <button
+                            onClick={() => setShowBulkTicketImport(true)}
+                            className="flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 hover:text-purple-600 transition-colors font-medium text-sm shadow-sm"
+                          >
+                            <Package size={16} /> Open Ticket Import
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Placeholder for future tools */}
+                  {/* <div className="border border-gray-200 rounded-xl p-6 bg-gray-50/50 opacity-60">
                         <div className="flex items-start gap-4">
                            <div className="p-3 bg-gray-200 text-gray-500 rounded-lg">
                               <Database size={24} />
@@ -330,8 +335,8 @@ export default function OrganizationSettings() {
                         </div>
                      </div> */}
 
-                  </div>
-               </div>
+                </div>
+              </div>
             )}
 
           </div>
@@ -339,40 +344,40 @@ export default function OrganizationSettings() {
       </div>
 
       {/* --- MODALS --- */}
-      
+
       {/* Branch Modal */}
       {showBranchModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
-              <h3 className="text-lg font-bold mb-4">Add New Branch</h3>
-              <form onSubmit={createBranch} className="space-y-3">
-                 <input required type="text" placeholder="Branch Name" className="w-full border p-2 rounded" 
-                    value={newBranch.name} onChange={e => setNewBranch({...newBranch, name: e.target.value})} />
-                 <input required type="text" placeholder="Address" className="w-full border p-2 rounded" 
-                    value={newBranch.address} onChange={e => setNewBranch({...newBranch, address: e.target.value})} />
-                 <input required type="text" placeholder="Phone" className="w-full border p-2 rounded" 
-                    value={newBranch.phone} onChange={e => setNewBranch({...newBranch, phone: e.target.value})} />
-                 
-                 <select className="w-full border p-2 rounded" 
-                   value={newBranch.location_type} 
-                   onChange={e => setNewBranch({...newBranch, location_type: e.target.value})}
-                 >
-                   <option value="Drop-off">Drop-off Station</option>
-                   <option value="Plant">Processing Plant</option>
-                 </select>
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
+            <h3 className="text-lg font-bold mb-4">Add New Branch</h3>
+            <form onSubmit={createBranch} className="space-y-3">
+              <input required type="text" placeholder="Branch Name" className="w-full border p-2 rounded"
+                value={newBranch.name} onChange={e => setNewBranch({ ...newBranch, name: e.target.value })} />
+              <input required type="text" placeholder="Address" className="w-full border p-2 rounded"
+                value={newBranch.address} onChange={e => setNewBranch({ ...newBranch, address: e.target.value })} />
+              <input required type="text" placeholder="Phone" className="w-full border p-2 rounded"
+                value={newBranch.phone} onChange={e => setNewBranch({ ...newBranch, phone: e.target.value })} />
 
-                 <div className="flex gap-2 pt-2">
-                   <button type="button" onClick={() => setShowBranchModal(false)} className="flex-1 border p-2 rounded hover:bg-gray-50">Cancel</button>
-                   <button type="submit" disabled={loading} className="flex-1 bg-green-600 text-white p-2 rounded hover:bg-green-700">Create</button>
-                 </div>
-              </form>
-           </div>
+              <select className="w-full border p-2 rounded"
+                value={newBranch.location_type}
+                onChange={e => setNewBranch({ ...newBranch, location_type: e.target.value })}
+              >
+                <option value="Drop-off">Drop-off Station</option>
+                <option value="Plant">Processing Plant</option>
+              </select>
+
+              <div className="flex gap-2 pt-2">
+                <button type="button" onClick={() => setShowBranchModal(false)} className="flex-1 border p-2 rounded hover:bg-gray-50">Cancel</button>
+                <button type="submit" disabled={loading} className="flex-1 bg-green-600 text-white p-2 rounded hover:bg-green-700">Create</button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 
       {/* ✅ Bulk Import Component */}
       {showBulkImport && (
-        <BulkCustomerImport 
+        <BulkCustomerImport
           onClose={() => setShowBulkImport(false)}
           onSuccess={() => setMsg({ type: 'success', text: 'Customers imported successfully!' })}
         />

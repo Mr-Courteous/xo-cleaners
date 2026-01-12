@@ -1,9 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CheckCircle, Truck, RefreshCw } from 'lucide-react';
+import { CheckCircle, Truck, RefreshCw, Eye, EyeOff } from 'lucide-react';
 import Header from './Header';
-
-
 import baseURL from "../lib/config";
 
 interface HomePageProps {
@@ -13,13 +11,17 @@ interface HomePageProps {
 const HomePage: React.FC<HomePageProps> = ({ onLoginClick }) => {
     const navigate = useNavigate();
 
+    // Form State
     const [companyName, setCompanyName] = useState('');
     const [industry, setIndustry] = useState('Dry Cleaning');
+    const [orgType, setOrgType] = useState('full_store'); // New: Defaults to Full Store
     const [adminFirstName, setAdminFirstName] = useState('');
     const [adminLastName, setAdminLastName] = useState('');
     const [companyEmail, setCompanyEmail] = useState('');
     const [adminPassword, setAdminPassword] = useState('');
     const [adminConfirmPassword, setAdminConfirmPassword] = useState('');
+    
+    // UI State
     const [showAdminPassword, setShowAdminPassword] = useState(false);
     const [message, setMessage] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -31,7 +33,6 @@ const HomePage: React.FC<HomePageProps> = ({ onLoginClick }) => {
         setIsError(false);
         setIsLoading(true);
 
-        // Validate password confirmation before submit
         if (adminPassword !== adminConfirmPassword) {
             setIsError(true);
             setMessage('Passwords do not match.');
@@ -39,6 +40,7 @@ const HomePage: React.FC<HomePageProps> = ({ onLoginClick }) => {
             return;
         }
 
+        // 1️⃣ Payload now perfectly matches your backend's "OrganizationWithAdminCreate"
         const payload = {
             name: companyName.trim(),
             industry: industry.trim(),
@@ -46,6 +48,8 @@ const HomePage: React.FC<HomePageProps> = ({ onLoginClick }) => {
             admin_password: adminPassword.trim(),
             admin_first_name: adminFirstName.trim(),
             admin_last_name: adminLastName.trim(),
+            org_type: orgType,       // full_store, smart_locker, etc.
+            parent_org_id: null      // Since this is a new registration
         };
 
         try {
@@ -55,7 +59,6 @@ const HomePage: React.FC<HomePageProps> = ({ onLoginClick }) => {
                 body: JSON.stringify(payload),
             });
 
-            // Try to parse JSON safely
             const data = await response.json().catch(() => ({}));
 
             if (response.ok && response.status === 201) {
@@ -68,18 +71,16 @@ const HomePage: React.FC<HomePageProps> = ({ onLoginClick }) => {
                 setCompanyEmail('');
                 setAdminPassword('');
                 setAdminConfirmPassword('');
-                setIndustry('Dry Cleaning');
+                setOrgType('full_store');
 
-                // Redirect after delay
                 setTimeout(() => {
                     navigate('/login');
                 }, 1500);
             } else {
                 setIsError(true);
-                const errorMsg =
-                    data.detail ||
-                    data.message ||
-                    `❌ Registration failed (status ${response.status}).`;
+                // 2️⃣ Handle Backend Validation errors (Detail from Pydantic)
+                const errorDetail = Array.isArray(data.detail) ? data.detail[0]?.msg : data.detail;
+                const errorMsg = errorDetail || data.message || `❌ Registration failed.`;
                 setMessage(errorMsg);
             }
         } catch (error) {
@@ -97,7 +98,7 @@ const HomePage: React.FC<HomePageProps> = ({ onLoginClick }) => {
         { icon: RefreshCw, title: 'Real-time Status Updates', description: 'Keep staff and customers informed with instant updates on all ticket statuses.' },
     ];
 
-    const messageClasses = isError ? "text-red-600 bg-red-50" : "text-green-600 bg-green-50";
+    const messageClasses = isError ? "text-red-600 bg-red-50 border-red-200" : "text-green-600 bg-green-50 border-green-200";
 
     return (
         <div className="min-h-screen bg-gray-50 font-sans">
@@ -112,10 +113,7 @@ const HomePage: React.FC<HomePageProps> = ({ onLoginClick }) => {
                     <p className="text-xl opacity-90 mb-8 max-w-3xl mx-auto">
                         Effortlessly manage tickets, staff, racks, and customers all in one place.
                     </p>
-                    <a
-                        href="#registration"
-                        className="inline-block bg-white text-blue-600 font-bold text-lg px-10 py-4 rounded-full shadow-xl hover:bg-gray-100 transition transform hover:scale-105"
-                    >
+                    <a href="#registration" className="inline-block bg-white text-blue-600 font-bold text-lg px-10 py-4 rounded-full shadow-xl hover:bg-gray-100 transition transform hover:scale-105">
                         Get Started Free
                     </a>
                 </div>
@@ -138,18 +136,34 @@ const HomePage: React.FC<HomePageProps> = ({ onLoginClick }) => {
                     </div>
                 </div>
 
-                {/* Registration */}
+                {/* Registration Form */}
                 <div id="registration" className="py-20 bg-blue-50">
                     <div className="max-w-xl mx-auto px-4">
                         <div className="bg-white p-8 md:p-12 rounded-xl shadow-2xl">
                             <h3 className="text-3xl font-bold text-center mb-6 text-gray-900">
                                 Start Your 14-Day Free Trial
                             </h3>
-                            <p className="text-center text-gray-600 mb-8">
-                                Register your business and create the main admin account below.
-                            </p>
+                            
+                            <form onSubmit={handleRegistration} className="space-y-5">
+                                {/* 3️⃣ New: Business Model Selection */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Business Model</label>
+                                    <select
+                                        value={orgType}
+                                        onChange={(e) => setOrgType(e.target.value)}
+                                        disabled={isLoading}
+                                        className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                                    >
+                                        <option value="full_store">Full Store (Wash & Pick-up)</option>
+                                        <option value="drop_off_internal">Drop-off Point (Link to my Plant)</option>
+                                        <option value="drop_off_external">Drop-off Point (Third-party Plant)</option>
+                                        <option value="smart_locker">Smart Locker (Contactless)</option>
+                                    </select>
+                                    <p className="mt-1 text-xs text-gray-500 italic">
+                                        * Choosing Smart Locker restricts rack management features.
+                                    </p>
+                                </div>
 
-                            <form onSubmit={handleRegistration} className="space-y-6">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700">Company Name</label>
                                     <input
@@ -159,12 +173,13 @@ const HomePage: React.FC<HomePageProps> = ({ onLoginClick }) => {
                                         required
                                         disabled={isLoading}
                                         className="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg"
+                                        placeholder="Enter business name"
                                     />
                                 </div>
 
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700">Admin First Name</label>
+                                        <label className="block text-sm font-medium text-gray-700">First Name</label>
                                         <input
                                             type="text"
                                             value={adminFirstName}
@@ -175,7 +190,7 @@ const HomePage: React.FC<HomePageProps> = ({ onLoginClick }) => {
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700">Admin Last Name</label>
+                                        <label className="block text-sm font-medium text-gray-700">Last Name</label>
                                         <input
                                             type="text"
                                             value={adminLastName}
@@ -196,6 +211,7 @@ const HomePage: React.FC<HomePageProps> = ({ onLoginClick }) => {
                                         required
                                         disabled={isLoading}
                                         className="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg"
+                                        placeholder="you@company.com"
                                     />
                                 </div>
 
@@ -214,18 +230,9 @@ const HomePage: React.FC<HomePageProps> = ({ onLoginClick }) => {
                                         <button
                                             type="button"
                                             onClick={() => setShowAdminPassword(!showAdminPassword)}
-                                            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500"
-                                            aria-label={showAdminPassword ? 'Hide password' : 'Show password'}
+                                            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                                         >
-                                            {showAdminPassword ? (
-                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-5.523 0-10-4.477-10-10a9.97 9.97 0 012.02-5.786M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                                </svg>
-                                            ) : (
-                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3l18 18M4.53 4.53A10.003 10.003 0 001.5 12c0 5.523 4.477 10 10 10 2.486 0 4.767-.834 6.616-2.237M9.88 9.88a3 3 0 014.24 4.24" />
-                                                </svg>
-                                            )}
+                                            {showAdminPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                                         </button>
                                     </div>
                                 </div>
@@ -238,7 +245,6 @@ const HomePage: React.FC<HomePageProps> = ({ onLoginClick }) => {
                                         onChange={(e) => setAdminConfirmPassword(e.target.value)}
                                         required
                                         disabled={isLoading}
-                                        minLength={8}
                                         className="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg"
                                     />
                                 </div>
@@ -246,24 +252,21 @@ const HomePage: React.FC<HomePageProps> = ({ onLoginClick }) => {
                                 <button
                                     type="submit"
                                     disabled={isLoading}
-                                    className="w-full py-3 px-4 rounded-lg text-white font-semibold bg-green-600 hover:bg-green-700 disabled:opacity-50 transition"
+                                    className="w-full py-3 px-4 rounded-lg text-white font-semibold bg-green-600 hover:bg-green-700 disabled:opacity-50 transition shadow-lg"
                                 >
-                                    {isLoading ? 'Registering...' : 'Register My Company'}
+                                    {isLoading ? 'Processing...' : 'Register My Company'}
                                 </button>
                             </form>
 
-                            <p className="text-center text-sm text-gray-600 mt-6">
+                            <p className="text-center text-sm text-gray-500 mt-6">
                                 Already registered?{' '}
-                                <button
-                                    onClick={() => navigate('/login')}
-                                    className="text-blue-600 hover:underline font-semibold"
-                                >
+                                <button onClick={() => navigate('/login')} className="text-blue-600 hover:underline font-semibold">
                                     Login here
                                 </button>
                             </p>
 
                             {message && (
-                                <p className={`mt-6 text-center text-sm font-medium p-3 rounded-lg ${messageClasses}`}>
+                                <p className={`mt-6 text-center text-sm font-medium p-3 rounded-lg border ${messageClasses}`}>
                                     {message}
                                 </p>
                             )}

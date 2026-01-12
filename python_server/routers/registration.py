@@ -1,7 +1,7 @@
 import os
 from typing import Dict, Any, Optional  # ✅ Added this line
 from pydantic import BaseModel, EmailStr, Field
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, status, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError # <-- FIX 1A: IMPORT IntegrityError
@@ -226,57 +226,126 @@ def get_organization_id(db: Session, name: str) -> Optional[int]:
 #             detail="An unexpected error occurred during registration."
 #         )
         
+class OrganizationWithAdminCreate(BaseModel):
+    name: str
+    industry: str
+    admin_first_name: str
+    admin_last_name: str
+    admin_email: EmailStr
+    admin_password: str
+    
+    # ⬇️ ADD THESE TWO FIELDS ⬇️
+    org_type: str  # e.g., "full_store", "smart_locker", etc.
+    parent_org_id: Optional[int] = None  # Crucial for branch support
+    
 
-@router.post(
-    "/new-organization",
-    response_model=RegistrationSuccess,
-    status_code=status.HTTP_201_CREATED,
-    summary="Register a new organization and its Store Owner"
-)
-async def register_organization_and_admin(
+def setup_default_settings_and_clothing(db: Session, organization_id: int):
+    """
+    Furnishes a new organization with 500 racks, 
+    default clothing items, and branding settings.
+    """
+    # ✅ 1. Create 500 racks
+    racks = [
+        {"number": i + 1, "is_occupied": False, "organization_id": organization_id}
+        for i in range(500)
+    ]
+    db.execute(
+        text("""
+            INSERT INTO racks (number, is_occupied, organization_id)
+            VALUES (:number, :is_occupied, :organization_id)
+        """),
+        racks
+    )
+
+    # ✅ 2. Insert default clothing types (Shirt & Trousers)
+    clothing_types = [
+        {
+            "name": "Shirt",
+            "plant_price": 1000.0,
+            "margin": 200.0,
+            "image_url": "/static/images/shirt.jpg", 
+            "organization_id": organization_id
+        },
+        {
+            "name": "Trousers",
+            "plant_price": 1200.0,
+            "margin": 300.0,
+            "image_url": "/static/images/trousers.jpg",
+            "organization_id": organization_id
+        }
+    ]
+    db.execute(
+        text("""
+            INSERT INTO clothing_types
+            (name, plant_price, margin, image_url, organization_id)
+            VALUES (:name, :plant_price, :margin, :image_url, :organization_id)
+        """),
+        clothing_types
+    )
+
+    # ✅ 3. Insert Default Branding & Starch Prices
+    db.execute(text("""
+        INSERT INTO organization_settings (
+            organization_id, primary_color, secondary_color,
+            receipt_header, receipt_footer,
+            starch_price_light, starch_price_medium,
+            starch_price_heavy, starch_price_extra_heavy,
+            updated_at
+        )
+        VALUES (
+            :org_id, '#000000', '#FFFFFF',
+            'Welcome to our Store', 'Thank you for visiting!',
+            100.00, 200.00, 300.00, 400.00,
+            NOW()
+        )
+    """), {"org_id": organization_id})
+    
+@router.post("/new-organization", response_model=RegistrationSuccess, status_code=status.HTTP_201_CREATED)
+async def register_organization(
     data: OrganizationWithAdminCreate,
+    request: Request, # Add this to manually check headers
     db: Session = Depends(get_db)
 ):
-    """
-    Registers a new Organization and automatically creates:
-    - The store owner
-    - 500 racks
-    - 2 default clothing types
-    - Default organization settings (Branding & Starch Prices)
-    """
     owner_email = data.admin_email.strip().lower()
 
-    # 1️⃣ Check if organization name already exists
-    if get_organization_id(db, data.name):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Organization name '{data.name}' already exists."
-        )
+    # --- 1. SMART AUTH CHECK ---
+    effective_parent_id = None
+    auth_header = request.headers.get("Authorization")
 
-    # 2️⃣ Check if owner email exists
-    email_check = db.execute(
-        text("SELECT id FROM organizations WHERE LOWER(owner_email) = :email"),
+    if auth_header and auth_header.startswith("Bearer "):
+        try:
+            # Manually trigger your token payload logic
+            token = auth_header.split(" ")[1]
+            current_user = get_current_user_payload(token) # Your existing decoder
+            
+            # If successful, this is a BRANCH
+            effective_parent_id = current_user.get("organization_id")
+            print(f"Creating branch for parent: {effective_parent_id}")
+        except Exception:
+            # If token is invalid or expired, we treat it as a public registration
+            effective_parent_id = None
+
+    # --- 2. VALIDATION ---
+    existing_org = db.execute(
+        text("SELECT id FROM organizations WHERE owner_email = :email"),
         {"email": owner_email}
     ).fetchone()
-    if email_check:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Owner email '{data.admin_email}' already exists."
-        )
+    
+    if existing_org:
+        raise HTTPException(status_code=400, detail="Email already registered.")
 
     try:
-        # 3️⃣ Hash password
-        hashed_pw = hash_password(data.admin_password)
-
-        # 4️⃣ Insert into organizations table
+        # --- 3. DATABASE INSERT ---
         org_insert_stmt = text("""
             INSERT INTO organizations (
                 name, industry, owner_first_name, owner_last_name, 
-                owner_email, owner_password_hash, role
+                owner_email, owner_password_hash, role,
+                org_type, parent_org_id
             )
             VALUES (
                 :name, :industry, :owner_first_name, :owner_last_name, 
-                :owner_email, :owner_password_hash, 'store_owner'
+                :owner_email, :owner_password_hash, 'store_owner',
+                :org_type, :parent_org_id
             )
             RETURNING id
         """)
@@ -287,106 +356,29 @@ async def register_organization_and_admin(
             "owner_first_name": data.admin_first_name,
             "owner_last_name": data.admin_last_name,
             "owner_email": owner_email,
-            "owner_password_hash": hashed_pw,
+            "owner_password_hash": hash_password(data.admin_password),
+            "org_type": data.org_type,
+            "parent_org_id": effective_parent_id
         }).fetchone()
 
-        organization_id = org_result[0]
+        new_org_id = org_result[0]
 
-        # ✅ 5️⃣ Create 500 racks
-        racks = [
-            {"number": i + 1, "is_occupied": False, "organization_id": organization_id}
-            for i in range(500)
-        ]
-        db.execute(
-            text("""
-                INSERT INTO racks (number, is_occupied, organization_id)
-                VALUES (:number, :is_occupied, :organization_id)
-            """),
-            racks
-        )
+        # 4. Setup Default Settings and Clothing
+        setup_default_settings_and_clothing(db, new_org_id)
 
-        # ✅ 6️⃣ Insert default clothing types
-        clothing_types = [
-            {
-                "name": "Shirt",
-                "plant_price": 1000.0,
-                "margin": 200.0,
-                "image_url": "/static/images/shirt.jpg", 
-                "organization_id": organization_id
-            },
-            {
-                "name": "Trousers",
-                "plant_price": 1200.0,
-                "margin": 300.0,
-                "image_url": "/static/images/trousers.jpg",
-                "organization_id": organization_id
-            }
-        ]
-
-        db.execute(
-            text("""
-                INSERT INTO clothing_types
-                (name, plant_price, margin, image_url, organization_id)
-                VALUES (:name, :plant_price, :margin, :image_url, :organization_id)
-            """),
-            clothing_types
-        )
-
-        # ✅ 7️⃣ Insert Default Organization Settings (Branding & Starch)
-        # We insert defaults so the user doesn't start with empty settings
-        db.execute(text("""
-            INSERT INTO organization_settings (
-                organization_id,
-                primary_color,
-                secondary_color,
-                receipt_header,
-                receipt_footer,
-                starch_price_light,
-                starch_price_medium,
-                starch_price_heavy,
-                starch_price_extra_heavy,
-                updated_at
-            )
-            VALUES (
-                :org_id,
-                '#000000',              -- Default Primary
-                '#FFFFFF',              -- Default Secondary
-                'Welcome to our Store', -- Default Header
-                'Thank you for visiting!', -- Default Footer
-                100.00,                 -- Starch Light
-                200.00,                 -- Starch Medium
-                300.00,                 -- Starch Heavy
-                400.00,                 -- Starch Extra Heavy
-                NOW()
-            )
-        """), {"org_id": organization_id})
-
-        # ✅ 8️⃣ Commit all
         db.commit()
 
         return RegistrationSuccess(
-            message=f"Organization '{data.name}' registered successfully.",
-            organization_id=organization_id,
-            user_id=None,
+            message="Registered successfully.",
+            organization_id=new_org_id,
             role="STORE_OWNER"
         )
 
-    except IntegrityError as e:
-        db.rollback()
-        print(f"IntegrityError: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Duplicate data detected."
-        )
     except Exception as e:
         db.rollback()
-        print(f"Error during registration: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An unexpected error occurred."
-        )
-        
-        
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    
+    
 # In organizations.py
 
 # 1. Define a Schema that matches your Frontend form EXACTLY

@@ -48,6 +48,9 @@ class TokenResponse(BaseModel):
     organization_id: Optional[int]
     organization_name: str
     user_id: Union[int, str] # ✅ NEW: Added this field (accepts int or string)
+    org_type: str  # ✅ Add this field
+    is_branch: bool  # ✅ Add this line
+    parent_org_id: Optional[int] = None
 
 class LoginUser(BaseModel):
     id: str 
@@ -182,10 +185,21 @@ async def login_organization_owner(
 ):
     email = form_data.username.strip().lower()
 
+    # STEP 1: Fetch the organization details and the parent's name (if it exists)
     query = text("""
-        SELECT id, name, owner_email, owner_password_hash, role, is_active
-        FROM organizations
-        WHERE LOWER(owner_email) = :email
+        SELECT 
+            o.id, 
+            o.name, 
+            o.owner_email, 
+            o.owner_password_hash, 
+            o.role, 
+            o.is_active, 
+            o.parent_org_id, 
+            o.org_type,
+            p.name AS parent_name
+        FROM organizations o
+        LEFT JOIN organizations p ON o.parent_org_id = p.id
+        WHERE LOWER(o.owner_email) = :email
         LIMIT 1
     """)
     org_result = db.execute(query, {"email": email}).fetchone()
@@ -199,6 +213,7 @@ async def login_organization_owner(
 
     org = dict(org_result._mapping)
 
+    # Password Verification
     if not verify_password(form_data.password, org["owner_password_hash"]):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -209,18 +224,30 @@ async def login_organization_owner(
     if not org["is_active"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Your store has been deactivated. Please contact platform administration."
+            detail="Your store has been deactivated."
         )
 
+    # STEP 2: Logic for Organization Name Formatting
+    # If it's a branch, display as: "Parent Org Name, Branch Name"
+    is_branch = org["parent_org_id"] is not None
+    display_name = org["name"]
+    
+    if is_branch and org["parent_name"]:
+        display_name = f"{org['parent_name']}, {org['name']}"
+    
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     user_role = org.get("role", "STORE_OWNER").upper()
     
+    # STEP 3: Update Token Data
     token_data = {
         "sub": org["owner_email"],
-        "id": org["id"], # ✅ NEW: Uses Org ID as the Actor ID for this login type
+        "id": org["id"], 
         "organization_id": org["id"],
-        "organization_name": org["name"],
+        "organization_name": display_name, # ✅ Uses the combined name
         "role": user_role,
+        "is_branch": is_branch,
+        "org_type": org["org_type"],
+        "parent_org_id": org["parent_org_id"]
     }
     
     access_token = create_access_token(
@@ -228,15 +255,19 @@ async def login_organization_owner(
         expires_delta=access_token_expires,
     )
 
+    # STEP 4: Return formatted response
     return TokenResponse(
         access_token=access_token,
         user_role=user_role,
         organization_id=org["id"],
-        organization_name=org["name"],
-        user_id=org["id"], # <--- NEW: Returning Org ID as the User ID
+        organization_name=display_name, # ✅ Frontend now gets "Main Org, Branch"
+        user_id=org["id"],
+        is_branch=is_branch,
+        org_type=org["org_type"],
+        parent_org_id=org["parent_org_id"]
     )
-
-
+    
+    
 # =======================
 # 1. WORKER / STAFF LOGIN
 # =======================

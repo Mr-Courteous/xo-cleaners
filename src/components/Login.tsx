@@ -125,6 +125,8 @@ const LoginPage: React.FC = () => {
         localStorage.setItem("organizationId", String(organization_id || ""));
         localStorage.setItem("organizationName", organization_name || "");
         localStorage.setItem("userEmail", email);
+        localStorage.setItem('is_branch', data.is_branch); // saves "true" or "false"
+        localStorage.setItem('orgType', data.org_type); // ✅ Saves 'drop_off_internal' or 'full_store'
 
         setMessage("Login successful! Redirecting...");
         setMessageType("success");
