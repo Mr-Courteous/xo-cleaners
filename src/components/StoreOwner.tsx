@@ -4,13 +4,13 @@ import { jwtDecode } from "jwt-decode";
 import {
   LayoutDashboard, Menu, X, LogOut, Package, Clock, Ticket as TicketIcon,
   Users, MapPin, Shirt, Activity, Tag, Settings, BarChart3,
-  ArrowLeft, Briefcase
+  ArrowLeft, Briefcase, ArrowRight, History
 } from "lucide-react";
 
 import Header from "./Header";
 import { ColorsScope, useColors } from "../state/ColorsContext";
 
-// --- Component Imports (Assume these are correct) ---
+// --- Component Imports ---
 import DropOff from './DropOff';
 import PickUp from './PickUp';
 import TicketManagement from './TicketManagement';
@@ -19,10 +19,10 @@ import RackManagement from './RackManagement';
 import ClothingManagement from './ClothingManagement';
 import StatusManagement from './StatusManagement';
 import TagManagement from './Tag';
-import CustomerDirectory from './CustomerDirectory';
 import DashboardAnalytics from './DashboardAnalytics';
 import OrganizationSettings from "./OrganizationSettings";
 import WorkerManagement from "./WorkerManagement";
+import AuditLogTable from "./AuditLogTable";
 
 interface TokenPayload {
   sub: string;
@@ -64,7 +64,6 @@ export default function StoreOwner() {
     }
   }, [navigate]);
 
-
   useEffect(() => {
     const handleResize = () => {
       const mobile = window.innerWidth < 768;
@@ -75,14 +74,12 @@ export default function StoreOwner() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  // Logic to determine if the store is restricted to "Drop Off Only"
   const isDropOffOnly = useMemo(() => {
     if (!decodedToken?.org_type) return false;
     const type = decodedToken.org_type.toLowerCase();
     return type === "drop_off_internal" || type === "drop_off_external";
   }, [decodedToken]);
 
-  // filter menu items based on org_type
   const menuItems = useMemo(() => {
     const allItems = [
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, category: 'Main' },
@@ -100,22 +97,60 @@ export default function StoreOwner() {
     ];
 
     if (isDropOffOnly) {
-      // Exclude: racks, pickup, settings, analytics
       const restrictedIds = ['racks', 'pickup', 'settings', 'analytics'];
       return allItems.filter(item => !restrictedIds.includes(item.id));
     }
-
     return allItems;
   }, [isDropOffOnly]);
 
+  // --- RESTORED: Dashboard View with Cards and Audit Logs ---
+  const DashboardHome = () => (
+    <div className="space-y-8 animate-in fade-in duration-500">
+      {/* Overview Navigation Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {[
+          { id: 'staff', label: 'Staff Management', desc: 'Team permissions', icon: Briefcase, color: colors.primaryColor },
+          { id: 'tickets', label: 'Ticket Center', desc: 'View all orders', icon: TicketIcon, color: '#10b981' },
+          { id: 'customers', label: 'Customer Base', desc: 'Manage profiles', icon: Users, color: '#3b82f6' },
+          { id: 'analytics', label: 'Analytics', desc: 'Performance data', icon: BarChart3, color: '#f59e0b' },
+        ].map((card) => (
+          <div
+            key={card.id}
+            onClick={() => setActiveView(card.id)}
+            className="group bg-white p-6 rounded-2xl shadow-sm border border-black/5 cursor-pointer hover:shadow-md transition-all hover:-translate-y-1"
+          >
+            <div className="flex justify-between items-start mb-4">
+              <div className="p-3 rounded-xl" style={{ backgroundColor: `${card.color}15`, color: card.color }}>
+                <card.icon size={24} />
+              </div>
+              <ArrowRight size={18} className="text-gray-300 group-hover:translate-x-1 transition-transform" />
+            </div>
+            <h3 className="font-bold text-gray-800">{card.label}</h3>
+            <p className="text-xs text-gray-500 mt-1">{card.desc}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Audit Log Section */}
+      <div className="bg-white rounded-2xl shadow-sm border border-black/5 overflow-hidden">
+        <div className="px-6 py-4 border-b border-black/5 flex items-center gap-2 bg-gray-50/50">
+          <History size={18} className="text-gray-400" />
+          <h3 className="font-bold text-gray-800">System Activity Audit</h3>
+        </div>
+        <div className="p-4">
+           <AuditLogTable />
+        </div>
+      </div>
+    </div>
+  );
+
   const renderContent = () => {
-    // Basic Security: prevent access to restricted views via internal state
     if (isDropOffOnly && ['racks', 'pickup', 'settings', 'analytics'].includes(activeView)) {
-      return <DashboardAnalytics />;
+      return <AuditLogTable />;
     }
 
     switch (activeView) {
-      case 'dashboard': return <DashboardAnalytics />;
+      case 'dashboard': return <DashboardHome />;
       case 'dropoff': return <DropOff />;
       case 'pickup': return <PickUp />;
       case 'tickets': return <TicketManagement />;
@@ -137,7 +172,7 @@ export default function StoreOwner() {
     <ColorsScope>
       <div className="flex h-screen font-sans text-gray-900 overflow-hidden" style={{ backgroundColor: `${colors.primaryColor}12` }}>
         
-        {/* SIDEBAR */}
+        {/* SIDEBAR - STRICTLY FOLLOWING YOUR STYLE */}
         <aside
           className={`fixed inset-y-0 left-0 z-30 flex flex-col transition-all duration-300 border-r border-black/5 ${isSidebarOpen ? 'w-72' : 'w-20'}`}
           style={{ backgroundColor: `${colors.primaryColor}10` }}
@@ -190,7 +225,7 @@ export default function StoreOwner() {
           </div>
         </aside>
 
-        {/* MAIN CONTENT */}
+        {/* MAIN CONTENT AREA */}
         <div className={`flex-1 flex flex-col transition-all duration-300 ${isSidebarOpen ? 'ml-72' : 'ml-20'}`}>
           <Header />
           <header className="h-16 bg-white/40 backdrop-blur-md border-b border-black/5 flex items-center justify-between px-8 sticky top-0 z-20">
@@ -206,7 +241,7 @@ export default function StoreOwner() {
             </div>
             <div className="flex items-center gap-3">
               <div className="hidden md:block text-right">
-                <p className="text-xs font-black text-gray-400 uppercase tracking-widest">{decodedToken.org_type.replace(/_/g, ' ')}</p>
+                <p className="text-xs font-black text-gray-400 uppercase tracking-widest leading-none mb-1">{decodedToken.org_type.replace(/_/g, ' ')}</p>
                 <p className="text-sm font-bold">{decodedToken.organization_name}</p>
               </div>
               <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-black shadow-lg" style={{ backgroundColor: colors.primaryColor }}>
