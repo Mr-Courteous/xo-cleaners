@@ -155,7 +155,7 @@ const HomePage: React.FC<HomePageProps> = ({ onLoginClick }) => {
                                         className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 outline-none"
                                     >
                                         <option value="full_store">Full Store (Wash & Pick-up)</option>
-                                        <option value="drop_off_internal">Drop-off Point (Link to my Plant)</option>
+                                        {/* <option value="drop_off_internal">Drop-off Point (Link to my Plant)</option> */}
                                         <option value="drop_off_external">Drop-off Point (Third-party Plant)</option>
                                         <option value="smart_locker">Smart Locker (Contactless)</option>
                                     </select>
