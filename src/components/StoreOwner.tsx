@@ -23,6 +23,7 @@ import DashboardAnalytics from './DashboardAnalytics';
 import OrganizationSettings from "./OrganizationSettings";
 import WorkerManagement from "./WorkerManagement";
 import AuditLogTable from "./AuditLogTable";
+import Footer from "./Footer";
 
 interface TokenPayload {
   sub: string;
@@ -255,7 +256,10 @@ export default function StoreOwner() {
               {renderContent()}
             </div>
           </main>
+
+          <Footer />
         </div>
+        
       </div>
     </ColorsScope>
   );

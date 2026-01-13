@@ -7,6 +7,7 @@ import { Ticket } from '../types';
 import axios from 'axios';
 import baseURL from '../lib/config';
 import PrintPreviewModal from './PrintPreviewModal';
+import { useColors } from '../state/ColorsContext';
 
 // --- Imports for Template Generation ---
 import renderPickupReceiptHtml from '../lib/pickupReceiptTemplate';
@@ -37,6 +38,7 @@ interface CustomerCheckoutProfile {
 type Step = 'search' | 'details' | 'payment';
 
 export default function PickUp() {
+  const { colors } = useColors();
   const [step, setStep] = useState<Step>('search');
   const [searchQuery, setSearchQuery] = useState('');
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -286,7 +288,8 @@ export default function PickUp() {
             <button
               type="submit"
               disabled={loading}
-              className="absolute right-2 top-2 bottom-2 px-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium transition-colors disabled:opacity-50"
+              className="absolute right-2 top-2 bottom-2 px-4 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
+              style={{ backgroundColor: colors.primaryColor }}
             >
               {loading ? 'Searching...' : 'Search'}
             </button>
@@ -302,7 +305,7 @@ export default function PickUp() {
                   className="flex justify-between items-center p-4 bg-white hover:bg-indigo-50 border border-gray-100 hover:border-indigo-200 rounded-xl cursor-pointer transition-all shadow-sm hover:shadow-md group"
                 >
                   <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold shadow-sm">
+                    <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold shadow-sm" style={{ backgroundColor: colors.primaryColor, color: '#fff' }}>
                       {ticket.ticket_number.split('-').pop()}
                     </div>
                     <div>
@@ -419,7 +422,8 @@ export default function PickUp() {
                 </button>
                 <button
                   onClick={proceedToPayment}
-                  className="flex-1 px-4 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 font-bold shadow-lg shadow-indigo-200 transition-all transform hover:-translate-y-0.5"
+                  className="flex-1 px-4 py-3 text-white rounded-xl font-bold shadow-lg transition-all transform hover:-translate-y-0.5"
+                  style={{ backgroundColor: colors.primaryColor }}
                 >
                   Pay & Pickup
                 </button>
@@ -579,16 +583,13 @@ export default function PickUp() {
           </div>
         </div>
 
-        {/* Action Button Area - GREEN THEME */}
+        {/* Action Button Area - THEMED */}
         <div className="mt-5">
           <button
             onClick={handleCompletePickup}
             disabled={loading || !cashTendered}
-            className={`w-full py-3.5 rounded-lg text-[10px] font-bold text-white shadow transition-all active:scale-[0.98] flex justify-center items-center gap-2 uppercase tracking-widest
-              ${paymentCalc.status === 'PARTIAL'
-                ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-200/50'
-                : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/20'}
-            `}
+            className={`w-full py-3.5 rounded-lg text-[10px] font-bold text-white shadow transition-all active:scale-[0.98] flex justify-center items-center gap-2 uppercase tracking-widest`}
+            style={paymentCalc.status === 'PARTIAL' ? undefined : { backgroundColor: colors.primaryColor }}
           >
             {loading ? <Loader2 className="animate-spin" size={14} /> : (
               <>
@@ -629,24 +630,34 @@ export default function PickUp() {
         hideDefaultButton={true}
         extraActions={
           <>
-            <button
-              onClick={() => {
-                // Concatenate both receipts with a page break
-                const combined = `${printContent}<div class="page-break" style="page-break-before: always; height: 1px; display: block;"></div>${plantPrintContent}`;
-                handlePrintJob(combined);
-              }}
-              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center gap-2"
-            >
-              <Printer size={18} />
-              Print All (Cust + Plant)
-            </button>
-            <button
-              onClick={() => handlePrintJob(printContent)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
-            >
-              <Printer size={18} />
-              Print Customer Copy
-            </button>
+              <button
+                onClick={() => {
+                  // Concatenate both receipts with a page break
+                  const combined = `${printContent}<div class="page-break" style="page-break-before: always; height: 1px; display: block;"></div>${plantPrintContent}`;
+                  handlePrintJob(combined);
+                }}
+                className="px-4 py-2 text-white rounded-lg flex items-center gap-2"
+                style={{ background: `linear-gradient(90deg, ${colors.primaryColor}, ${colors.secondaryColor})` }}
+              >
+                <Printer size={18} />
+                Print All (Cust + Plant)
+              </button>
+              <button
+                onClick={() => handlePrintJob(printContent)}
+                className="px-4 py-2 text-white rounded-lg flex items-center gap-2"
+                style={{ backgroundColor: colors.primaryColor }}
+              >
+                <Printer size={18} />
+                Print Customer Copy
+              </button>
+              <button
+                onClick={() => handlePrintJob(plantPrintContent)}
+                className="px-4 py-2 text-white rounded-lg flex items-center gap-2"
+                style={{ backgroundColor: colors.secondaryColor }}
+              >
+                <Printer size={18} />
+                Print Plant Copy
+              </button>
           </>
         }
         note="Pickup processed successfully! Please select a print option."

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useColors } from '../state/ColorsContext';
 import {
   Plus, Search, Trash2, User, Phone, Calendar, Grid, List, Shirt,
   Image as LucideImage, Mail, Printer, PenTool, Loader2, Settings,
@@ -137,6 +138,7 @@ interface ClothingGridProps {
 }
 
 const ClothingGrid: React.FC<ClothingGridProps> = ({ clothingTypes, addItemByTypeId, onAddCustomItem }) => {
+  const { colors } = useColors();
   const sortedTypes = useMemo(() => {
     return [...clothingTypes].sort((a, b) => a.name.localeCompare(b.name));
   }, [clothingTypes]);
@@ -179,27 +181,23 @@ const ClothingGrid: React.FC<ClothingGridProps> = ({ clothingTypes, addItemByTyp
               </div>
             )}
             <span className="text-sm font-bold text-center mt-1 truncate w-full px-1">{type.name}</span>
-            <span className="text-xs font-bold text-blue-600 mt-1">${type.total_price.toFixed(2)}</span>
+            <span className="text-xs font-bold mt-1" style={{ color: colors.primaryColor }}>${type.total_price.toFixed(2)}</span>
           </button>
         );
       })}
 
       <button
         onClick={onAddCustomItem}
-        className={`
-          flex flex-col items-center justify-center 
-          p-2 bg-indigo-50 border-2 border-dashed border-indigo-300 rounded-xl shadow-sm 
-          hover:shadow-md hover:bg-indigo-100 hover:border-indigo-400
-          transition-all duration-200 ease-in-out
-          h-32 font-semibold text-sm 
-          active:scale-[0.98] text-indigo-700
-        `}
+        className={
+          "flex flex-col items-center justify-center p-2 rounded-xl shadow-sm transition-all duration-200 ease-in-out h-32 font-semibold text-sm active:scale-[0.98] hover:shadow-md hover:opacity-95"
+        }
+        style={{ backgroundColor: `${colors.secondaryColor}12`, border: `2px dashed ${colors.secondaryColor}33`, color: colors.secondaryColor }}
       >
-        <div className="w-10 h-10 flex items-center justify-center bg-indigo-200 rounded-full mb-2">
-          <PenTool className="w-5 h-5 text-indigo-700" />
+        <div className="w-10 h-10 flex items-center justify-center rounded-full mb-2" style={{ backgroundColor: `${colors.secondaryColor}22` }}>
+          <PenTool className="w-5 h-5" style={{ color: colors.secondaryColor }} />
         </div>
         <span className="text-sm font-bold text-center w-full px-1">Custom Item</span>
-        <span className="text-xs text-indigo-500 mt-1">Add New</span>
+        <span className="text-xs mt-1" style={{ color: colors.secondaryColor }}>{'Add New'}</span>
       </button>
     </div>
   );
@@ -208,6 +206,7 @@ const ClothingGrid: React.FC<ClothingGridProps> = ({ clothingTypes, addItemByTyp
 // --- MAIN DROPOFF COMPONENT ---
 export default function DropOff() {
   const [step, setStep] = useState<'customer' | 'items' | 'review'>('customer');
+  const { colors } = useColors();
   const [customerSearch, setCustomerSearch] = useState('');
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -692,16 +691,16 @@ export default function DropOff() {
         <h2 className="text-2xl font-bold text-gray-900">Drop Off Clothes</h2>
 
         <div className="flex items-center mt-2 space-x-4">
-          <div className={`flex items-center ${step === 'customer' ? 'text-blue-600' : 'text-gray-400'}`}>
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${step === 'customer' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100'}`}>1</div>
+          <div className={`flex items-center ${step === 'customer' ? '' : 'text-gray-400'}`} style={step === 'customer' ? { color: colors.primaryColor } : undefined}>
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${step === 'customer' ? '' : 'bg-gray-100'}`} style={step === 'customer' ? { backgroundColor: `${colors.primaryColor}12`, color: colors.primaryColor } : undefined}>1</div>
             <span className="ml-2">Customer</span>
           </div>
-          <div className={`flex items-center ${step === 'items' ? 'text-blue-600' : 'text-gray-400'}`}>
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${step === 'items' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100'}`}>2</div>
+          <div className={`flex items-center ${step === 'items' ? '' : 'text-gray-400'}`} style={step === 'items' ? { color: colors.primaryColor } : undefined}>
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${step === 'items' ? '' : 'bg-gray-100'}`} style={step === 'items' ? { backgroundColor: `${colors.primaryColor}12`, color: colors.primaryColor } : undefined}>2</div>
             <span className="ml-2">Items</span>
           </div>
-          <div className={`flex items-center ${step === 'review' ? 'text-blue-600' : 'text-gray-400'}`}>
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${step === 'review' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100'}`}>3</div>
+          <div className={`flex items-center ${step === 'review' ? '' : 'text-gray-400'}`} style={step === 'review' ? { color: colors.primaryColor } : undefined}>
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${step === 'review' ? '' : 'bg-gray-100'}`} style={step === 'review' ? { backgroundColor: `${colors.primaryColor}12`, color: colors.primaryColor } : undefined}>3</div>
             <span className="ml-2">Review</span>
           </div>
         </div>
@@ -741,7 +740,9 @@ export default function DropOff() {
                           setSelectedCustomer(customer);
                           setStep('items');
                         }}
-                        className="p-3 border border-gray-200 rounded-lg hover:bg-blue-50 cursor-pointer transition-colors"
+                        className="p-3 border border-gray-200 rounded-lg cursor-pointer transition-colors"
+                        onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.backgroundColor = `${colors.primaryColor}08`; }}
+                        onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.backgroundColor = ''; }}
                       >
                         <div className="flex items-center">
                           <User className="h-4 w-4 text-gray-400 mr-2" />
@@ -756,12 +757,12 @@ export default function DropOff() {
               )}
 
               {customerSearch.length >= 2 && customers.length === 0 && !loading && (
-                <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-                  <div className="flex items-center text-amber-800">
+                <div className="mb-4 p-4 rounded-lg" style={{ backgroundColor: `${colors.secondaryColor}12`, border: `1px solid ${colors.secondaryColor}22` }}>
+                  <div className="flex items-center" style={{ color: colors.secondaryColor }}>
                     <User className="h-5 w-5 mr-2" />
                     <span className="font-medium">No existing customer found</span>
                   </div>
-                  <p className="text-amber-700 text-sm mt-1">No customer found with "{customerSearch}". Please create a new customer below.</p>
+                  <p className="text-sm mt-1" style={{ color: colors.secondaryColor }}>{`No customer found with "${customerSearch}". Please create a new customer below.`}</p>
                 </div>
               )}
 
@@ -801,7 +802,8 @@ export default function DropOff() {
                   setNewCustomer(prefill);
                   setShowNewCustomerForm(true);
                 }}
-                className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
+                className="w-full py-2 px-4 rounded-lg hover:opacity-95 transition-colors text-white"
+                style={{ backgroundColor: colors.primaryColor }}
               >
                 Create New Customer
               </button>
@@ -855,7 +857,8 @@ export default function DropOff() {
                 </button>
                 <button
                   onClick={createCustomer}
-                  className="bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
+                  className="py-2 px-4 rounded-lg hover:opacity-95 text-white"
+                  style={{ backgroundColor: colors.primaryColor }}
                   // Allow creation when either phone OR email is present; first_name is optional (can be filled later)
                   disabled={!(newCustomer.email || newCustomer.phone)}
                 >
@@ -881,10 +884,10 @@ export default function DropOff() {
             ) : (
               <div className="space-y-2">
                 <div className="p-4 bg-white rounded-lg shadow-sm border border-gray-200">
-                  <button onClick={addItem} className="flex items-center text-blue-600 hover:text-blue-700 font-medium mb-4">
+                  <button onClick={addItem} className="flex items-center font-medium mb-4" style={{ color: colors.primaryColor }}>
                     <Plus className="h-4 w-4 mr-2" /> Add Default Item
                   </button>
-                  <button onClick={() => setShowCustomItemModal(true)} className="flex items-center text-indigo-600 hover:text-indigo-700 font-medium">
+                  <button onClick={() => setShowCustomItemModal(true)} className="flex items-center font-medium" style={{ color: colors.secondaryColor }}>
                     <PenTool className="h-4 w-4 mr-2" /> Add Custom Item
                   </button>
                 </div>
@@ -911,7 +914,7 @@ export default function DropOff() {
                     </h3>
                     {/* Show Price Hint */}
                     {selectedTicketIndex !== null && items[selectedTicketIndex]?.starch_charge > 0 && (
-                      <span className="text-[10px] text-blue-600 font-bold">
+                      <span className="text-[10px] font-bold" style={{ color: colors.primaryColor }}>
                         +${items[selectedTicketIndex].starch_charge.toFixed(2)}
                       </span>
                     )}
@@ -927,14 +930,8 @@ export default function DropOff() {
                           key={key}
                           onClick={() => handleQuickStarchUpdate(key)}
                           disabled={selectedTicketIndex === null}
-                          className={`
-                                        px-1 py-1.5 text-[9px] font-bold uppercase rounded border transition-all
-                                        ${isActive
-                              ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                              : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
-                            }
-                                        disabled:opacity-40 disabled:cursor-not-allowed
-                                    `}
+                          className={`px-1 py-1.5 text-[9px] font-bold uppercase rounded border transition-all disabled:opacity-40 disabled:cursor-not-allowed`}
+                          style={isActive ? { backgroundColor: colors.primaryColor, color: '#fff', borderColor: colors.primaryColor } : undefined}
                         >
                           {levelDisplay}
                         </button>
@@ -951,7 +948,7 @@ export default function DropOff() {
                     </h3>
                     {/* Show Price Hint */}
                     {selectedTicketIndex !== null && items[selectedTicketIndex]?.size_charge > 0 && (
-                      <span className="text-[10px] text-purple-600 font-bold">
+                      <span className="text-[10px] font-bold" style={{ color: colors.secondaryColor }}>
                         +${items[selectedTicketIndex].size_charge.toFixed(2)}
                       </span>
                     )}
@@ -966,14 +963,8 @@ export default function DropOff() {
                           key={key}
                           onClick={() => handleQuickSizeUpdate(key)}
                           disabled={selectedTicketIndex === null}
-                          className={`
-                                        px-1 py-1.5 text-[10px] font-bold uppercase rounded border transition-all
-                                        ${isActive
-                              ? 'bg-purple-600 text-white border-purple-600 shadow-sm'
-                              : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
-                            }
-                                        disabled:opacity-40 disabled:cursor-not-allowed
-                                    `}
+                          className={`px-1 py-1.5 text-[10px] font-bold uppercase rounded border transition-all disabled:opacity-40 disabled:cursor-not-allowed`}
+                          style={isActive ? { backgroundColor: colors.secondaryColor, color: '#fff', borderColor: colors.secondaryColor } : undefined}
                         >
                           {key.toUpperCase()}
                         </button>
@@ -991,19 +982,14 @@ export default function DropOff() {
                     key={index}
                     // Click to Select
                     onClick={() => setSelectedTicketIndex(index)}
-                    className={`
-                          p-2 border rounded-lg cursor-pointer transition-all duration-200
-                          ${selectedTicketIndex === index
-                        ? 'border-indigo-500 ring-1 ring-indigo-500 bg-indigo-50'
-                        : 'border-gray-200 bg-white hover:bg-gray-50'
-                      }
-                        `}
+                    className={`p-2 border rounded-lg cursor-pointer transition-all duration-200`}
+                    style={selectedTicketIndex === index ? { borderColor: colors.primaryColor, boxShadow: `0 0 0 1px ${colors.primaryColor}`, backgroundColor: `${colors.primaryColor}12` } : undefined}
                   >
                     {/* Row 1: Name and Delete */}
                     <div className="flex justify-between items-center mb-1">
                       <h4 className="font-medium text-sm text-gray-900 truncate pr-2">
                         {item.clothing_name}
-                        {item.is_custom && <span className="ml-1 text-[10px] font-bold text-indigo-600 bg-indigo-100 px-1 rounded">C</span>}
+                        {item.is_custom && <span className="ml-1 text-[10px] font-bold px-1 rounded" style={{ color: colors.secondaryColor, backgroundColor: `${colors.secondaryColor}12` }}>C</span>}
                       </h4>
                       <button onClick={(e) => removeItem(index, e)} className="text-gray-400 hover:text-red-600"><Trash2 className="h-3 w-3" /></button>
                     </div>
@@ -1026,18 +1012,13 @@ export default function DropOff() {
                         </div>
 
                         {/* Size Badge */}
-                        <span className={`
-                                    px-1.5 py-0.5 rounded text-[9px] font-bold uppercase border
-                                    ${item.clothing_size && item.clothing_size !== 'm'
-                            ? 'bg-purple-50 text-purple-700 border-purple-100'
-                            : 'bg-gray-50 text-gray-400 border-gray-200'}
-                                `}>
+                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase border`} style={item.clothing_size && item.clothing_size !== 'm' ? { backgroundColor: `${colors.secondaryColor}12`, color: colors.secondaryColor, borderColor: `${colors.secondaryColor}22` } : { backgroundColor: 'var(--tw-bg-opacity, #f9fafb)', color: '#9ca3af', borderColor: '#e5e7eb' }}>
                           {(item.clothing_size || 'M').toUpperCase()}
                         </span>
 
                         {/* Starch Badge (Only show if not None) */}
                         {item.starch_level !== 'no_starch' && (
-                          <span className="px-1.5 py-0.5 rounded text-[9px] border bg-blue-50 text-blue-700 border-blue-100">
+                          <span className="px-1.5 py-0.5 rounded text-[9px] border" style={{ backgroundColor: `${colors.primaryColor}08`, color: colors.primaryColor, borderColor: `${colors.primaryColor}14` }}>
                             {item.starch_level.replace('_', ' ').substring(0, 3).toUpperCase()}
                           </span>
                         )}
@@ -1048,7 +1029,8 @@ export default function DropOff() {
                             type="checkbox"
                             checked={item.crease === 'crease'}
                             onChange={(e) => updateItem(index, { crease: e.target.checked ? 'crease' : 'no_crease' })}
-                            className="rounded text-blue-600 w-3 h-3"
+                            className="rounded w-3 h-3"
+                            style={{ accentColor: colors.primaryColor }}
                           />
                           <span className="text-[9px] text-gray-500">Crease</span>
                         </label>
@@ -1098,7 +1080,7 @@ export default function DropOff() {
 
               <div className="mt-6 flex gap-3">
                 <button onClick={() => setStep('customer')} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Back</button>
-                <button onClick={() => setStep('review')} className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700" disabled={items.length === 0}>Review</button>
+                <button onClick={() => setStep('review')} className="flex-1 px-4 py-2 text-white rounded-lg hover:opacity-95" style={{ backgroundColor: colors.primaryColor }} disabled={items.length === 0}>Review</button>
               </div>
             </div>
           </div>
@@ -1159,7 +1141,8 @@ export default function DropOff() {
                       const cappedPayment = Math.min(numVal, finalTotal);
                       setPaidAmount(cappedPayment);
                     }}
-                    className="w-full pl-10 pr-3 py-3 border-2 border-blue-200 rounded-lg focus:border-blue-500 focus:ring-0 font-mono text-xl font-bold text-gray-800"
+                    className="w-full pl-10 pr-3 py-3 border-2 rounded-lg focus:ring-0 font-mono text-xl font-bold text-gray-800"
+                    style={{ borderColor: `${colors.primaryColor}22` }}
                     placeholder="0.00"
                   />
                 </div>
@@ -1171,7 +1154,7 @@ export default function DropOff() {
               {/* Change Display */}
               <div className="bg-white p-3 rounded border border-gray-200 shadow-sm">
                 <span className="block text-xs text-gray-500 uppercase font-bold tracking-wider">Change To Return</span>
-                <span className={`block text-xl font-bold ${(parseFloat(tenderedAmount) || 0) > finalTotal ? 'text-green-600' : 'text-gray-400'}`}>
+                <span className="block text-xl font-bold" style={(parseFloat(tenderedAmount) || 0) > finalTotal ? { color: colors.secondaryColor } : { color: '#9ca3af' }}>
                   ${Math.max(0, (parseFloat(tenderedAmount) || 0) - finalTotal).toFixed(2)}
                 </span>
               </div>
@@ -1193,7 +1176,7 @@ export default function DropOff() {
 
           <div className="flex gap-4">
             <button onClick={() => setStep('items')} className="flex-1 px-4 py-3 border border-gray-300 rounded-lg font-medium hover:bg-gray-50">Back to Items</button>
-            <button onClick={createTicket} disabled={loading} className="flex-1 px-4 py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 flex justify-center items-center">
+            <button onClick={createTicket} disabled={loading} className="flex-1 px-4 py-3 text-white rounded-lg font-medium flex justify-center items-center hover:opacity-95" style={{ backgroundColor: colors.secondaryColor }}>
               {loading ? <Loader2 className="animate-spin mr-2" /> : 'Create Ticket'}
             </button>
           </div>
@@ -1206,7 +1189,7 @@ export default function DropOff() {
         onClose={() => setModal({ ...modal, isOpen: false })}
         title={modal.title}
       >
-        {modal.type === 'success' ? <div className="text-green-600 font-medium">{modal.message}</div> : <div className="text-red-600">{modal.message}</div>}
+        {modal.type === 'success' ? <div style={{ color: colors.secondaryColor, fontWeight: 600 }}>{modal.message}</div> : <div style={{ color: '#dc2626' }}>{modal.message}</div>}
       </Modal>
 
       {/* CUSTOM ITEM MODAL */}
@@ -1264,7 +1247,8 @@ export default function DropOff() {
             <button
               onClick={handleAddCustomItem}
               disabled={!customItemForm.name || !customItemForm.price}
-              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+              className="px-4 py-2 text-white rounded-lg disabled:opacity-50 hover:opacity-95"
+              style={{ backgroundColor: colors.secondaryColor }}
             >
               Add Item
             </button>
@@ -1280,18 +1264,18 @@ export default function DropOff() {
         hideDefaultButton={true}
         extraActions={(
           <>
-            <button onClick={handlePrintCustomer} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-2">
+            <button onClick={handlePrintCustomer} className="px-4 py-2 text-white rounded flex items-center gap-2 hover:opacity-95" style={{ backgroundColor: colors.primaryColor }}>
               <Printer size={18} /> Print Customer Only
             </button>
-            <button onClick={handlePrintPlant} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 flex items-center gap-2">
+            <button onClick={handlePrintPlant} className="px-4 py-2 text-white rounded flex items-center gap-2 hover:opacity-95" style={{ backgroundColor: colors.secondaryColor }}>
               <Printer size={18} /> Print Plant Only
             </button>
             {tagHtmlState && (
-              <button onClick={handlePrintTags} className="px-4 py-2 bg-amber-600 text-white rounded hover:bg-amber-700 flex items-center gap-2">
+              <button onClick={handlePrintTags} className="px-4 py-2 text-white rounded flex items-center gap-2 hover:opacity-95" style={{ backgroundColor: colors.brandColor }}>
                 <Printer size={18} /> Print Tags Only
               </button>
             )}
-            <button onClick={handlePrintAll} className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 flex items-center gap-2">
+            <button onClick={handlePrintAll} className="px-4 py-2 text-white rounded flex items-center gap-2 hover:opacity-95" style={{ backgroundImage: `linear-gradient(to right, ${colors.primaryColor}, ${colors.secondaryColor})` }}>
               <Printer size={18} /> Print All
             </button>
           </>

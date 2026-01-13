@@ -99,6 +99,7 @@ export default function OrganizationSettings() {
         headers: { Authorization: `Bearer ${token}` }
       });
       setMsg({ type: 'success', text: 'Branding settings saved!' });
+      window.location.reload(); // ✅ Reload to apply new branding
     } catch (err) {
       setMsg({ type: 'error', text: 'Failed to save settings.' });
     } finally {

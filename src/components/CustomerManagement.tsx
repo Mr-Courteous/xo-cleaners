@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import axios from 'axios';
 import baseURL from '../lib/config';
+import { useColors } from '../state/ColorsContext';
 
 // --- TYPES ---
 interface Customer {
@@ -21,6 +22,7 @@ interface Customer {
 }
 
 export default function CustomerManagement() {
+  const { colors } = useColors();
   // --- STATE ---
   const [viewMode, setViewMode] = useState<'list' | 'create' | 'details' | 'edit'>('list');
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -277,7 +279,8 @@ export default function CustomerManagement() {
         </div>
         <button
           onClick={() => { resetForm(); setViewMode('create'); }}
-          className="flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm w-full sm:w-auto"
+          className="flex items-center justify-center px-4 py-2 text-white rounded-lg transition-colors shadow-sm w-full sm:w-auto"
+          style={{ backgroundColor: colors.primaryColor }}
         >
           <Plus className="h-5 w-5 mr-2" />
           Add Customer
@@ -291,7 +294,7 @@ export default function CustomerManagement() {
           </div>
           <input
             type="text"
-            className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm"
+            className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:ring-1 sm:text-sm"
             placeholder="Search by name, email, or phone..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -315,11 +318,11 @@ export default function CustomerManagement() {
               <li key={customer.id} className="hover:bg-blue-50 transition-colors cursor-pointer" onClick={() => handleSelectCustomer(customer)}>
                 <div className="p-4 sm:px-6 flex items-center justify-between">
                   <div className="flex items-center min-w-0 flex-1">
-                    <div className="h-10 w-10 flex-shrink-0 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold">
+                    <div className="h-10 w-10 flex-shrink-0 rounded-full flex items-center justify-center font-bold" style={{ backgroundColor: colors.primaryColor, color: '#fff' }}>
                       {(customer.first_name || customer.name || '?').charAt(0).toUpperCase()}
                     </div>
                     <div className="ml-4 truncate">
-                      <div className="text-sm font-medium text-blue-600 truncate">
+                      <div className="text-sm font-medium truncate" style={{ color: colors.primaryColor }}>
                         {customer.first_name ? `${customer.first_name} ${customer.last_name || ''}` : customer.name}
                       </div>
                       <div className="flex flex-col sm:flex-row sm:items-center text-sm text-gray-500 gap-1 sm:gap-3 mt-0.5">
@@ -331,7 +334,7 @@ export default function CustomerManagement() {
                   </div>
                   <div className="flex items-center ml-4 gap-2">
                     {customer.tenure && (
-                      <span className={`hidden sm:inline-flex px-2 py-0.5 text-xs font-semibold rounded-full ${customer.tenure === 'Prospect' ? 'bg-gray-100 text-gray-800' : 'bg-green-100 text-green-800'}`}>
+                      <span className={`hidden sm:inline-flex px-2 py-0.5 text-xs font-semibold rounded-full`} style={customer.tenure === 'Prospect' ? undefined : { backgroundColor: colors.secondaryColor + '20', color: colors.secondaryColor }}>
                         {customer.tenure}
                       </span>
                     )}
@@ -373,7 +376,7 @@ export default function CustomerManagement() {
 
         <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
           {/* Header */}
-          <div className="bg-gradient-to-r from-slate-700 to-slate-800 p-6 text-white flex justify-between items-start">
+            <div className="bg-gradient-to-r from-slate-700 to-slate-800 p-6 text-white flex justify-between items-start">
             <div className="flex items-center gap-4">
               <div className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center backdrop-blur-sm border-2 border-white/20 text-2xl font-bold">
                 {displayName?.charAt(0).toUpperCase()}

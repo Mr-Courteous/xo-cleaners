@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useColors } from '../state/ColorsContext';
 import { Search, Package, Printer, Eye } from 'lucide-react';
 import axios from 'axios';
 import baseURL from '../lib/config';
@@ -21,6 +22,7 @@ interface TicketWithItems extends Ticket {
 }
 
 export default function Tag(): JSX.Element {
+  const { colors } = useColors();
   const [searchQuery, setSearchQuery] = useState('');
   const [tickets, setTickets] = useState<Array<Ticket & { items?: Array<any> }>>([]);
   const [loading, setLoading] = useState(false);
@@ -80,13 +82,13 @@ export default function Tag(): JSX.Element {
     }
   };
 
-  const getStatusColor = (status: string) => {
+  const getStatusStyle = (status: string) => {
     switch (status) {
-      case 'dropped_off': return 'bg-amber-100 text-amber-800';
-      case 'in_process': return 'bg-blue-100 text-blue-800';
-      case 'ready': return 'bg-green-100 text-green-800';
-      case 'picked_up': return 'bg-gray-100 text-gray-800';
-      default: return 'bg-gray-100 text-gray-800';
+      case 'dropped_off': return { backgroundColor: `${colors.brandColor}12`, color: colors.brandColor };
+      case 'in_process': return { backgroundColor: `${colors.primaryColor}12`, color: colors.primaryColor };
+      case 'ready': return { backgroundColor: `${colors.secondaryColor}12`, color: colors.secondaryColor };
+      case 'picked_up': return { backgroundColor: '#f3f4f6', color: '#374151' };
+      default: return { backgroundColor: '#f3f4f6', color: '#374151' };
     }
   };
 
@@ -165,13 +167,14 @@ export default function Tag(): JSX.Element {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && searchTickets()}
-              className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg"
             />
           </div>
           <button
             onClick={searchTickets}
             disabled={loading || !searchQuery.trim()}
-            className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="px-6 py-3 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-white"
+            style={{ backgroundColor: colors.primaryColor }}
           >
             {loading ? 'Searching...' : 'Search'}
           </button>
@@ -190,7 +193,7 @@ export default function Tag(): JSX.Element {
                   <div className="flex-1">
                     <div className="flex items-center space-x-4 mb-3">
                       <span className="font-medium text-lg">#{ticket.ticket_number}</span>
-                      <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(ticket.status)}`}>
+                      <span className="px-3 py-1 rounded-full text-xs font-semibold" style={getStatusStyle(ticket.status)}>
                         {ticket.status.replace('_', ' ').toUpperCase()}
                       </span>
                     </div>
@@ -201,7 +204,7 @@ export default function Tag(): JSX.Element {
                     </div>
                     <div className="space-y-3">
                       {ticket.items?.map((item, index) => (
-                        <div key={index} className="group flex justify-between items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+                            <div key={index} className="group flex justify-between items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
                           <div>
                             <span className="text-gray-600 ml-2">×{item.quantity}</span>
                             <div className="text-sm text-gray-500 mt-1">
@@ -213,7 +216,7 @@ export default function Tag(): JSX.Element {
                           <div className="flex space-x-2">
                             <button
                               onClick={() => openTagPreview(ticket, item)}
-                              className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition-colors flex items-center"
+                              className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg transition-colors flex items-center"
                             >
                               <Eye className="h-4 w-4 mr-2" />
                               View Tag
@@ -221,7 +224,8 @@ export default function Tag(): JSX.Element {
                             
                             <button
                               onClick={() => handlePrintSingleTag(ticket, item)}
-                              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
+                              className="px-4 py-2 rounded-lg transition-colors flex items-center text-white"
+                              style={{ backgroundColor: colors.primaryColor }}
                             >
                               <Printer className="h-4 w-4 mr-2" />
                               Print Tag
@@ -229,7 +233,8 @@ export default function Tag(): JSX.Element {
                             
                             <button
                               onClick={() => handlePrintAllTags(ticket)}
-                              className="bg-amber-600 text-white px-4 py-2 rounded-lg hover:bg-amber-700 transition-colors flex items-center"
+                              className="px-4 py-2 rounded-lg transition-colors flex items-center text-white"
+                              style={{ backgroundColor: colors.brandColor }}
                             >
                               <Printer className="h-4 w-4 mr-2" />
                               Print All
@@ -264,7 +269,8 @@ export default function Tag(): JSX.Element {
         extraActions={(
           <button 
             onClick={() => handlePrintJob(printContent)}
-            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-2"
+            className="px-4 py-2 text-white rounded flex items-center gap-2 hover:opacity-95"
+            style={{ backgroundColor: colors.primaryColor }}
           >
             <Printer size={18} /> Print Tag
           </button>

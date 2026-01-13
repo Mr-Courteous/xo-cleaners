@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, User, ChevronRight, Users, UserPlus } from 'lucide-react';
+import { useColors } from '../state/ColorsContext';
 import axios from 'axios';
 import baseURL from '../lib/config';
 import CustomerProfile from './CustomerProfile';
@@ -14,6 +15,7 @@ interface CustomerSummary {
 }
 
 export default function CustomerDirectory() {
+  const { colors } = useColors();
   // --- STATE ---
   const [searchQuery, setSearchQuery] = useState('');
   const [customers, setCustomers] = useState<CustomerSummary[]>([]);
@@ -72,8 +74,8 @@ export default function CustomerDirectory() {
       {/* HEADER */}
       <div className="p-4 bg-white border-b border-gray-200">
         <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-            <Users className="text-indigo-600" size={20} />
-            Customer Directory
+          <Users size={20} style={{ color: colors.primaryColor }} />
+          Customer Directory
         </h2>
         <div className="mt-3 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4" />
@@ -109,11 +111,11 @@ export default function CustomerDirectory() {
                     
                     {/* Left: Avatar & Info */}
                     <div className="flex items-center overflow-hidden">
-                      <div className="h-10 w-10 shrink-0 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold">
+                      <div className="h-10 w-10 shrink-0 rounded-full flex items-center justify-center font-bold" style={{ backgroundColor: colors.primaryColor, color: '#fff' }}>
                         {customer.first_name.charAt(0)}
                       </div>
                       <div className="ml-3 min-w-0">
-                        <div className="text-sm font-medium text-gray-900 group-hover:text-indigo-700 truncate">
+                        <div className="text-sm font-medium text-gray-900 group-hover:text-indigo-700 truncate" style={{ color: undefined }}>
                           {customer.first_name} {customer.last_name}
                         </div>
                         <div className="flex items-center text-xs text-gray-500 gap-2 mt-0.5 truncate">
@@ -126,8 +128,7 @@ export default function CustomerDirectory() {
                     <div className="flex items-center pl-2 shrink-0">
                       <div className={`
                         px-2 py-0.5 inline-flex text-[10px] font-bold uppercase tracking-wide rounded-full 
-                        ${customer.tenure === 'Prospect' ? 'bg-gray-100 text-gray-500' : 'bg-green-50 text-green-700 border border-green-100'}
-                      `}>
+                      `} style={customer.tenure === 'Prospect' ? undefined : { backgroundColor: colors.secondaryColor + '20', color: colors.secondaryColor, border: `1px solid ${colors.secondaryColor}20` }}>
                         {customer.tenure}
                       </div>
                       <ChevronRight className="ml-2 h-4 w-4 text-gray-300 group-hover:text-indigo-400" />

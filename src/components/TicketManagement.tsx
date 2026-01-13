@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useColors } from '../state/ColorsContext';
 import { 
   Search, Package, User, Calendar, MapPin, 
   Eye, Printer, Edit3, 
@@ -22,6 +23,7 @@ interface EditableItem {
 }
 
 export default function TicketManagement() {
+  const { colors } = useColors();
   const [searchQuery, setSearchQuery] = useState('');
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
@@ -289,12 +291,14 @@ export default function TicketManagement() {
           onChange={(e) => setSearchQuery(e.target.value)}
           onKeyPress={(e) => e.key === 'Enter' && searchTickets()}
           placeholder="Search by Ticket #, Name, or Phone..."
-          className="flex-grow p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="flex-grow p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none"
+          style={{ boxShadow: undefined }}
         />
         <button 
             onClick={searchTickets} 
             disabled={loading} 
-            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400"
+            className="px-6 py-3 text-white rounded-lg disabled:bg-gray-400"
+            style={{ backgroundColor: colors.primaryColor }}
         >
           <Search className="h-5 w-5" />
         </button>
@@ -303,7 +307,7 @@ export default function TicketManagement() {
       {/* Loading State */}
       {loading && !selectedTicket && !showEditModal && (
         <div className="text-center p-6 text-gray-500">
-            <Loader2 className="h-8 w-8 animate-spin mx-auto text-blue-500" />
+            <Loader2 className="h-8 w-8 animate-spin mx-auto" style={{ color: colors.primaryColor }} />
             Loading...
         </div>
       )}
@@ -353,11 +357,11 @@ export default function TicketManagement() {
                 <div className="flex flex-col md:flex-row justify-between relative z-10">
                   <div>
                     <div className="flex items-center gap-2">
-                        <span className={`text-xl font-bold ${isVoid ? 'text-red-600 line-through' : 'text-blue-600'}`}>
-                            #{ticket.ticket_number}
+                        <span className="text-xl font-bold" style={{ color: isVoid ? '#dc2626' : colors.primaryColor, textDecoration: isVoid ? 'line-through' : undefined }}>
+                          #{ticket.ticket_number}
                         </span>
-                        {isVoid && <span className="px-2 py-0.5 text-xs font-bold text-white bg-red-600 rounded">VOID</span>}
-                        {isRefunded && <span className="px-2 py-0.5 text-xs font-bold text-white bg-purple-600 rounded">REFUNDED</span>}
+                        {isVoid && <span className="px-2 py-0.5 text-xs font-bold text-white" style={{ backgroundColor: '#dc2626', borderRadius: 6 }}>VOID</span>}
+                        {isRefunded && <span className="px-2 py-0.5 text-xs font-bold text-white" style={{ backgroundColor: colors.secondaryColor, borderRadius: 6 }}>REFUNDED</span>}
                     </div>
                     <div className="text-gray-700 mt-2 font-medium">
                         <User className="inline h-4 w-4 mr-2" />{ticket.customer_name}
@@ -379,38 +383,40 @@ export default function TicketManagement() {
                 </div>
 
                 <div className="flex justify-between items-end border-t border-gray-100 mt-4 pt-4 relative z-10">
-                  <div className="text-lg font-bold text-gray-800">Total: ${ticket.total_amount.toFixed(2)}</div>
+                    <div className="text-lg font-bold text-gray-800">Total: ${ticket.total_amount.toFixed(2)}</div>
                   <div className="flex space-x-2">
-                    <button onClick={() => openViewModal(ticket.id)} className="p-2 text-gray-500 hover:text-blue-600" title="View Details">
-                        <Eye className="h-5 w-5" />
+                    <button onClick={() => openViewModal(ticket.id)} className="p-2 text-gray-500" title="View Details">
+                        <Eye className="h-5 w-5" style={{ color: colors.primaryColor }} />
                     </button>
                     
                     {!isVoid && (
                       <>
-                        <button onClick={() => openPrintModal(ticket)} className="p-2 text-gray-500 hover:text-blue-600" title="Print">
-                            <Printer className="h-5 w-5" />
+                        <button onClick={() => openPrintModal(ticket)} className="p-2 text-gray-500" title="Print">
+                          <Printer className="h-5 w-5" style={{ color: colors.primaryColor }} />
                         </button>
-                        <button onClick={() => openEditModal(ticket)} className="p-2 text-gray-500 hover:text-green-600" title="Edit">
-                            <Edit3 className="h-5 w-5" />
+                        <button onClick={() => openEditModal(ticket)} className="p-2 text-gray-500" title="Edit">
+                          <Edit3 className="h-5 w-5" style={{ color: colors.secondaryColor }} />
                         </button>
                       </>
                     )}
 
                     <button 
-                        onClick={() => toggleAction(ticket, 'void')} 
-                        className={`p-2 ${isVoid ? 'text-green-600 hover:text-green-800 bg-green-50' : 'text-gray-500 hover:text-red-600'}`} 
-                        title={isVoid ? "Unvoid Ticket" : "Void Ticket"}
+                      onClick={() => toggleAction(ticket, 'void')} 
+                      className={`p-2`} 
+                      title={isVoid ? "Unvoid Ticket" : "Void Ticket"}
+                      style={isVoid ? { color: colors.secondaryColor, backgroundColor: `${colors.secondaryColor}12`, borderRadius: 6 } : { color: '#6b7280' }}
                     >
-                        {isVoid ? <RotateCcw className="h-5 w-5" /> : <Ban className="h-5 w-5" />}
+                      {isVoid ? <RotateCcw className="h-5 w-5" style={{ color: colors.secondaryColor }} /> : <Ban className="h-5 w-5" />}
                     </button>
 
                     {!isVoid && (
                         <button 
-                            onClick={() => toggleAction(ticket, 'refund')} 
-                            className={`p-2 ${isRefunded ? 'text-purple-600 hover:text-purple-800 bg-purple-50' : 'text-gray-500 hover:text-purple-600'}`} 
-                            title={isRefunded ? "Undo Refund" : "Mark as Refunded"}
+                          onClick={() => toggleAction(ticket, 'refund')} 
+                          className={`p-2`} 
+                          title={isRefunded ? "Undo Refund" : "Mark as Refunded"}
+                          style={isRefunded ? { color: colors.secondaryColor, backgroundColor: `${colors.secondaryColor}12`, borderRadius: 6 } : { color: '#6b7280' }}
                         >
-                            {isRefunded ? <DollarSign className="h-5 w-5" /> : <RefreshCcw className="h-5 w-5" />}
+                          {isRefunded ? <DollarSign className="h-5 w-5" style={{ color: colors.secondaryColor }} /> : <RefreshCcw className="h-5 w-5" />}
                         </button>
                     )}
                   </div>
@@ -470,7 +476,7 @@ export default function TicketManagement() {
                     <div className="flex justify-between items-center pt-2 border-t">
                         <div className="text-right w-full">
                             <p className="text-sm text-gray-600">Paid: ${selectedTicket.paid_amount.toFixed(2)}</p>
-                            <p className="text-xl font-bold text-blue-600">Total: ${selectedTicket.total_amount.toFixed(2)}</p>
+                            <p className="text-xl font-bold" style={{ color: colors.primaryColor }}>Total: ${selectedTicket.total_amount.toFixed(2)}</p>
                         </div>
                     </div>
                 </div>
@@ -527,11 +533,12 @@ export default function TicketManagement() {
                         Cancel
                     </button>
                     <button 
-                        onClick={handleSaveEdits} 
-                        disabled={loading}
-                        className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+                      onClick={handleSaveEdits} 
+                      disabled={loading}
+                      className="px-4 py-2 text-white rounded disabled:opacity-50"
+                      style={{ backgroundColor: colors.secondaryColor }}
                     >
-                        {loading ? 'Saving...' : 'Save Changes'}
+                      {loading ? 'Saving...' : 'Save Changes'}
                     </button>
                 </div>
             </div>
@@ -547,30 +554,36 @@ export default function TicketManagement() {
         hideDefaultButton={true}
         extraActions={
           <>
-            <button 
-                onClick={handlePrintCustomer} 
-                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-2"
+            <button
+              onClick={handlePrintCustomer}
+              className="px-4 py-2 text-white rounded flex items-center gap-2 hover:opacity-95"
+              style={{ backgroundColor: colors.primaryColor }}
             >
-              <Printer size={18} /> Customer Only
-            </button>
-            
-            <button 
-                onClick={handlePrintPlant} 
-                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 flex items-center gap-2"
-            >
-              <Printer size={18} /> Plant Only
+              <Printer size={18} /> Print Customer Only
             </button>
 
-            <button 
-                onClick={handlePrintTags} 
-                className="px-4 py-2 bg-amber-600 text-white rounded hover:bg-amber-700 flex items-center gap-2"
+            <button
+              onClick={handlePrintPlant}
+              className="px-4 py-2 text-white rounded flex items-center gap-2 hover:opacity-95"
+              style={{ backgroundColor: colors.secondaryColor }}
             >
-              <Printer size={18} /> Tags Only
+              <Printer size={18} /> Print Plant Only
             </button>
 
-            <button 
-                onClick={handlePrintAll} 
-                className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 flex items-center gap-2"
+            {tagPrintContent && (
+              <button
+                onClick={handlePrintTags}
+                className="px-4 py-2 text-white rounded flex items-center gap-2 hover:opacity-95"
+                style={{ backgroundColor: colors.brandColor }}
+              >
+                <Printer size={18} /> Print Tags Only
+              </button>
+            )}
+
+            <button
+              onClick={handlePrintAll}
+              className="px-4 py-2 text-white rounded flex items-center gap-2 hover:opacity-95"
+              style={{ backgroundImage: `linear-gradient(to right, ${colors.primaryColor}, ${colors.secondaryColor})` }}
             >
               <Printer size={18} /> Print All
             </button>

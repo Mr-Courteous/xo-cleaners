@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { MapPin, Search, Package, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { Rack } from '../types'; // Assuming this type is { number: number, is_occupied: boolean, ticket_id: number, ticket_number: string }
 import Modal from './Modal';
+import { useColors } from '../state/ColorsContext';
 // import { apiCall } from '../hooks/useApi'; // <-- REMOVED
 import baseURL from "../lib/config"; // Added import
 import axios from 'axios'; // Added import
@@ -30,6 +31,7 @@ interface ValidatedTicket {
 }
 
 export default function RackManagement() {
+  const { colors } = useColors();
   const [searchRack, setSearchRack] = useState('');
   
   // --- States for manual data fetching ---
@@ -309,9 +311,9 @@ export default function RackManagement() {
               onClick={assignRack}
               // --- CHANGED --- Button disabled if validating OR assigning
               disabled={!validatedTicket || !assignRackNumber || isValidating || assigning}
-              className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="w-full text-white py-2 px-4 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              style={{ backgroundColor: colors.primaryColor }}
             >
-              {/* --- CHANGED --- Show loading text */}
               {assigning ? 'Assigning...' : 'Assign Rack'}
             </button>
             {assignError && (
@@ -341,7 +343,7 @@ export default function RackManagement() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white rounded-lg shadow-sm border border-gray-200">
           <div className="p-6 border-b border-gray-200">
-            <h3 className="text-lg font-semibold text-red-600">Occupied Racks ({occupiedRacks.length})</h3>
+            <h3 className="text-lg font-semibold" style={{ color: colors.primaryColor }}>Occupied Racks ({occupiedRacks.length})</h3>
           </div>
           <div className="max-h-96 overflow-y-auto">
             {occupiedRacks.length === 0 ? (
@@ -355,7 +357,7 @@ export default function RackManagement() {
                   <div key={rack.number} className="p-4">
                     <div className="flex justify-between items-center">
                       <div className="flex items-center">
-                        <MapPin className="h-4 w-4 text-red-500 mr-2" />
+                        <MapPin className="h-4 w-4 mr-2" style={{ color: colors.primaryColor }} />
                         <span className="font-medium">Rack #{rack.number}</span>
                       </div>
                       <div className="text-right text-sm">
@@ -371,7 +373,7 @@ export default function RackManagement() {
 
         <div className="bg-white rounded-lg shadow-sm border border-gray-200">
           <div className="p-6 border-b border-gray-200">
-            <h3 className="text-lg font-semibold text-green-600">Available Racks ({emptyRacks.length})</h3>
+            <h3 className="text-lg font-semibold" style={{ color: colors.secondaryColor }}>Available Racks ({emptyRacks.length})</h3>
           </div>
           <div className="max-h-96 overflow-y-auto">
             {emptyRacks.length === 0 ? (
