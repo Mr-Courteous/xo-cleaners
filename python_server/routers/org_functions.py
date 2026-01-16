@@ -1540,13 +1540,15 @@ def create_ticket(
                 ticket_number, customer_id, total_amount, rack_number, 
                 special_instructions, paid_amount, 
                 pickup_date, created_at, 
-                organization_id, status
+                organization_id, status,
+                transfer_status, transferred_to_org_id  -- Add these
             )
             VALUES (
                 :ticket_number, :customer_id, :total_amount, :rack_number, 
                 :special_instructions, :paid_amount, 
                 :pickup_date, :created_at, 
-                :org_id, 'received'
+                :org_id, 'received',
+                'at_origin', NULL
             )
             RETURNING id, created_at, status
         """)

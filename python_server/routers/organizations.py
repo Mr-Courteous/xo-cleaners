@@ -571,16 +571,11 @@ def get_organization_audit_logs(
     db: Session = Depends(get_db),
     payload: Dict[str, Any] = Depends(get_current_user_payload)
 ):
-    """
-    Fetches audit logs strictly for the logged-in user's organization.
-    Ordered by newest first.
-    """
-    
-    # 1. Get Security Context
+    # 1. Security Context
     organization_id = payload.get("organization_id")
     user_role = payload.get("role")
 
-    # 2. Authorization Check (Only Owners and Managers usually need to see this)
+    # 2. Authorization
     allowed_roles = ["org_owner", "STORE_OWNER", "store_admin", "store_manager"]
     if user_role not in allowed_roles:
          raise HTTPException(
@@ -592,7 +587,7 @@ def get_organization_audit_logs(
         raise HTTPException(status_code=401, detail="Organization ID missing from token.")
 
     # 3. Query the Database
-    # We filter strictly by organization_id from the token
+    # We fetch the raw objects first
     logs = db.query(AuditLog)\
         .filter(AuditLog.organization_id == organization_id)\
         .order_by(AuditLog.created_at.desc())\
@@ -600,4 +595,32 @@ def get_organization_audit_logs(
         .offset(skip)\
         .all()
 
-    return logs
+    # 4. FIX THE DATA TYPES
+    # This loop ensures that even if 'details' is a string in the DB, 
+    # it is returned as a Dict to satisfy the Pydantic model.
+    processed_logs = []
+    for log in logs:
+        # Create a dictionary version of the log
+        log_dict = {
+            "id": log.id,
+            "organization_id": log.organization_id,
+            "actor_id": log.actor_id,
+            "actor_name": log.actor_name,
+            "actor_role": log.actor_role,
+            "action": log.action,
+            "created_at": log.created_at,
+            "ticket_id": log.ticket_id,
+            "customer_id": log.customer_id
+        }
+
+        # Check if details is a string (legacy data) or actual JSON/Dict
+        if isinstance(log.details, str):
+            log_dict["details"] = {"message": log.details}
+        elif log.details is None:
+            log_dict["details"] = {}
+        else:
+            log_dict["details"] = log.details
+
+        processed_logs.append(log_dict)
+
+    return processed_logs

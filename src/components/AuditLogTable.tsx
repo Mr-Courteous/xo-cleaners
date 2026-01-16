@@ -45,6 +45,7 @@ const AuditLogTable: React.FC = () => {
       });
       
       setLogs(response.data);
+      console.log(response.data);
     } catch (err) {
       console.error("Failed to fetch logs:", err);
       setError("Failed to load audit logs. Please try again.");

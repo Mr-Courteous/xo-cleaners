@@ -37,11 +37,15 @@ class RawTicket(BaseModel):
     ticket_number: str
     customer_id: int
     status: str
-    # total_price removed, calculated on frontend
+    transfer_status: Optional[str] = None
+    transferred_to_name: Optional[str] = None
+    transfer_timestamp: Optional[datetime] = None # Added transfer time
+    customer_name: str
+    rack_number: Optional[str] = None
+    paid_amount: float
     is_refunded: bool
     created_at: datetime
-    updated_at: Optional[datetime] = None
-
+    
 class RawTicketItem(BaseModel):
     id: int
     ticket_id: int
@@ -164,130 +168,109 @@ async def get_dashboard_analytics(
     payload: Dict[str, Any] = Depends(get_current_user_payload)
 ):
     """
-    Returns ALL raw data plus a computed Financial Ledger.
+    Unified Dashboard: Fetches all tickets owned by OR transferred to this org.
+    Includes dual-status tracking: Production (status) vs Logistics (transfer_status).
     """
     try:
         org_id = payload.get("organization_id")
         user_role = payload.get("role")
         
-        allowed_roles = ["cashier", "store_admin", "org_owner", "STORE_OWNER"]
+        # Security: Only authorized staff can view analytics
+        allowed_roles = ["cashier", "store_admin", "org_owner", "STORE_OWNER", "plant_operator"]
         if user_role not in allowed_roles:
             raise HTTPException(status_code=403, detail="Access denied")
 
-        # ---------------------------------------------------------
-        # 1. Fetch Tickets 
-        # ---------------------------------------------------------
+        # THE UNIFIED QUERY
+        # Joins organizations twice to label the 'Origin' and 'Destination' clearly
         tickets_query = text("""
             SELECT 
-                t.id, t.ticket_number, t.customer_id, t.status, 
+                t.id, 
+                t.ticket_number, 
+                t.customer_id, 
+                t.status,                -- 'processing', 'washing', 'ready'
+                t.transfer_status,       -- 'in_transit', 'at_plant', 'returned'
+                t.organization_id as origin_org_id,
+                t.transferred_to_org_id, 
+                t.rack_number,
                 COALESCE(t.is_refunded, FALSE) as is_refunded, 
                 COALESCE(t.paid_amount, 0.0) as paid_amount,
-                t.created_at, t.updated_at,
-                u.first_name, u.last_name
+                t.created_at, 
+                t.updated_at as transfer_timestamp,
+                u.first_name, 
+                u.last_name,
+                o_dest.name as transferred_to_name,
+                o_orig.name as origin_branch_name
             FROM tickets t
             LEFT JOIN allUsers u ON t.customer_id = u.id
-            WHERE t.organization_id = :org_id
+            LEFT JOIN organizations o_dest ON t.transferred_to_org_id = o_dest.id
+            LEFT JOIN organizations o_orig ON t.organization_id = o_orig.id
+            WHERE 
+                t.organization_id = :org_id             -- Show tickets I OWN
+                OR t.transferred_to_org_id = :org_id    -- Show tickets SENT TO ME
             ORDER BY t.created_at DESC
         """)
-        tickets_rows = db.execute(tickets_query, {"org_id": org_id}).fetchall()
+        
+        rows = db.execute(tickets_query, {"org_id": org_id}).fetchall()
         
         tickets_data = []
         ledger_data = []
 
-        for row in tickets_rows:
-            # Add to Tickets List
-            tickets_data.append(RawTicket(
-                id=row.id,
-                ticket_number=row.ticket_number,
-                customer_id=row.customer_id,
-                status=row.status,
-                is_refunded=bool(row.is_refunded),
-                created_at=row.created_at,
-                updated_at=row.updated_at,
-                paid_amount=float(row.paid_amount)
-            ))
-
-            # Build Ledger (Transactions)
-            cust_name = f"{row.first_name} {row.last_name}" if row.first_name else "Walk-in Customer"
+        for row in rows:
+            is_owner = row.origin_org_id == org_id
             
-            # 1. Record Payment (Income)
-            if row.paid_amount > 0:
-                # Use updated_at as payment date if available (usually pickup time), else creation date
-                pay_date = row.updated_at if row.updated_at else row.created_at
+            tickets_data.append({
+                "id": row.id,
+                "ticket_number": row.ticket_number,
+                "customer_id": row.customer_id,
+                "status": row.status,
+                "transfer_status": row.transfer_status,
+                "transferred_to_org_id": row.transferred_to_org_id,
+                "transferred_to_name": row.transferred_to_name,
+                "origin_branch_name": row.origin_branch_name,
+                "transfer_timestamp": row.transfer_timestamp,
+                "rack_number": row.rack_number,
+                "is_refunded": bool(row.is_refunded),
+                "created_at": row.created_at,
+                "paid_amount": float(row.paid_amount),
+                "customer_name": f"{row.first_name} {row.last_name}" if row.first_name else "Walk-in"
+            })
+
+            # Financial Ledger: Only the ORIGIN branch reports the income
+            if is_owner and row.paid_amount > 0:
                 ledger_data.append(LedgerEntry(
                     id=f"pay_{row.id}",
-                    date=pay_date,
+                    date=row.transfer_timestamp or row.created_at,
                     reference=f"Ticket #{row.ticket_number}",
-                    customer_name=cust_name,
+                    customer_name=f"{row.first_name} {row.last_name}" if row.first_name else "Walk-in",
                     type="INCOME",
                     amount=float(row.paid_amount),
                     method="Standard"
                 ))
 
-            # 2. Record Refund (Expense)
-            if row.is_refunded:
-                # Assume refund happened recently (updated_at)
-                ref_date = row.updated_at if row.updated_at else datetime.now(timezone.utc)
-                ledger_data.append(LedgerEntry(
-                    id=f"ref_{row.id}",
-                    date=ref_date,
-                    reference=f"Refund #{row.ticket_number}",
-                    customer_name=cust_name,
-                    type="REFUND",
-                    amount= -float(row.paid_amount), # Negative for financial math
-                    method="Reversal"
-                ))
-
-        # Sort Ledger by Date Descending
-        ledger_data.sort(key=lambda x: x.date, reverse=True)
-
-        # ---------------------------------------------------------
-        # 2. Fetch Items 
-        # ---------------------------------------------------------
-        items_query = text("""
-            SELECT 
-                ti.id, ti.ticket_id, ti.quantity,
-                ct.name as clothing_name,
-                COALESCE(ct.plant_price, 0.0) as price
-            FROM ticket_items ti
-            JOIN tickets t ON ti.ticket_id = t.id
-            LEFT JOIN clothing_types ct ON ti.clothing_type_id = ct.id
-            WHERE t.organization_id = :org_id
-        """)
-        items_rows = db.execute(items_query, {"org_id": org_id}).fetchall()
+        # Shared Visibility for items/customers
         items_data = [
-            RawTicketItem(
-                id=r.id, ticket_id=r.ticket_id, clothing_name=r.clothing_name or "Custom", 
-                quantity=r.quantity, price=float(r.price)
-            ) for r in items_rows
+            RawTicketItem(id=r.id, ticket_id=r.ticket_id, clothing_name=r.clothing_name or "Custom", 
+                          quantity=r.quantity, price=float(r.price)) 
+            for r in db.execute(text("""
+                SELECT ti.id, ti.ticket_id, ti.quantity, ct.name as clothing_name, COALESCE(ct.plant_price, 0.0) as price
+                FROM ticket_items ti
+                JOIN tickets t ON ti.ticket_id = t.id
+                LEFT JOIN clothing_types ct ON ti.clothing_type_id = ct.id
+                WHERE t.organization_id = :org_id OR t.transferred_to_org_id = :org_id
+            """), {"org_id": org_id}).fetchall()
         ]
-
-        # ---------------------------------------------------------
-        # 3. Fetch Racks 
-        # ---------------------------------------------------------
-        racks_query = text("SELECT id, number as rack_number, is_occupied FROM racks WHERE organization_id = :org_id ORDER BY number ASC")
-        racks_rows = db.execute(racks_query, {"org_id": org_id}).fetchall()
-        racks_data = [RawRack(id=r.id, rack_number=r.rack_number, is_occupied=bool(r.is_occupied)) for r in racks_rows]
-
-        # ---------------------------------------------------------
-        # 4. Fetch Customers
-        # ---------------------------------------------------------
-        custs = db.execute(text("SELECT DISTINCT u.id, u.first_name, u.last_name, u.email, u.joined_at FROM allUsers u JOIN tickets t ON t.customer_id = u.id WHERE t.organization_id = :org_id"), {"org_id": org_id}).fetchall()
-        customers_data = [RawCustomer(id=c.id, first_name=c.first_name, last_name=c.last_name, email=c.email, joined_at=c.joined_at) for c in custs]
 
         return FullOrgDataResponse(
             tickets=tickets_data, 
             items=items_data, 
-            racks=racks_data, 
-            customers=customers_data,
-            ledger=ledger_data
+            racks=[], # Local racks only
+            customers=[], # Can be filtered similarly to tickets
+            ledger=sorted(ledger_data, key=lambda x: x.date, reverse=True)
         )
 
     except Exception as e:
-        print(f"Error fetching dashboard data: {e}")
-        raise HTTPException(status_code=500, detail="Failed to load dashboard data.")
-    
-    
+        print(f"Sync Error: {e}")
+        raise HTTPException(status_code=500, detail="Dashboard sync failed.")
 # =======================
 # NEW CHART DATA ROUTE
 # =======================

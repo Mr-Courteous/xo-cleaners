@@ -273,6 +273,9 @@ class TicketResponse(BaseModel):
     created_at: datetime
     organization_id: int
     
+    transferred_to_org_id: Optional[int] = None
+    transfer_status: Optional[str] = "at_origin"
+    
     # List of items
     items: List[TicketItemResponse]
 

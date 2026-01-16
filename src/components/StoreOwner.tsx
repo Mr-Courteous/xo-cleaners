@@ -3,8 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { jwtDecode } from "jwt-decode";
 import {
   LayoutDashboard, Menu, X, LogOut, Package, Clock, Ticket as TicketIcon,
-  Users, MapPin, Shirt, Activity, Tag, Settings, BarChart3,
-  ArrowLeft, Briefcase, ArrowRight, History
+  Users, MapPin, Shirt, Activity, Tag, Settings, BarChart3, Truck,
+  ArrowLeft, Briefcase, ArrowRight, History, Send
 } from "lucide-react";
 
 import Header from "./Header";
@@ -23,7 +23,9 @@ import DashboardAnalytics from './DashboardAnalytics';
 import OrganizationSettings from "./OrganizationSettings";
 import WorkerManagement from "./WorkerManagement";
 import AuditLogTable from "./AuditLogTable";
+import TicketTransfersProcess from './TicketTransfersProcess';
 import Footer from "./Footer";
+import BatchTransfer from './BatchTransfer';
 
 interface TokenPayload {
   sub: string;
@@ -87,6 +89,8 @@ export default function StoreOwner() {
       { id: 'dropoff', label: 'Drop Off', icon: Package, category: 'Operations' },
       { id: 'pickup', label: 'Pick Up', icon: Clock, category: 'Operations' },
       { id: 'tickets', label: 'Tickets', icon: TicketIcon, category: 'Operations' },
+      { id: 'batchtransfer', label: 'Outgoing Transfers', icon: Send, category: 'Operations' },
+      { id: 'transfers', label: 'Incoming Transfers', icon: Truck, category: 'Operations' },
       { id: 'customers', label: 'Customers', icon: Users, category: 'Operations' },
       { id: 'staff', label: 'Staff', icon: Briefcase, category: 'Management' },
       { id: 'racks', label: 'Racks', icon: MapPin, category: 'Management' },
@@ -98,7 +102,7 @@ export default function StoreOwner() {
     ];
 
     if (isDropOffOnly) {
-      const restrictedIds = ['racks', 'pickup', 'settings', 'analytics'];
+      const restrictedIds = ['racks', 'pickup', 'settings', 'analytics', 'transfers'];
       return allItems.filter(item => !restrictedIds.includes(item.id));
     }
     return allItems;
@@ -161,6 +165,8 @@ export default function StoreOwner() {
       case 'clothing': return <ClothingManagement />;
       case 'status': return <StatusManagement />;
       case 'tags': return <TagManagement />;
+      case 'batchtransfer': return <BatchTransfer />;
+      case 'transfers': return <TicketTransfersProcess />;
       case 'settings': return <OrganizationSettings />;
       case 'analytics': return <DashboardAnalytics />;
       default: return <div>View Not Found</div>;
