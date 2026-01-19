@@ -158,7 +158,7 @@ const Header = () => {
                                             {['Platform Admin', 'Store Owner', 'Store Worker', 'Customer'].map((opt) => (
                                                 <Link
                                                     key={opt}
-                                                    to={`/${opt.toLowerCase().replace(' ', '-')}`}
+                                                    to={`/${opt.toLowerCase().replace(' ', '-')}-login`}
                                                     className="flex items-center px-4 py-3 text-sm font-bold text-gray-600 hover:bg-gray-50 rounded-xl transition-colors"
                                                     onMouseEnter={(e) => e.currentTarget.style.color = colors.primaryColor}
                                                     onMouseLeave={(e) => e.currentTarget.style.color = ''}

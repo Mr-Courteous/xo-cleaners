@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { 
   Package, Clock, CheckCircle, MapPin, Users, FileText, RefreshCw, Tag, 
-  AlertCircle, X, Search, Menu 
+  AlertCircle, X, Search, Menu, Send, Truck 
 } from 'lucide-react';
 import Header from './Header';
 import baseURL from '../lib/config';
@@ -18,6 +18,8 @@ import CustomerManagement from './CustomerManagement';
 import TicketManagement from './TicketManagement';
 import TagManagement from './Tag';
 import CustomerDirectory from './CustomerDirectory';
+import BatchTransfer from './BatchTransfer';
+import TicketTransfersProcess from './TicketTransfersProcess';
 
 // --- Types ---
 interface TicketSummary {
@@ -71,7 +73,7 @@ export default function CashierDashboard() {
   const { colors } = useColors();
   
   // --- Navigation State ---
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'drop-off' | 'pick-up' | 'assign-rack' | 'clothing' | 'status' | 'customers' | 'directory' | 'tickets' | 'tags'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'drop-off' | 'pick-up' | 'assign-rack' | 'clothing' | 'status' | 'customers' | 'directory' | 'tickets' | 'tags' | 'outgoing-transfers' | 'incoming-transfers'>('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const [loading, setLoading] = useState<boolean>(true);
@@ -341,6 +343,8 @@ export default function CashierDashboard() {
           <NavButton tab="tickets" icon={FileText} label="Tickets" />
           <NavButton tab="assign-rack" icon={RefreshCw} label="Assign Rack" />
           <NavButton tab="customers" icon={Users} label="Customers" />
+          <NavButton tab="outgoing-transfers" icon={Send} label="Outgoing Transfers" />
+          <NavButton tab="incoming-transfers" icon={Truck} label="Incoming Transfers" />
 
           <div className="pt-8">
             <p className="px-4 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4">Operations</p>
@@ -371,6 +375,8 @@ export default function CashierDashboard() {
             {activeTab === 'tickets' && <TicketManagement key={refreshKey} />}
             {activeTab === 'tags' && <TagManagement key={refreshKey} />}
             {activeTab === 'directory' && <CustomerDirectory key={refreshKey} />}
+            {activeTab === 'outgoing-transfers' && <BatchTransfer key={refreshKey} />}
+            {activeTab === 'incoming-transfers' && <TicketTransfersProcess key={refreshKey} />}
           </div>
         </main>
       </div>
