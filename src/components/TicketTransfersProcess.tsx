@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useColors } from '../state/ColorsContext';
 import {
   Loader2, Search, PackageCheck, MapPin,
-  CheckCircle2, X, RefreshCw, User, LayoutGrid, LogOut, Truck, AlertCircle, Archive
+  CheckCircle2, X, RefreshCw, User, LayoutGrid, LogOut, Truck, AlertCircle, Archive, Share2
 } from 'lucide-react';
 import axios from 'axios';
 import baseURL from '../lib/config';
@@ -42,6 +42,7 @@ const TicketTransfersProcess = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [connectionCode, setConnectionCode] = useState<string | null>(null);
 
   // Tabs: 'incoming' (In Transit), 'to_rack' (Arrived/Accepted), 'ready' (Completion), 'all' (Full Inventory)
   const [activeTab, setActiveTab] = useState<'incoming' | 'to_rack' | 'ready' | 'all'>('incoming');
@@ -104,14 +105,16 @@ const TicketTransfersProcess = () => {
         })
       ]);
 
-      console.log("Inventory Response:", inventoryRes.data);
+      // Capture connection_code from the new response structure
+      if (inventoryRes.data.connection_code) {
+        setConnectionCode(inventoryRes.data.connection_code);
+      }
 
       const mappedTickets = (inventoryRes.data.tickets || []).map((ticket: any) => ({
         ...ticket,
         origin_branch_name: ticket.origin_branch || ticket.origin_branch_name || 'Unknown Branch'
       }));
 
-      console.log("Fetched Tickets:", mappedTickets);
       setIncomingTickets(mappedTickets);
 
       // Get all racks and filter for available ones (not occupied) - matches RackManagement pattern
@@ -157,7 +160,6 @@ const TicketTransfersProcess = () => {
 
   // --- 2. RACKING LOGIC ---
   const handleAssignRack = async () => {
-    // 1. Safety check
     if (!currentTicketForRacking || !selectedRack) {
       setError("Please select a rack before confirming");
       return;
@@ -166,7 +168,6 @@ const TicketTransfersProcess = () => {
     setIsSubmitting(true);
     setError(null);
 
-    // Capture values into constants immediately before state changes
     const ticketId = currentTicketForRacking.id;
     const ticketNum = currentTicketForRacking.ticket_number;
     const rackNum = selectedRack;
@@ -180,34 +181,26 @@ const TicketTransfersProcess = () => {
         { headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` } }
       );
 
-      // 2. Check for success in the response body
       if (res.data.success === true || res.status === 200) {
-
-        // 3. Close Modal and Reset selection state
         setIsRackingModalOpen(false);
         setCurrentTicketForRacking(null);
         setSelectedRack("");
-
-        // 4. Simple success alert
         alert(`Success: Ticket #${ticketNum} assigned to rack ${rackNum}`);
-
+        await fetchData();
       } else {
-        // Backend returned 200 but success: false
         throw new Error(res.data.detail || "Server logic failed to assign rack");
       }
 
     } catch (err: any) {
       console.error('Rack assignment error:', err);
-
-      // Determine error message
       const errorMsg = err.response?.data?.detail || err.message || 'Failed to assign rack';
-
       setError(errorMsg);
       alert(`RACKING FAILED: ${errorMsg}`);
     } finally {
       setIsSubmitting(false);
     }
   };
+
   // --- 3. COMPLETION LOGIC ---
   const handleFinalPickup = async (ticket: Ticket) => {
     if (!window.confirm(`Release ticket #${ticket.ticket_number} to customer?`)) return;
@@ -222,9 +215,6 @@ const TicketTransfersProcess = () => {
       );
 
       if (res.data.success) {
-        // const html = renderPickupReceiptHtml(ticket);
-        // setPrintContent(html);
-        // setShowPrintPreview(true);
         fetchData();
       }
     } catch (err: any) {
@@ -248,18 +238,15 @@ const TicketTransfersProcess = () => {
       t.customer_name?.toLowerCase().includes(searchTerm.toLowerCase());
 
     if (activeTab === 'incoming') {
-      // Show tickets that are requested or in transit (not yet at plant)
       return matchesSearch && (t.transfer_status === 'requested' || t.transfer_status === 'in_transit');
     } else if (activeTab === 'to_rack') {
-      // Show tickets at plant that haven't been racked yet
       return matchesSearch && t.transfer_status === 'at_plant';
     } else if (activeTab === 'ready') {
-      // Show tickets ready at branch
       return matchesSearch && t.transfer_status === 'ready_at_branch';
     } else if (activeTab === 'all') {
-      // Show all tickets with full inventory details
       return matchesSearch;
     }
+    return false;
   });
 
   if (loading) return (
@@ -310,6 +297,23 @@ const TicketTransfersProcess = () => {
             </button>
           </div>
         </div>
+
+        {/* Transfer Code Notification */}
+        {connectionCode && (
+          <div className="mb-6 p-5 bg-white border border-blue-100 rounded-[2rem] shadow-sm flex items-center justify-between group hover:border-blue-300 transition-all">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-2xl bg-blue-50 text-blue-600">
+                <Share2 size={24} />
+              </div>
+              <div>
+                <p className="text-slate-400 font-bold uppercase text-[9px] tracking-widest">Plant Transfer Access</p>
+                <p className="text-slate-700 text-sm font-medium">
+                  Share your transfer code <span className="font-black text-blue-600 mx-1 px-2 py-0.5 bg-blue-50 rounded-lg">{connectionCode}</span> with a drop off plant now to facilitate incoming transfers.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Error Banner */}
         {error && (
@@ -414,112 +418,111 @@ const TicketTransfersProcess = () => {
           )}
         </div>
 
-        {/* Tickets Grid - Only for card views */}
+        {/* Main Content Grid/Table */}
         {activeTab !== 'all' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredTickets.map(ticket => (
-            <div
-              key={ticket.id}
-              className={`bg-white rounded-[2.5rem] p-6 shadow-sm border transition-all cursor-pointer ${selectedTickets.includes(ticket.id)
-                  ? `border-2 border-blue-500 bg-blue-50`
-                  : 'border-slate-100 hover:shadow-md'
-                }`}
-              onClick={() => activeTab === 'incoming' && toggleTicketSelection(ticket.id)}
-            >
-              <div className="flex justify-between items-start mb-4">
-                <div className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter" style={{ backgroundColor: `${colors.primaryColor}15`, color: colors.primaryColor }}>
-                  #{ticket.ticket_number}
-                </div>
-                {activeTab === 'incoming' && (
-                  <input
-                    type="checkbox"
-                    checked={selectedTickets.includes(ticket.id)}
-                    onChange={() => toggleTicketSelection(ticket.id)}
-                    className="w-5 h-5 cursor-pointer"
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                )}
-                {ticket.rack_number && (
-                  <div className="flex items-center gap-1 text-emerald-600 font-black text-xs">
-                    <MapPin size={14} /> {ticket.rack_number}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredTickets.map(ticket => (
+              <div
+                key={ticket.id}
+                className={`bg-white rounded-[2.5rem] p-6 shadow-sm border transition-all cursor-pointer ${selectedTickets.includes(ticket.id)
+                    ? `border-2 border-blue-500 bg-blue-50`
+                    : 'border-slate-100 hover:shadow-md'
+                  }`}
+                onClick={() => activeTab === 'incoming' && toggleTicketSelection(ticket.id)}
+              >
+                <div className="flex justify-between items-start mb-4">
+                  <div className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter" style={{ backgroundColor: `${colors.primaryColor}15`, color: colors.primaryColor }}>
+                    #{ticket.ticket_number}
                   </div>
+                  {activeTab === 'incoming' && (
+                    <input
+                      type="checkbox"
+                      checked={selectedTickets.includes(ticket.id)}
+                      onChange={() => toggleTicketSelection(ticket.id)}
+                      className="w-5 h-5 cursor-pointer"
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  )}
+                  {ticket.rack_number && (
+                    <div className="flex items-center gap-1 text-emerald-600 font-black text-xs">
+                      <MapPin size={14} /> {ticket.rack_number}
+                    </div>
+                  )}
+                </div>
+
+                <div className="mb-6">
+                  <h3 className="text-xl font-black text-slate-800 flex items-center gap-2 truncate">
+                    <User size={18} className="text-slate-300" /> {ticket.customer_name}
+                  </h3>
+                  <p className="text-slate-400 text-[9px] font-bold uppercase mt-1 tracking-wider">
+                    From: {ticket.origin_branch_name || 'Main Branch'}
+                  </p>
+                </div>
+
+                {activeTab === 'to_rack' && (
+                  <button
+                    onClick={() => {
+                      setCurrentTicketForRacking(ticket);
+                      setIsRackingModalOpen(true);
+                      setSelectedRack("");
+                    }}
+                    className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 hover:bg-slate-800"
+                  >
+                    <MapPin size={16} /> Assign Rack
+                  </button>
+                )}
+
+                {activeTab === 'ready' && (
+                  <button
+                    onClick={() => handleFinalPickup(ticket)}
+                    disabled={isSubmitting}
+                    className="w-full py-4 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 shadow-lg hover:shadow-xl disabled:opacity-50"
+                    style={{ backgroundColor: '#10b981' }}
+                  >
+                    {isSubmitting ? <Loader2 className="animate-spin" /> : <><LogOut size={16} /> Release to Drop Off Station</>}
+                  </button>
                 )}
               </div>
-
-              <div className="mb-6">
-                <h3 className="text-xl font-black text-slate-800 flex items-center gap-2 truncate">
-                  <User size={18} className="text-slate-300" /> {ticket.customer_name}
-                </h3>
-                <p className="text-slate-400 text-[9px] font-bold uppercase mt-1 tracking-wider">
-                  From: {ticket.origin_branch_name || 'Main Branch'}
-                </p>
-              </div>
-
-              {activeTab === 'to_rack' && (
-                <button
-                  onClick={() => {
-                    setCurrentTicketForRacking(ticket);
-                    setIsRackingModalOpen(true);
-                    setSelectedRack("");
-                  }}
-                  className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 hover:bg-slate-800"
-                >
-                  <MapPin size={16} /> Assign Rack
-                </button>
-              )}
-
-              {activeTab === 'ready' && (
-                <button
-                  onClick={() => handleFinalPickup(ticket)}
-                  disabled={isSubmitting}
-                  className="w-full py-4 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 shadow-lg hover:shadow-xl disabled:opacity-50"
-                  style={{ backgroundColor: '#10b981' }}
-                >
-                  {isSubmitting ? <Loader2 className="animate-spin" /> : <><LogOut size={16} /> Release to Drop Off Station</>}
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-        ) : (
-        // TABLE VIEW FOR ALL INVENTORY
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 border-b border-slate-200">
-                <tr>
-                  <th className="px-6 py-4 text-left font-bold text-slate-700 uppercase text-[10px] tracking-wider">Ticket #</th>
-                  <th className="px-6 py-4 text-left font-bold text-slate-700 uppercase text-[10px] tracking-wider">Customer</th>
-                  <th className="px-6 py-4 text-left font-bold text-slate-700 uppercase text-[10px] tracking-wider">Status</th>
-                  <th className="px-6 py-4 text-left font-bold text-slate-700 uppercase text-[10px] tracking-wider">From</th>
-                  <th className="px-6 py-4 text-left font-bold text-slate-700 uppercase text-[10px] tracking-wider">Rack #</th>
-                  <th className="px-6 py-4 text-left font-bold text-slate-700 uppercase text-[10px] tracking-wider">Sent</th>
-                  <th className="px-6 py-4 text-left font-bold text-slate-700 uppercase text-[10px] tracking-wider">Accepted</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredTickets.map((ticket, idx) => (
-                  <tr key={ticket.id} className={`border-b border-slate-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-blue-50 transition-colors`}>
-                    <td className="px-6 py-4 font-black text-slate-900">{ticket.ticket_number}</td>
-                    <td className="px-6 py-4 text-slate-700">{ticket.customer_name}</td>
-                    <td className="px-6 py-4">
-                      <span className="px-2 py-1 rounded-full text-[10px] font-bold" style={{
-                        backgroundColor: ticket.transfer_status === 'received' ? '#ecfdf5' : ticket.transfer_status === 'at_plant' ? '#eff6ff' : '#fef3c7',
-                        color: ticket.transfer_status === 'received' ? '#059669' : ticket.transfer_status === 'at_plant' ? '#0284c7' : '#d97706'
-                      }}>
-                        {ticket.transfer_status || 'N/A'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-slate-700 text-xs">{ticket.origin_branch || 'Unknown'}</td>
-                    <td className="px-6 py-4 font-bold text-slate-900">{ticket.rack_number || '-'}</td>
-                    <td className="px-6 py-4 text-slate-600 text-xs">{ticket.sent_at ? new Date(ticket.sent_at).toLocaleDateString() : '-'}</td>
-                    <td className="px-6 py-4 text-slate-600 text-xs">{ticket.accepted_at ? new Date(ticket.accepted_at).toLocaleDateString() : '-'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            ))}
           </div>
-        </div>
+        ) : (
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 border-b border-slate-200">
+                  <tr>
+                    <th className="px-6 py-4 text-left font-bold text-slate-700 uppercase text-[10px] tracking-wider">Ticket #</th>
+                    <th className="px-6 py-4 text-left font-bold text-slate-700 uppercase text-[10px] tracking-wider">Customer</th>
+                    <th className="px-6 py-4 text-left font-bold text-slate-700 uppercase text-[10px] tracking-wider">Status</th>
+                    <th className="px-6 py-4 text-left font-bold text-slate-700 uppercase text-[10px] tracking-wider">From</th>
+                    <th className="px-6 py-4 text-left font-bold text-slate-700 uppercase text-[10px] tracking-wider">Rack #</th>
+                    <th className="px-6 py-4 text-left font-bold text-slate-700 uppercase text-[10px] tracking-wider">Sent</th>
+                    <th className="px-6 py-4 text-left font-bold text-slate-700 uppercase text-[10px] tracking-wider">Accepted</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredTickets.map((ticket, idx) => (
+                    <tr key={ticket.id} className={`border-b border-slate-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-blue-50 transition-colors`}>
+                      <td className="px-6 py-4 font-black text-slate-900">{ticket.ticket_number}</td>
+                      <td className="px-6 py-4 text-slate-700">{ticket.customer_name}</td>
+                      <td className="px-6 py-4">
+                        <span className="px-2 py-1 rounded-full text-[10px] font-bold" style={{
+                          backgroundColor: ticket.transfer_status === 'received' ? '#ecfdf5' : ticket.transfer_status === 'at_plant' ? '#eff6ff' : '#fef3c7',
+                          color: ticket.transfer_status === 'received' ? '#059669' : ticket.transfer_status === 'at_plant' ? '#0284c7' : '#d97706'
+                        }}>
+                          {ticket.transfer_status || 'N/A'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-slate-700 text-xs">{ticket.origin_branch || 'Unknown'}</td>
+                      <td className="px-6 py-4 font-bold text-slate-900">{ticket.rack_number || '-'}</td>
+                      <td className="px-6 py-4 text-slate-600 text-xs">{ticket.sent_at ? new Date(ticket.sent_at).toLocaleDateString() : '-'}</td>
+                      <td className="px-6 py-4 text-slate-600 text-xs">{ticket.accepted_at ? new Date(ticket.accepted_at).toLocaleDateString() : '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         )}
 
         {filteredTickets.length === 0 && (

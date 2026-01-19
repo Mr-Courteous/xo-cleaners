@@ -401,7 +401,15 @@ async def plant_batch_receive(
 async def get_plant_inventory(db: Session = Depends(get_db), payload: Dict[str, Any] = Depends(get_current_user_payload)):
     plant_id = payload.get("organization_id")
     
-    # Removed status limitations to show everything
+    # 1. Fetch the Plant's connection code separately
+    plant_info = db.execute(
+        text("SELECT connection_code FROM organizations WHERE id = :plant_id"),
+        {"plant_id": plant_id}
+    ).fetchone()
+    
+    connection_code = plant_info[0] if plant_info else None
+
+    # 2. Fetch the tickets (removed o.connection_code from here to keep it clean)
     query = text("""
         SELECT 
             t.id, 
@@ -430,16 +438,20 @@ async def get_plant_inventory(db: Session = Depends(get_db), payload: Dict[str, 
     """)
     
     result = db.execute(query, {"plant_id": plant_id}).fetchall()
+    
     tickets = []
     for r in result:
         m = dict(r._mapping)
-        # Convert datetime objects to ISO strings for frontend compatibility
         for k in ("sent_at", "accepted_at", "created_at"):
             if k in m and m[k] is not None:
                 m[k] = m[k].isoformat()
         tickets.append(m)
         
-    return {"tickets": tickets}
+    # 3. Return the restructured format
+    return {
+        "connection_code": connection_code,
+        "tickets": tickets
+    }
 
 
 class TicketTransferTrackerResponse(BaseModel):

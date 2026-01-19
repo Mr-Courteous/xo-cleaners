@@ -109,7 +109,7 @@ function AppContent() {
       <Route path="/tags" element={<Tag />} />
       <Route path="/users" element={<UsersManagement />} />
       <Route path="/receipt-config" element={<ReceiptConfig />} />
-      <Route path="/store-owner-login" element={<Login />} />
+      <Route path="/store-owner" element={<Login />} />
 
       {/* ✅ PLATFORM ADMIN ROUTE (Now Unprotected) */}
       <Route path="/platform-admin" element={<PlatformAdmin />} />

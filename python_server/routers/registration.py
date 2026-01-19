@@ -6,7 +6,10 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError # <-- FIX 1A: IMPORT IntegrityError
 from psycopg2.errorcodes import UNIQUE_VIOLATION, FOREIGN_KEY_VIOLATION # Optional for better error handling
-from datetime import timedelta, datetime, timezone
+
+import uuid
+import secrets
+import string
 
 # Import shared utilities and constants from your utility file
 from utils.common import (
@@ -300,10 +303,27 @@ def setup_default_settings_and_clothing(db: Session, organization_id: int):
         )
     """), {"org_id": organization_id})
     
+
+
+def generate_unique_connection_code(db: Session):
+    """Generates a unique 8-character alphanumeric code."""
+    while True:
+        # Generates 8 chars of uppercase letters and numbers
+        code = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(8))
+        
+        # Check if it already exists
+        exists = db.execute(
+            text("SELECT 1 FROM organizations WHERE connection_code = :code"),
+            {"code": code}
+        ).fetchone()
+        
+        if not exists:
+            return code
+
 @router.post("/new-organization", response_model=RegistrationSuccess, status_code=status.HTTP_201_CREATED)
 async def register_organization(
     data: OrganizationWithAdminCreate,
-    request: Request, # Add this to manually check headers
+    request: Request,
     db: Session = Depends(get_db)
 ):
     owner_email = data.admin_email.strip().lower()
@@ -314,15 +334,10 @@ async def register_organization(
 
     if auth_header and auth_header.startswith("Bearer "):
         try:
-            # Manually trigger your token payload logic
             token = auth_header.split(" ")[1]
-            current_user = get_current_user_payload(token) # Your existing decoder
-            
-            # If successful, this is a BRANCH
+            current_user = get_current_user_payload(token)
             effective_parent_id = current_user.get("organization_id")
-            print(f"Creating branch for parent: {effective_parent_id}")
         except Exception:
-            # If token is invalid or expired, we treat it as a public registration
             effective_parent_id = None
 
     # --- 2. VALIDATION ---
@@ -334,18 +349,21 @@ async def register_organization(
     if existing_org:
         raise HTTPException(status_code=400, detail="Email already registered.")
 
+    # --- 3. GENERATE UNIQUE CONNECTION CODE ---
+    connection_code = generate_unique_connection_code(db)
+
     try:
-        # --- 3. DATABASE INSERT ---
+        # --- 4. DATABASE INSERT ---
         org_insert_stmt = text("""
             INSERT INTO organizations (
                 name, industry, owner_first_name, owner_last_name, 
                 owner_email, owner_password_hash, role,
-                org_type, parent_org_id
+                org_type, parent_org_id, connection_code
             )
             VALUES (
                 :name, :industry, :owner_first_name, :owner_last_name, 
                 :owner_email, :owner_password_hash, 'store_owner',
-                :org_type, :parent_org_id
+                :org_type, :parent_org_id, :connection_code
             )
             RETURNING id
         """)
@@ -358,14 +376,13 @@ async def register_organization(
             "owner_email": owner_email,
             "owner_password_hash": hash_password(data.admin_password),
             "org_type": data.org_type,
-            "parent_org_id": effective_parent_id
+            "parent_org_id": effective_parent_id,
+            "connection_code": connection_code  # Added here
         }).fetchone()
 
         new_org_id = org_result[0]
 
-        # 4. Setup Default Settings and Clothing
         setup_default_settings_and_clothing(db, new_org_id)
-
         db.commit()
 
         return RegistrationSuccess(
@@ -377,7 +394,6 @@ async def register_organization(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
-    
     
 # In organizations.py
 
