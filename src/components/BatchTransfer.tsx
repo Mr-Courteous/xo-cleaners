@@ -28,6 +28,7 @@ const BatchTransfer: React.FC = () => {
   const [isDispatchModalOpen, setIsDispatchModalOpen] = useState(false);
   const [plantCode, setPlantCode] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [transferError, setTransferError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchTransferTracker();
@@ -63,9 +64,13 @@ const BatchTransfer: React.FC = () => {
   });
 
   const handleBatchTransfer = async () => {
-    if (!plantCode.trim()) return alert("Please enter a plant connection code.");
+    if (!plantCode.trim()) {
+      setTransferError("Please enter a plant connection code.");
+      return;
+    }
     try {
       setIsSubmitting(true);
+      setTransferError(null);
       const token = localStorage.getItem("accessToken");
       const payload = { ticket_ids: selectedIds, plant_connection_code: plantCode.trim() };
       const response = await axios.post(`${baseURL}/api/organizations/tickets/batch-transfer`, payload, {
@@ -76,10 +81,23 @@ const BatchTransfer: React.FC = () => {
         setPlantCode("");
         setSelectedIds([]);
         setIsDispatchModalOpen(false);
+        setTransferError(null);
         fetchTransferTracker();
       }
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Transfer failed");
+      // Extract error message from various possible response formats
+      let errorMessage = "Transfer failed. Please try again.";
+      
+      if (err.response?.data?.detail) {
+        errorMessage = err.response.data.detail;
+      } else if (err.response?.data?.message) {
+        errorMessage = err.response.data.message;
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      
+      setTransferError(errorMessage);
+      console.error("Transfer error:", err);
     } finally {
       setIsSubmitting(false);
     }
@@ -234,7 +252,7 @@ const BatchTransfer: React.FC = () => {
           <div className="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl">
             <div className="p-6 border-b flex justify-between items-center">
               <h2 className="text-xl font-black">Dispatch Batch</h2>
-              <button onClick={() => setIsDispatchModalOpen(false)} className="text-gray-400 hover:text-gray-600 transition-colors"><X /></button>
+              <button onClick={() => {setIsDispatchModalOpen(false); setTransferError(null);}} className="text-gray-400 hover:text-gray-600 transition-colors"><X /></button>
             </div>
             
             <div className="p-6 space-y-4">
@@ -244,6 +262,17 @@ const BatchTransfer: React.FC = () => {
                   You are sending {selectedIds.length} tickets to an external plant for processing. This action will notify the receiving plant.
                 </p>
               </div>
+
+              {transferError && (
+                <div className="bg-red-50 p-4 rounded-2xl border border-red-200 flex items-start gap-3">
+                  <AlertCircle className="text-red-500 shrink-0 mt-0.5" size={18} />
+                  <div className="flex-1">
+                    <p className="text-red-700 text-xs font-bold leading-relaxed">
+                      {transferError}
+                    </p>
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 block">Plant Connection Code</label>

@@ -37,6 +37,7 @@ import OrganizationSettings from "./components/OrganizationSettings";
 import CustomerDashboard from "./components/CustomerDashboard";
 
 import CustomerLogin from "./components/CustomerLogin";
+import NotFound from "./components/NotFound";
 
 
 // import CustomerDirectory from "./components/customerDirectory";
@@ -124,12 +125,15 @@ function AppContent() {
       <Route path="/customer" element={<CustomerDashboard />} />
       <Route path="/org-settings" element={<OrganizationSettings />} />
       <Route path="/customer-login" element={<CustomerLogin />} />
+      {/* <Route path="/cashier-associate" element={<CashierAssociate />} /> */}
+      <Route path="/NotFound" element={<NotFound />} />
+
 
 
 
 
       {/* Catch-all fallback */}
-      <Route path="*" element={<Navigate to="/store-admin" />} />
+      <Route path="*" element={<Navigate to="/NotFound" />} />
     </Routes>
   );
 }

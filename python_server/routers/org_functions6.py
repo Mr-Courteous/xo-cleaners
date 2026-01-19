@@ -134,6 +134,28 @@ async def batch_transfer_tickets(
         raise HTTPException(status_code=400, detail="Cannot transfer tickets to your own organization.")
 
     try:
+        # Validate that all tickets have transfer_status of 'at_origin' or NULL (not already processed)
+        validation_query = text("""
+            SELECT id, ticket_number, transfer_status 
+            FROM tickets 
+            WHERE id = ANY(:ticket_ids) 
+            AND organization_id = :origin_id
+            AND transfer_status IS NOT NULL 
+            AND transfer_status != 'at_origin'
+        """)
+        
+        invalid_tickets = db.execute(validation_query, {
+            "ticket_ids": ticket_ids,
+            "origin_id": origin_id
+        }).fetchall()
+        
+        if invalid_tickets:
+            invalid_numbers = [f"#{row.ticket_number} (status: {row.transfer_status})" for row in invalid_tickets]
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Cannot transfer already processed tickets: {', '.join(invalid_numbers)}. Only tickets at origin can be transferred."
+            )
+        
         # Resolve origin org name for nicer notifications
         origin_org = db.execute(text("SELECT name FROM organizations WHERE id = :id"), {"id": origin_id}).fetchone()
         origin_name = origin_org.name if origin_org else None
@@ -252,6 +274,9 @@ async def batch_transfer_tickets(
             "tickets": tickets
         }
 
+    except HTTPException:
+        # Re-raise HTTPException as-is (includes validation errors)
+        raise
     except Exception as e:
         db.rollback()
         print(f"Transfer Error: {e}")
