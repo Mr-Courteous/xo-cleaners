@@ -113,7 +113,7 @@ function AppContent() {
       <Route path="/store-owner-login" element={<Login />} />
 
       {/* ✅ PLATFORM ADMIN ROUTE (Now Unprotected) */}
-      <Route path="/platform-admin" element={<PlatformAdmin />} />
+      <Route path="/platform-admin-login" element={<PlatformAdmin />} />
       <Route path="/store-admin" element={<StoreAdmin />} />
       <Route path="/org" element={<StoreOwner />} />
       <Route path="/about" element={<About />} />

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { MapPin, Search, Package, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { MapPin, Search, Package, CheckCircle, AlertCircle, Loader2, AlertTriangle, X } from 'lucide-react';
 import { Rack } from '../types'; // Assuming this type is { number: number, is_occupied: boolean, ticket_id: number, ticket_number: string }
 import Modal from './Modal';
 import { useColors } from '../state/ColorsContext';
@@ -51,6 +51,10 @@ export default function RackManagement() {
   const [assignRackNumber, setAssignRackNumber] = useState('');
   const [assigning, setAssigning] = useState(false); // <-- ADDED for API call state
   const [assignError, setAssignError] = useState<string | null>(null);
+
+  // --- Re-rack confirmation states ---
+  const [showReRackConfirm, setShowReRackConfirm] = useState(false);
+  const [reRackData, setReRackData] = useState<{ old_rack: number | null; new_rack: number } | null>(null);
 
   // Helper to parse backend error responses into a friendly message
   const parseApiError = (error: any) => {
@@ -178,7 +182,7 @@ export default function RackManagement() {
       if (!token) throw new Error("Access token missing");
 
       // Use axios.put to make the API call
-      await axios.put(
+      const response = await axios.put(
         `${baseURL}/api/organizations/tickets/${ticketId}/rack`, // Endpoint
         { rack_number: parseInt(assignRackNumber) }, // Request body
         { // Config object with headers
@@ -188,6 +192,18 @@ export default function RackManagement() {
           }
         }
       );
+
+      // Check if this is a re-racking operation
+      if (response.data?.is_rerack) {
+        // Show re-rack confirmation dialog
+        setReRackData({
+          old_rack: response.data?.old_rack,
+          new_rack: response.data?.new_rack
+        });
+        setShowReRackConfirm(true);
+        setAssigning(false);
+        return;
+      }
 
       // Clear the form first
       setTicketNumber(''); // Clear ticket number input
@@ -207,6 +223,43 @@ export default function RackManagement() {
       setAssignError(errorMessage);
       setModalMessage(`Failed to assign rack: ${errorMessage}`);
       setIsModalOpen(true);
+    } finally {
+      setAssigning(false);
+    }
+  };
+
+  // --- Handle re-rack confirmation ---
+  const handleReRackConfirm = async () => {
+    if (!validatedTicket || !assignRackNumber || !reRackData) {
+      setShowReRackConfirm(false);
+      return;
+    }
+
+    setAssigning(true);
+
+    try {
+      // Clear the form
+      setTicketNumber('');
+      setValidatedTicket(null);
+      setAssignRackNumber('');
+      setShowReRackConfirm(false);
+      
+      // Store the old and new rack for the success message
+      const oldRack = reRackData.old_rack;
+      const newRack = reRackData.new_rack;
+      setReRackData(null);
+
+      // Refetch racks
+      await refetch();
+
+      // Show success message
+      setModalMessage(`Ticket re-racked from rack #${oldRack} to rack #${newRack} successfully!`);
+      setIsModalOpen(true);
+    } catch (error: any) {
+      console.error('Re-rack confirmation error:', error);
+      setModalMessage(`An error occurred during re-racking.`);
+      setIsModalOpen(true);
+      setShowReRackConfirm(false);
     } finally {
       setAssigning(false);
     }
@@ -240,6 +293,58 @@ export default function RackManagement() {
       >
         {modalMessage}
       </Modal>
+
+      {/* Re-rack Confirmation Modal */}
+      {showReRackConfirm && reRackData && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+            <div className="p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <AlertTriangle className="h-6 w-6 text-yellow-600" />
+                <h3 className="text-lg font-semibold text-gray-900">Confirm Re-racking</h3>
+              </div>
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+                <p className="text-gray-700 mb-3">
+                  This ticket is already racked at <span className="font-semibold">Rack #{reRackData.old_rack}</span>.
+                </p>
+                <p className="text-gray-700">
+                  Do you want to move it to <span className="font-semibold">Rack #{reRackData.new_rack}</span>?
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setShowReRackConfirm(false);
+                    setReRackData(null);
+                  }}
+                  disabled={assigning}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleReRackConfirm}
+                  disabled={assigning}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {assigning ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Confirming...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="h-4 w-4" />
+                      Confirm Re-rack
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="mb-8">
         <h2 className="text-2xl font-bold text-gray-900">Rack Management</h2>
         <p className="text-gray-600">Manage clothing placement and rack assignments</p>

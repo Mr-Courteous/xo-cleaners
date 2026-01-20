@@ -24,7 +24,9 @@ import {
     Phone,
     UserPlus,
     Lock,
-    Home
+    Home,
+    Eye,
+    EyeOff
 } from 'lucide-react';
 import Header from './Header';
 import baseURL from '../lib/config';
@@ -41,6 +43,7 @@ function AdminLogin({ onLoginSuccess }: AdminLoginProps) {
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -96,14 +99,28 @@ function AdminLogin({ onLoginSuccess }: AdminLoginProps) {
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-                        <input
-                            type="password"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            required
-                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
-                            placeholder="••••••••"
-                        />
+                        <div className="relative">
+                            <input
+                                type={showPassword ? 'text' : 'password'}
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                required
+                                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all pr-10"
+                                placeholder="••••••••"
+                            />
+                            <button
+                                type="button"
+                                onClick={() => setShowPassword(!showPassword)}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors p-1 hover:bg-gray-100 rounded-lg"
+                                title={showPassword ? 'Hide password' : 'Show password'}
+                            >
+                                {showPassword ? (
+                                    <EyeOff className="h-5 w-5" strokeWidth={2.5} />
+                                ) : (
+                                    <Eye className="h-5 w-5" strokeWidth={2.5} />
+                                )}
+                            </button>
+                        </div>
                     </div>
                     <button
                         type="submit"

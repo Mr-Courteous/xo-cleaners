@@ -559,7 +559,35 @@ async def assign_transfer_rack_to_ticket(
         if not organization_id:
             raise HTTPException(status_code=401, detail="Missing Organization ID")
 
-        # 1. Verify the Rack exists in the Branch's own organization
+        # 1. Get the ticket's current transfer rack (if any) and transfer status
+        ticket_query = text("""
+            SELECT transfer_rack_number, transfer_status, ticket_number FROM tickets 
+            WHERE id = :ticket_id AND transferred_to_org_id = :org_id
+        """)
+        ticket_result = db.execute(ticket_query, {
+            "ticket_id": ticket_id,
+            "org_id": organization_id
+        }).fetchone()
+
+        if not ticket_result:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Ticket {ticket_id} was not transferred to this branch (Branch ID: {organization_id})."
+            )
+
+        old_rack_number = ticket_result.transfer_rack_number
+        transfer_status = ticket_result.transfer_status
+        
+        # Prevent re-racking if transfer is completed
+        if transfer_status == 'completed':
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot re-rack ticket #{ticket_result.ticket_number}. This transferred ticket has already been completed."
+            )
+        
+        is_rerack = old_rack_number is not None
+
+        # 2. Verify the new Rack exists in the Branch's own organization and is available
         rack_query = text("""
             SELECT id FROM racks 
             WHERE number = :rack_number 
@@ -574,8 +602,19 @@ async def assign_transfer_rack_to_ticket(
         if not available_rack:
             return {"success": False, "detail": f"Rack {req.rack_number} is occupied or not found at this branch."}
 
-        # 2. Update Ticket
-        # FIXED COLUMN NAME: transferred_to_org_id (as per your DB hint)
+        # 3. If re-racking, free up the old rack first
+        if is_rerack:
+            rack_free_query = text("""
+                UPDATE racks 
+                SET is_occupied = false, ticket_id = NULL 
+                WHERE number = :rack_number AND organization_id = :org_id
+            """)
+            db.execute(rack_free_query, {
+                "rack_number": old_rack_number,
+                "org_id": organization_id
+            })
+
+        # 4. Update Ticket with new transfer rack
         ticket_update_sql = text("""
             UPDATE tickets 
             SET 
@@ -586,19 +625,19 @@ async def assign_transfer_rack_to_ticket(
             RETURNING id, ticket_number, customer_id
         """)
         
-        ticket_result = db.execute(ticket_update_sql, {
+        ticket_update_result = db.execute(ticket_update_sql, {
             "rack_number": req.rack_number,
             "ticket_id": ticket_id,
             "org_id": organization_id
         }).fetchone()
 
-        if not ticket_result:
+        if not ticket_update_result:
             raise HTTPException(
                 status_code=404, 
                 detail=f"Ticket {ticket_id} was not transferred to this branch (Branch ID: {organization_id})."
             )
 
-        # 3. Mark the branch's local Rack as occupied
+        # 5. Mark the new rack as occupied
         db.execute(text("""
             UPDATE racks SET is_occupied = true, ticket_id = :ticket_id 
             WHERE number = :rack_number AND organization_id = :org_id
@@ -610,7 +649,7 @@ async def assign_transfer_rack_to_ticket(
 
         db.commit()
 
-        # Audit Log
+        # 6. Audit Log
         background_tasks.add_task(
             create_audit_log,
             org_id=organization_id,
@@ -619,10 +658,27 @@ async def assign_transfer_rack_to_ticket(
             actor_role=payload.get("role", "Unknown"),
             action="TRANSFER_TICKET_RACKED",
             ticket_id=ticket_id,
-            details={"rack_number": req.rack_number, "ticket_number": ticket_result.ticket_number}
+            details={
+                "ticket_number": ticket_update_result.ticket_number,
+                "new_rack": req.rack_number,
+                "old_rack": old_rack_number,
+                "is_rerack": is_rerack
+            }
         )
 
-        return {"success": True, "message": f"Ticket #{ticket_result.ticket_number} successfully racked at {req.rack_number}."}
+        # 7. Return response with re-rack flag
+        if is_rerack:
+            message = f"Ticket #{ticket_update_result.ticket_number} re-racked from rack {old_rack_number} to {req.rack_number}."
+        else:
+            message = f"Ticket #{ticket_update_result.ticket_number} successfully racked at {req.rack_number}."
+        
+        return {
+            "success": True,
+            "message": message,
+            "is_rerack": is_rerack,
+            "old_rack": old_rack_number,
+            "new_rack": req.rack_number
+        }
 
     except Exception as e:
         db.rollback()

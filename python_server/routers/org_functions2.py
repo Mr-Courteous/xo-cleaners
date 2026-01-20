@@ -447,7 +447,7 @@ async def validate_ticket_number(
 async def assign_rack_to_ticket(
     ticket_id: int,
     req: RackAssignmentRequest,
-    background_tasks: BackgroundTasks, # <--- 1. Add this
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     payload: Dict[str, Any] = Depends(get_current_user_payload),
 
@@ -455,8 +455,9 @@ async def assign_rack_to_ticket(
     """
     Assigns an available rack to a ticket. This is a special transaction that:
     1. Checks if the rack is available in the user's org.
-    2. Updates the ticket with the rack number AND sets status to 'ready_for_pickup'.
-    3. Marks the rack as occupied and links it to the ticket.
+    2. If the ticket already has a rack, frees up the old rack.
+    3. Updates the ticket with the new rack number AND sets status to 'ready_for_pickup'.
+    4. Marks the new rack as occupied and links it to the ticket.
     """
     try:
         # 1. Get organization_id AND role from the trusted token
@@ -476,7 +477,36 @@ async def assign_rack_to_ticket(
                 detail="Invalid token: Organization ID missing."
             )
 
-        # 3. Check if the rack is available IN THIS ORG
+        # 3. Get the ticket's current rack (if any) and status
+        ticket_query = text("""
+            SELECT rack_number, status FROM tickets 
+            WHERE id = :ticket_id AND organization_id = :org_id
+        """)
+        ticket_result = db.execute(ticket_query, {
+            "ticket_id": ticket_id,
+            "org_id": organization_id
+        }).fetchone()
+
+        if not ticket_result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Ticket not found in your organization."
+            )
+
+        old_rack_number = ticket_result.rack_number
+        ticket_status = ticket_result.status
+        
+        # Allow re-racking only if status is 'ready_for_pickup' or if it's a first-time racking
+        # Block re-racking if status is 'picked_up'
+        if ticket_status == 'picked_up':
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cannot re-rack ticket. This ticket has already been picked up."
+            )
+        
+        is_rerack = old_rack_number is not None
+
+        # 4. Check if the new rack is available IN THIS ORG
         rack_query = text("""
             SELECT id FROM racks 
             WHERE number = :rack_number 
@@ -494,32 +524,45 @@ async def assign_rack_to_ticket(
                 detail=f"Rack #{req.rack_number} is not available or does not exist in your organization."
             )
 
-        # 4. Update the ticket, ensuring it's in the same org
-        # --- THIS IS THE MODIFIED PART ---
+        # 5. If re-racking, free up the old rack first
+        if is_rerack:
+            rack_free_query = text("""
+                UPDATE racks
+                SET 
+                    is_occupied = false,
+                    ticket_id = NULL
+                WHERE
+                    number = :rack_number AND organization_id = :org_id
+            """)
+            db.execute(rack_free_query, {
+                "rack_number": old_rack_number,
+                "org_id": organization_id
+            })
+
+        # 6. Update the ticket with the new rack
         ticket_update_sql = text("""
             UPDATE tickets 
             SET 
                 rack_number = :rack_number, 
-                status = 'ready_for_pickup'  -- <-- ADDED THIS LINE
+                status = 'ready_for_pickup'
             WHERE id = :ticket_id AND organization_id = :org_id
             RETURNING id
         """)
-        # ---------------------------------
         
-        ticket_result = db.execute(ticket_update_sql, {
+        ticket_update_result = db.execute(ticket_update_sql, {
             "rack_number": req.rack_number,
             "ticket_id": ticket_id,
             "org_id": organization_id
         }).fetchone()
 
-        if not ticket_result:
+        if not ticket_update_result:
             db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Ticket not found in your organization."
             )
 
-        # 5. Update the rack to mark it as occupied
+        # 7. Update the new rack to mark it as occupied
         rack_update_sql = text("""
             UPDATE racks 
             SET is_occupied = true, ticket_id = :ticket_id 
@@ -531,33 +574,40 @@ async def assign_rack_to_ticket(
             "org_id": organization_id
         })
 
-        # 6. Commit the transaction
+        # 8. Commit the transaction
         db.commit()
         
-        
-            # 7. Audit Log (Running in background)
-        # We use .get() to prevent crashing if the key is missing
+        # 9. Audit Log (Running in background)
         background_tasks.add_task(
             create_audit_log,
             org_id=payload.get("organization_id"),
-            # Try 'id', if missing try 'user_id', if both missing use 0
             actor_id=payload.get("id") or payload.get("user_id") or 0,
             actor_name=payload.get("sub", "Unknown"),
             actor_role=payload.get("role", "Unknown"),
             action="Rack a ticket",
-            
             ticket_id=ticket_id,
-            
             details={
-                "ticket_id": ticket_id, 
+                "ticket_id": ticket_id,
+                "new_rack": req.rack_number,
+                "old_rack": old_rack_number,
+                "is_rerack": is_rerack
             }
         )
-        # --- UPDATED SUCCESS MESSAGE ---
-        return {"success": True, "message": f"Ticket {ticket_id} assigned to rack {req.rack_number} and marked as ready."}
-    
-    
 
-
+        # 10. Return response with re-rack flag
+        if is_rerack:
+            message = f"Ticket {ticket_id} re-racked from rack {old_rack_number} to rack {req.rack_number}."
+        else:
+            message = f"Ticket {ticket_id} assigned to rack {req.rack_number} and marked as ready."
+        
+        return {
+            "success": True,
+            "message": message,
+            "is_rerack": is_rerack,
+            "old_rack": old_rack_number,
+            "new_rack": req.rack_number
+        }
+    
     except HTTPException:
         db.rollback()
         raise

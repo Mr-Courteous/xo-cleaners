@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useColors } from '../state/ColorsContext';
 import {
   Loader2, Search, PackageCheck, MapPin,
-  CheckCircle2, X, RefreshCw, User, LayoutGrid, LogOut, Truck, AlertCircle, Archive, Share2
+  CheckCircle2, X, RefreshCw, User, LayoutGrid, LogOut, Truck, AlertCircle, Archive, Share2, AlertTriangle
 } from 'lucide-react';
 import axios from 'axios';
 import baseURL from '../lib/config';
@@ -53,6 +53,10 @@ const TicketTransfersProcess = () => {
   const [currentTicketForRacking, setCurrentTicketForRacking] = useState<Ticket | null>(null);
   const [selectedRack, setSelectedRack] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Re-rack confirmation states
+  const [showReRackConfirm, setShowReRackConfirm] = useState(false);
+  const [reRackData, setReRackData] = useState<{ old_rack: number | null; new_rack: number } | null>(null);
 
   // Printing States
   const [showPrintPreview, setShowPrintPreview] = useState(false);
@@ -181,11 +185,23 @@ const TicketTransfersProcess = () => {
         { headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` } }
       );
 
+      // Check if this is a re-racking operation
+      if (res.data?.is_rerack) {
+        // Show re-rack confirmation dialog
+        setReRackData({
+          old_rack: res.data?.old_rack,
+          new_rack: res.data?.new_rack
+        });
+        setShowReRackConfirm(true);
+        setIsSubmitting(false);
+        return;
+      }
+
       if (res.data.success === true || res.status === 200) {
         setIsRackingModalOpen(false);
         setCurrentTicketForRacking(null);
         setSelectedRack("");
-        alert(`Success: Ticket #${ticketNum} assigned to rack ${rackNum}`);
+        showModal("Success", `Ticket #${ticketNum} assigned to rack ${rackNum}`, 'success');
         await fetchData();
       } else {
         throw new Error(res.data.detail || "Server logic failed to assign rack");
@@ -193,9 +209,45 @@ const TicketTransfersProcess = () => {
 
     } catch (err: any) {
       console.error('Rack assignment error:', err);
-      const errorMsg = err.response?.data?.detail || err.message || 'Failed to assign rack';
+      const errorMsg = parseApiError(err);
       setError(errorMsg);
-      alert(`RACKING FAILED: ${errorMsg}`);
+      showModal("Error", `Failed to assign rack: ${errorMsg}`, 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // --- Handle re-rack confirmation ---
+  const handleReRackConfirm = async () => {
+    if (!currentTicketForRacking || !selectedRack || !reRackData) {
+      setShowReRackConfirm(false);
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      // Store old and new rack values before clearing state
+      const oldRack = reRackData.old_rack;
+      const newRack = reRackData.new_rack;
+      const ticketNum = currentTicketForRacking.ticket_number;
+
+      // Clear the form
+      setIsRackingModalOpen(false);
+      setCurrentTicketForRacking(null);
+      setSelectedRack("");
+      setShowReRackConfirm(false);
+      setReRackData(null);
+
+      // Refetch data
+      await fetchData();
+
+      // Show success message
+      showModal("Re-racking Success", `Ticket #${ticketNum} re-racked from rack #${oldRack} to rack #${newRack} successfully!`, 'success');
+    } catch (error: any) {
+      console.error('Re-rack confirmation error:', error);
+      showModal("Error", "An error occurred during re-racking.", 'error');
+      setShowReRackConfirm(false);
     } finally {
       setIsSubmitting(false);
     }
@@ -627,6 +679,58 @@ const TicketTransfersProcess = () => {
                   className="px-6 py-5 rounded-[1.5rem] text-slate-700 font-black uppercase text-xs border-2 border-slate-300 hover:bg-slate-50 transition-all"
                 >
                   Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* RE-RACK CONFIRMATION MODAL */}
+      {showReRackConfirm && reRackData && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white rounded-[3rem] w-full max-w-md overflow-hidden shadow-2xl">
+            <div className="p-8">
+              <div className="flex items-center gap-3 mb-6">
+                <AlertTriangle className="h-6 w-6 text-yellow-600" />
+                <h3 className="text-lg font-bold text-gray-900">Confirm Re-racking</h3>
+              </div>
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+                <p className="text-gray-700 mb-3">
+                  This ticket is already racked at <span className="font-semibold">Rack #{reRackData.old_rack}</span>.
+                </p>
+                <p className="text-gray-700">
+                  Do you want to move it to <span className="font-semibold">Rack #{reRackData.new_rack}</span>?
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setShowReRackConfirm(false);
+                    setReRackData(null);
+                  }}
+                  disabled={isSubmitting}
+                  className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-50 font-bold"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleReRackConfirm}
+                  disabled={isSubmitting}
+                  className="flex-1 px-4 py-3 text-white rounded-lg disabled:opacity-50 font-bold flex items-center justify-center gap-2"
+                  style={{ backgroundColor: colors.primaryColor }}
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Confirming...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="h-4 w-4" />
+                      Confirm Re-rack
+                    </>
+                  )}
                 </button>
               </div>
             </div>

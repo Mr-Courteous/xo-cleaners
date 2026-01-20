@@ -94,7 +94,7 @@ const Header = () => {
                                 backgroundImage: `linear-gradient(to right, ${colors.primaryColor}, ${colors.secondaryColor})` //
                             }}
                         >
-                            XoCleaners
+                            Xo Cleaners
                         </h1>
                     </Link>
                     

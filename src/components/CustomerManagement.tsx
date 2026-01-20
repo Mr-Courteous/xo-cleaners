@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Search, User, Phone, Mail, MapPin, Plus, 
   ChevronRight, X, Save, ArrowLeft, Edit2, Trash2,
-  CheckCircle, AlertCircle, Calendar
+  CheckCircle, AlertCircle, Calendar, ArrowUp, ArrowDown
 } from 'lucide-react';
 import axios from 'axios';
 import baseURL from '../lib/config';
@@ -28,6 +28,7 @@ export default function CustomerManagement() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | 'none'>('none');
   
   // Form State
   const [formData, setFormData] = useState({
@@ -188,6 +189,25 @@ export default function CustomerManagement() {
     setFormData({ first_name: '', last_name: '', phone: '', email: '', address: '' });
   };
 
+  const getSortedCustomers = () => {
+    let sorted = [...customers];
+    
+    if (sortOrder !== 'none') {
+      sorted.sort((a, b) => {
+        const nameA = (a.first_name ? `${a.first_name} ${a.last_name || ''}` : a.name || '').toLowerCase().trim();
+        const nameB = (b.first_name ? `${b.first_name} ${b.last_name || ''}` : b.name || '').toLowerCase().trim();
+        
+        if (sortOrder === 'asc') {
+          return nameA.localeCompare(nameB);
+        } else {
+          return nameB.localeCompare(nameA);
+        }
+      });
+    }
+    
+    return sorted;
+  };
+
   const handleSelectCustomer = (customer: Customer) => {
     setSelectedCustomer(customer);
     setViewMode('details');
@@ -302,6 +322,44 @@ export default function CustomerManagement() {
         </div>
       </div>
 
+      <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+        <span className="text-sm font-medium text-gray-700">Sort Alphabetically:</span>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setSortOrder('none')}
+            className={`flex items-center gap-1 px-4 py-2 rounded-lg font-medium text-sm transition-all ${
+              sortOrder === 'none' 
+                ? 'bg-gray-200 text-gray-900' 
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-150'
+            }`}
+          >
+            None
+          </button>
+          <button
+            onClick={() => setSortOrder('asc')}
+            className={`flex items-center gap-1 px-4 py-2 rounded-lg font-medium text-sm transition-all ${
+              sortOrder === 'asc' 
+                ? 'text-white' 
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-150'
+            }`}
+            style={sortOrder === 'asc' ? { backgroundColor: colors.primaryColor } : {}}
+          >
+            <ArrowUp size={16} /> A - Z
+          </button>
+          <button
+            onClick={() => setSortOrder('desc')}
+            className={`flex items-center gap-1 px-4 py-2 rounded-lg font-medium text-sm transition-all ${
+              sortOrder === 'desc' 
+                ? 'text-white' 
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-150'
+            }`}
+            style={sortOrder === 'desc' ? { backgroundColor: colors.primaryColor } : {}}
+          >
+            <ArrowDown size={16} /> Z - A
+          </button>
+        </div>
+      </div>
+
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden min-h-[300px]">
         {loading ? (
           <div className="flex justify-center items-center h-64">
@@ -314,7 +372,7 @@ export default function CustomerManagement() {
           </div>
         ) : (
           <ul className="divide-y divide-gray-200">
-            {customers.map((customer) => (
+            {getSortedCustomers().map((customer) => (
               <li key={customer.id} className="hover:bg-blue-50 transition-colors cursor-pointer" onClick={() => handleSelectCustomer(customer)}>
                 <div className="p-4 sm:px-6 flex items-center justify-between">
                   <div className="flex items-center min-w-0 flex-1">

@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import {
   Search, CheckCircle, AlertCircle, Printer,
-  CreditCard, DollarSign, User, History, Wallet, ArrowLeft, MapPin, Calculator, Loader2
+  CreditCard, DollarSign, User, History, Wallet, ArrowLeft, MapPin, Calculator, Loader2, X
 } from 'lucide-react';
 import { Ticket } from '../types';
 import axios from 'axios';
@@ -48,6 +48,11 @@ export default function PickUp() {
   // --- Checkout Profile State ---
   const [checkoutProfile, setCheckoutProfile] = useState<CustomerCheckoutProfile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(false);
+
+  // Detail View State for Unpaid Tickets
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [detailTicket, setDetailTicket] = useState<any>(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
 
   // Payment State
   const [cashTendered, setCashTendered] = useState<string>('');
@@ -185,6 +190,26 @@ export default function PickUp() {
       console.error("Failed to load customer profile", error);
     } finally {
       setLoadingProfile(false);
+    }
+  };
+
+  // --- Fetch Detail for Unpaid Ticket ---
+  const handleViewUnpaidTicketDetail = async (ticketId: number) => {
+    setLoadingDetail(true);
+    try {
+      const token = localStorage.getItem('accessToken');
+      const response = await axios.get(
+        `${baseURL}/api/organizations/tickets/${ticketId}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      console.log("Detail Ticket Data:", response.data);
+      setDetailTicket(response.data);
+      setShowDetailModal(true);
+    } catch (error) {
+      console.error("Failed to load ticket detail", error);
+      showModal("Error", "Failed to load ticket details.", "error");
+    } finally {
+      setLoadingDetail(false);
     }
   };
 
@@ -510,13 +535,18 @@ export default function PickUp() {
             {checkoutProfile.tickets
               .filter(t => !t.is_fully_paid && t.id !== selectedTicket.id)
               .map(t => (
-                <div key={t.id} className="flex justify-between items-center p-2 bg-slate-50 rounded-lg border border-slate-100">
-                  <div>
-                    <p className="font-bold text-slate-700 text-[10px]">#{t.ticket_number}</p>
+                <button
+                  key={t.id}
+                  onClick={() => handleViewUnpaidTicketDetail(t.id)}
+                  disabled={loadingDetail}
+                  className="w-full flex justify-between items-center p-2 bg-slate-50 hover:bg-indigo-50 rounded-lg border border-slate-100 hover:border-indigo-200 cursor-pointer transition-all group disabled:opacity-50"
+                >
+                  <div className="text-left">
+                    <p className="font-bold text-slate-700 text-[10px] group-hover:text-indigo-700">#{ }</p>
                     <p className="text-[7px] text-slate-400 font-medium uppercase">{new Date(t.created_at).toLocaleDateString()}</p>
                   </div>
                   <span className="font-bold text-rose-600 text-[11px]">${t.remaining_balance.toFixed(2)}</span>
-                </div>
+                </button>
               ))}
           </div>
         </div>
@@ -604,6 +634,124 @@ export default function PickUp() {
   </div>
 )}
       {/* --- MODALS --- */}
+      
+      {/* Detail Modal for Unpaid Tickets */}
+      {showDetailModal && detailTicket && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+            {/* Header */}
+            <div className="sticky top-0 bg-white border-b border-gray-200 p-6 flex justify-between items-start">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-800">Ticket #{detailTicket.ticket_number}</h2>
+                <p className="text-gray-500 mt-1">{detailTicket.customer_name}</p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowDetailModal(false);
+                  setDetailTicket(null);
+                }}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X size={24} className="text-gray-600" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-6 space-y-6">
+              {/* Ticket Status & Date */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <p className="text-xs text-gray-500 font-semibold uppercase mb-1">Status</p>
+                  <p className="text-lg font-bold text-gray-800">{detailTicket.status?.replace(/_/g, ' ').toUpperCase()}</p>
+                </div>
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <p className="text-xs text-gray-500 font-semibold uppercase mb-1">Created</p>
+                  <p className="text-lg font-bold text-gray-800">{new Date(detailTicket.created_at).toLocaleDateString()}</p>
+                </div>
+              </div>
+
+              {/* Items List */}
+              {detailTicket.items && detailTicket.items.length > 0 && (
+                <div>
+                  <h3 className="text-lg font-bold text-gray-800 mb-4">Items ({detailTicket.items.length})</h3>
+                  <div className="space-y-2 bg-gray-50 p-4 rounded-lg max-h-48 overflow-y-auto">
+                    {detailTicket.items.map((item: any, idx: number) => (
+                      <div key={idx} className="flex justify-between items-start pb-2 border-b border-gray-200 last:border-0">
+                        <div>
+                          <p className="font-semibold text-gray-800">{item.clothing_name}</p>
+                          <p className="text-xs text-gray-500 mt-1">
+                            Qty: {item.quantity} {item.pieces ? `(${item.pieces} pcs)` : ''}
+                          </p>
+                          {item.item_instructions && (
+                            <p className="text-xs text-gray-600 mt-1 italic">Note: {item.item_instructions}</p>
+                          )}
+                        </div>
+                        <p className="font-bold text-gray-800 text-right">${Number(item.item_total).toFixed(2)}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Financial Summary */}
+              <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg">
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Subtotal</span>
+                    <span className="font-semibold text-gray-800">${Number(detailTicket.items?.reduce((sum: number, item: any) => sum + (Number(item.item_total) || 0), 0) || 0).toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Env Charge (4.7%)</span>
+                    <span className="font-semibold text-gray-800">${(Number(detailTicket.items?.reduce((sum: number, item: any) => sum + (Number(item.item_total) || 0), 0) || 0) * 0.047).toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Tax (8.25%)</span>
+                    <span className="font-semibold text-gray-800">${(Number(detailTicket.items?.reduce((sum: number, item: any) => sum + (Number(item.item_total) || 0), 0) || 0) * 0.0825).toFixed(2)}</span>
+                  </div>
+                  <div className="border-t border-blue-300 pt-2 flex justify-between font-bold">
+                    <span>Total</span>
+                    <span className="text-lg text-blue-600">${Number(detailTicket.total_amount || 0).toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-green-600">
+                    <span>Paid</span>
+                    <span className="font-semibold">- ${Number(detailTicket.paid_amount || 0).toFixed(2)}</span>
+                  </div>
+                  <div className="border-t border-blue-300 pt-2 flex justify-between font-bold text-red-600">
+                    <span>Balance Due</span>
+                    <span className="text-lg">${(Number(detailTicket.total_amount || 0) - Number(detailTicket.paid_amount || 0)).toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="sticky bottom-0 bg-white border-t border-gray-200 p-6 flex gap-3">
+              <button
+                onClick={() => {
+                  setShowDetailModal(false);
+                  setDetailTicket(null);
+                }}
+                className="flex-1 px-4 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium transition-colors"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => {
+                  // Option to select this ticket for payment
+                  handleSelectTicket(detailTicket);
+                  setShowDetailModal(false);
+                  setDetailTicket(null);
+                }}
+                className="flex-1 px-4 py-3 text-white rounded-lg font-medium transition-colors"
+                style={{ backgroundColor: colors.primaryColor }}
+              >
+                Pay This Ticket
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {modal.isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in">
           <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl scale-100 transform transition-all">

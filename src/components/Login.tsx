@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { LogIn, CheckCircle, XCircle } from "lucide-react";
+import { LogIn, CheckCircle, XCircle, Eye, EyeOff } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import Header from "./Header"; // ✅ Imported same Header as HomePage
 
@@ -224,23 +224,20 @@ const LoginPage: React.FC = () => {
                   required
                   disabled={isLoading}
                   minLength={8}
-                  className="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
+                  className="mt-1 block w-full px-4 py-3 pr-10 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all outline-none"
                   placeholder="••••••••"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors p-1 hover:bg-gray-100 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
                   aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  disabled={isLoading}
                 >
                   {showPassword ? (
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-5.523 0-10-4.477-10-10a9.97 9.97 0 012.02-5.786M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
+                    <EyeOff className="h-5 w-5" strokeWidth={2.5} />
                   ) : (
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3l18 18M4.53 4.53A10.003 10.003 0 001.5 12c0 5.523 4.477 10 10 10 2.486 0 4.767-.834 6.616-2.237M9.88 9.88a3 3 0 014.24 4.24" />
-                    </svg>
+                    <Eye className="h-5 w-5" strokeWidth={2.5} />
                   )}
                 </button>
               </div>
