@@ -234,6 +234,7 @@ export default function DropOff() {
   const [pickupDate, setPickupDate] = useState<string>(new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().substring(0, 16));
   const [showNewCustomerForm, setShowNewCustomerForm] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [modal, setModal] = useState({ isOpen: false, message: '', title: '', type: 'error' as 'error' | 'success' });
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [printContent, setPrintContent] = useState('');
@@ -277,8 +278,11 @@ export default function DropOff() {
           xxl: parseFloat(res.data.size_price_xxl) || 0.00
         });
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to fetch organization settings:", err);
+      const errorMsg = err.response?.data?.detail || "Failed to load pricing settings. Using defaults.";
+      setError(errorMsg);
+      setTimeout(() => setError(null), 5000);
     }
   };
 
@@ -294,8 +298,16 @@ export default function DropOff() {
       } else {
         setClothingTypes([]);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to fetch clothing types:', error);
+      const errorMsg = error.response?.data?.detail || "Failed to load clothing types. Please refresh the page.";
+      setError(errorMsg);
+      setModal({
+        isOpen: true,
+        title: "Load Error",
+        message: errorMsg,
+        type: "error"
+      });
     }
   };
 
@@ -318,14 +330,15 @@ export default function DropOff() {
       console.error("Failed to search customers:", error);
       setCustomers([]);
 
-      if (error.response && (error.response.status === 401 || error.response.status === 403)) {
-        setModal({
-          isOpen: true,
-          title: "Unauthorized",
-          message: "Your session has expired or you are unauthorized. Please log in again.",
-          type: "error"
-        });
+      let errorMsg = "Failed to search customers.";
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        errorMsg = "Your session has expired. Please log in again.";
+      } else if (error.response?.data?.detail) {
+        errorMsg = error.response.data.detail;
       }
+
+      setError(errorMsg);
+      setTimeout(() => setError(null), 5000);
     } finally {
       setLoading(false);
     }
@@ -354,6 +367,9 @@ export default function DropOff() {
       setStep("items");
     } catch (error: any) {
       console.error("Failed to create customer:", error);
+      const errorMsg = error.response?.data?.detail || "Failed to create customer. Please check your information and try again.";
+      setError(errorMsg);
+      setTimeout(() => setError(null), 5000);
     }
   };
 
@@ -686,6 +702,23 @@ export default function DropOff() {
 
   return (
     <div className="w-full max-w-full mx-auto px-4 py-4 min-h-screen bg-gray-100 font-sans">
+      {/* ERROR BANNER */}
+      {error && (
+        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
+          <svg className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+          </svg>
+          <div className="flex-1">
+            <p className="text-red-800 text-sm font-medium">{error}</p>
+          </div>
+          <button onClick={() => setError(null)} className="text-red-600 hover:text-red-800">
+            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+            </svg>
+          </button>
+        </div>
+      )}
+
       {/* HEADER & TITLE */}
       <div className="mb-8">
         <h2 className="text-2xl font-bold text-gray-900">Drop Off Clothes</h2>

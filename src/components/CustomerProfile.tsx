@@ -86,8 +86,10 @@ export default function CustomerProfile({ customerId, onClose }: CustomerProfile
       
       await fetchCustomerDetails(); // Refresh to update the tenure badge
       setIsEditingDate(false);
-    } catch (err) {
-      alert('Failed to update date. Please check your connection or permissions.');
+      setError('');
+    } catch (err: any) {
+      const errorMsg = err.response?.data?.detail || 'Failed to update date. Please check your connection or permissions.';
+      setError(errorMsg);
     } finally {
       setIsSaving(false);
     }

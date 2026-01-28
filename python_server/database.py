@@ -5,9 +5,9 @@ from sqlalchemy.ext.declarative import declarative_base # <--- 1. Make sure this
 
 
 
-# DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5433/cleanpress")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5433/cleanpress")
 
-DATABASE_URL = os.getenv("DATABASE_URL") 
+# DATABASE_URL = os.getenv("DATABASE_URL") 
 
 
 if not DATABASE_URL:

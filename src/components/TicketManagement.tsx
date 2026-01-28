@@ -28,6 +28,8 @@ export default function TicketManagement() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [modal, setModal] = useState({ isOpen: false, title: '', message: '', type: 'success' as 'success' | 'error' });
   
   // Printing States
   const [showPrintPreview, setShowPrintPreview] = useState(false);
@@ -43,6 +45,7 @@ export default function TicketManagement() {
   const searchTickets = async () => {
     if (!searchQuery.trim()) return;
     setLoading(true);
+    setError(null);
     try {
       const token = localStorage.getItem("accessToken");
       if (!token) throw new Error("Access token not found");
@@ -53,9 +56,11 @@ export default function TicketManagement() {
         { headers }
       );
       setTickets(response.data);
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      alert('Failed to search tickets.');
+      const errorMsg = error.response?.data?.detail || 'Failed to search tickets. Please try again.';
+      setError(errorMsg);
+      setModal({ isOpen: true, title: 'Search Error', message: errorMsg, type: 'error' });
     } finally {
       setLoading(false);
     }
@@ -64,6 +69,7 @@ export default function TicketManagement() {
   // --- View Details Modal ---
   const openViewModal = async (ticketId: number) => {
     setLoading(true);
+    setError(null);
     try {
       const token = localStorage.getItem("accessToken");
       if (!token) throw new Error("Access token not found");
@@ -72,8 +78,11 @@ export default function TicketManagement() {
       });
       setSelectedTicket(response.data);
       console.log('Selected Ticket Details:', response.data);
-    } catch (error) {
-      alert('Failed to fetch ticket details.');
+    } catch (error: any) {
+      console.error(error);
+      const errorMsg = error.response?.data?.detail || 'Failed to fetch ticket details.';
+      setError(errorMsg);
+      setModal({ isOpen: true, title: 'Load Error', message: errorMsg, type: 'error' });
     } finally {
       setLoading(false);
     }
@@ -283,6 +292,23 @@ export default function TicketManagement() {
 
   return (
     <div className="p-4">
+      {/* Error Banner */}
+      {error && (
+        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
+          <svg className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+          </svg>
+          <div className="flex-1">
+            <p className="text-red-800 text-sm font-medium">{error}</p>
+          </div>
+          <button onClick={() => setError(null)} className="text-red-600 hover:text-red-800">
+            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+            </svg>
+          </button>
+        </div>
+      )}
+
       {/* Search Bar */}
       <div className="flex items-center space-x-2 mb-6">
         <input
@@ -590,6 +616,24 @@ export default function TicketManagement() {
           </>
         }
       />
+
+      {/* Error Modal */}
+      {modal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-lg p-6 max-w-sm w-full shadow-xl">
+            <h3 className={`text-lg font-bold mb-2 ${modal.type === 'error' ? 'text-red-600' : 'text-green-600'}`}>
+              {modal.title}
+            </h3>
+            <p className="text-gray-600 mb-6">{modal.message}</p>
+            <button
+              onClick={() => setModal({ ...modal, isOpen: false })}
+              className="w-full py-2 bg-gray-100 text-gray-800 rounded hover:bg-gray-200 font-medium"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
