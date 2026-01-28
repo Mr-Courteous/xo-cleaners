@@ -89,18 +89,28 @@ def verify_password(password: str, hashed_password: str) -> bool:
         return False
 
 # --- JWT Token Management ---
-
 def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
-    """Generates a JWT Access Token."""
+    """Generates a JWT Access Token with JSON-safe types."""
     to_encode = data.copy()
+    
+    # 1. Handle Expiration
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
         expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
         
-    # Add standard JWT claims
+    # 2. Add standard JWT claims
     to_encode.update({"exp": expire, "iat": datetime.utcnow()})
     
+    # ✅ THE FIX: Ensure all values are JSON serializable (converts UUIDs and Dates to strings)
+    # This prevents the 'TypeError: Object of type UUID is not JSON serializable'
+    for key, value in to_encode.items():
+        if isinstance(value, (datetime, timedelta)):
+            continue # jwt.encode handles datetime objects in 'exp' and 'iat' automatically
+        if not isinstance(value, (str, int, float, bool, type(None))):
+            to_encode[key] = str(value)
+
+    # 3. Encode
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
