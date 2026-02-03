@@ -22,11 +22,14 @@ cryptography==46.0.3
 python-multipart==0.0.6
 python-dateutil==2.9.0.post0
 starlette==0.27.0
+httpx  # For Vercel Blob Storage API requests
+vercel-blob
 
 # === BARCODE & PRINTING UTILITIES ===
 Pillow==12.0.0
 viivakoodi==0.8.0
 python-barcode==0.16.1
 python-escpos==3.0a8
-pyserial==3.5
-aiofiles  
+pyserial==3.5 
+aiofiles
+python-dotenv  # For loading .env files  

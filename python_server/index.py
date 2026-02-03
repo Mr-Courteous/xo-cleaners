@@ -1,5 +1,12 @@
 import os
 from typing import Optional
+
+# =====================
+# LOAD ENVIRONMENT VARIABLES FIRST
+# =====================
+from dotenv import load_dotenv
+load_dotenv()  # Load .env file (must be before other imports that use env vars)
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles  # ✅ ADDED THIS IMPORT
@@ -7,7 +14,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from utils.common import hash_password
 from database import SessionLocal, engine
-
+  
 # Routers
 from routers.registration import router as registration_router
 from routers.auth import router as auth_router
@@ -52,7 +59,7 @@ app = FastAPI(title="XoCleaners1 User Management API")
 
 # CORS Configuration
 app.add_middleware(
-    CORSMiddleware,
+    CORSMiddleware, 
     allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],

@@ -8,8 +8,8 @@ done
 echo "PostgreSQL is ready!"
 
 echo "Initializing database..."
-python init_db_postgres.py
+# python init_db_postgres.py
 
 echo "Starting FastAPI application..."
 echo "Using port: ${PORT:-3001}"
-uvicorn main:app --host 0.0.0.0 --port "${PORT:-3001}"
+uvicorn index:app --host 0.0.0.0 --port "${PORT:-3001}"

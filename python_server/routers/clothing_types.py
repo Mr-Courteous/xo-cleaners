@@ -1,5 +1,4 @@
 import os
-import aiofiles  # Required for async file operations
 from typing import Dict, Any, Optional, List
 from pydantic import BaseModel
 from fastapi import (
@@ -13,7 +12,6 @@ from fastapi import (
 )
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-import uuid  # For unique filenames
 from datetime import timedelta, datetime, timezone
 
 # -----------------------------------------------------------------
@@ -25,14 +23,18 @@ from utils.common import (
     ALL_STAFF_ROLES, 
     ORG_OWNER_ROLE
 )
+
+# -----------------------------------------------------------------
+# 📦 Vercel Blob Storage Integration
+# -----------------------------------------------------------------
+from utils.vercel_blob import (
+    upload_to_vercel_blob,
+    delete_from_vercel_blob,
+    replace_vercel_blob
+)
 # -----------------------------------------------------------------
 # ❌ REMOVED all the mock functions (mock get_db, mock get_current_user_payload, etc.)
 # -----------------------------------------------------------------
-
-
-# Define a path to save images
-STATIC_DIR = "static/clothing_images"
-os.makedirs(STATIC_DIR, exist_ok=True)
 
 
 
@@ -54,29 +56,10 @@ class ClothingTypeResponse(BaseModel):
     pieces: int           # <-- ADDED
     
 
-# Helper function to save files (as seen in your original code)
-async def save_uploaded_file(image_file: UploadFile) -> str:
-    """Saves uploaded file to a static directory and returns the URL path."""
-    try:
-        # Create a unique filename
-        file_ext = os.path.splitext(image_file.filename)[1]
-        unique_filename = f"{uuid.uuid4()}{file_ext}"
-        file_path = os.path.join(STATIC_DIR, unique_filename)
-        
-        # Asynchronously write the file
-        async with aiofiles.open(file_path, 'wb') as out_file:
-            while content := await image_file.read(1024):
-                await out_file.write(content)
-        
-        # Return the URL path, not the file system path
-        image_url = f"/{STATIC_DIR}/{unique_filename}"
-        return image_url
-    except Exception as e:
-        print(f"[ERROR] Could not save file: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error saving image file: {e}"
-        )
+# -----------------------------------------------------------------
+# 📦 NOTE: File upload now uses Vercel Blob Storage
+# The upload_to_vercel_blob function is imported from utils.vercel_blob
+# -----------------------------------------------------------------
 
 
 @router.get("", response_model=List[ClothingTypeResponse], summary="Get all clothing types for *your* organization")
@@ -176,8 +159,8 @@ async def create_clothing_type(
             )
 
     try:
-        # 2. Save uploaded image
-        image_url = await save_uploaded_file(image_file)
+        # 2. Upload image to Vercel Blob Storage
+        image_url = await upload_to_vercel_blob(image_file, folder="clothing_images")
 
         # 3. Insert record (NO total_price here - database does it)
         # --- MODIFIED: Added 'pieces' column ---
@@ -283,16 +266,12 @@ async def update_clothing_type(
 
         # 3. Handle new image upload (optional)
         if image_file:
-            new_image_url = await save_uploaded_file(image_file)
-            
-            # 4. Remove old image
-            if old_image_url:
-                try:
-                    old_image_path = old_image_url.lstrip("/")
-                    if os.path.exists(old_image_path):
-                        os.remove(old_image_path)
-                except Exception as img_err:
-                    print(f"[WARN] Failed to delete old image file {old_image_url}: {img_err}")
+            # Upload new image to Vercel Blob and delete old one
+            new_image_url = await replace_vercel_blob(
+                old_url=old_image_url,
+                new_file=image_file,
+                folder="clothing_images"
+            )
 
 
         # 5. Update record
@@ -377,11 +356,11 @@ async def delete_clothing_type(
         )
     allowed_roles = ["cashier", "store_admin", "org_owner", "STORE_OWNER", "owner"]
         
-    if user_role not in allowed_roles:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Access Denied: Role '{user_role}' is not authorized."
-            )
+    if role not in allowed_roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Access Denied: Role '{role}' is not authorized."
+        )
 
     try:
         # 2. Check if clothing type exists
@@ -417,15 +396,9 @@ async def delete_clothing_type(
         )
         db.commit()
 
-        # 5. Delete image file
+        # 5. Delete image from Vercel Blob Storage
         if image_url:
-            try:
-                image_path = image_url.lstrip("/")
-                if os.path.exists(image_path):
-                    os.remove(image_path)
-                    print(f"[INFO] Deleted image file: {image_path}")
-            except Exception as img_err:
-                print(f"[WARN] Failed to delete image file for clothing type {id}: {img_err}")
+            await delete_from_vercel_blob(image_url)
 
         return {"success": True, "message": "Clothing type and image deleted successfully"}
 

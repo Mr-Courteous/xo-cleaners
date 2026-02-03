@@ -21,6 +21,12 @@ import os
 import uuid 
 import json
 
+# =====================
+# LOAD ENVIRONMENT VARIABLES
+# =====================
+from dotenv import load_dotenv
+load_dotenv()  # This loads the .env file
+
 import decimal # ADDED: Import for handling DECIMAL types
 
 import jwt  # PyJWT

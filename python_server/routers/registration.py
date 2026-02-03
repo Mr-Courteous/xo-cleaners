@@ -266,14 +266,14 @@ def setup_default_settings_and_clothing(db: Session, organization_id: int):
             "name": "Shirt",
             "plant_price": 1000.0,
             "margin": 200.0,
-            "image_url": "/static/images/shirt.jpg", 
+            "image_url": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRyQRSXO6h19eofL0okaGyC3USwEnhjGFJ4WQ&s", 
             "organization_id": organization_id
         },
         {
             "name": "Trousers",
             "plant_price": 1200.0,
             "margin": 300.0,
-            "image_url": "/static/images/trousers.jpg",
+            "image_url": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRvK_aHjnOZdc64HGwqbyds5nClwXg7O80OPA&s",
             "organization_id": organization_id
         }
     ]
@@ -296,7 +296,7 @@ def setup_default_settings_and_clothing(db: Session, organization_id: int):
             updated_at
         )
         VALUES (
-            :org_id, '#000000', '#FFFFFF',
+            :org_id, '#000000', '#FFFF00',
             'Welcome to our Store', 'Thank you for visiting!',
             100.00, 200.00, 300.00, 400.00,
             NOW()

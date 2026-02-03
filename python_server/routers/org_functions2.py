@@ -862,6 +862,12 @@ async def process_ticket_pickup(
 
         receipt_title = "PICKUP RECEIPT" if is_fully_paid else "PARTIAL PAYMENT RECEIPT"
 
+        # Prepare paid status HTML to avoid backslashes in f-string expression
+        if is_fully_paid:
+            paid_status_html = '<div style="padding: 5px; margin-top: 10px; text-align: center;"><p style="margin: 0; font-size: 12pt; font-weight: 900;">PAID IN FULL</p></div>'
+        else:
+            paid_status_html = f'<div style="display:flex;justify-content:space-between;margin-top:8px;font-weight:900;font-size:12pt;background:#eee;padding:4px;"><div>BALANCE DUE:</div><div>${float(balance_after):.2f}</div></div>'
+
         receipt_html = f"""
             <div style="font-family: monospace; font-size: 10pt; width: 300px; margin: 0 auto; color: #000;">
                 <div style="text-align:center; margin-bottom: 4px;">
@@ -904,7 +910,7 @@ async def process_ticket_pickup(
                     </div>
                 </div>
 
-                {"<div style=\"padding: 5px; margin-top: 10px; text-align: center;\"><p style=\"margin: 0; font-size: 12pt; font-weight: 900;\">PAID IN FULL</p></div>" if is_fully_paid else f"<div style=\"display:flex;justify-content:space-between;margin-top:8px;font-weight:900;font-size:12pt;background:#eee;padding:4px;\"><div>BALANCE DUE:</div><div>${float(balance_after):.2f}</div></div>"}
+                {paid_status_html}
                 
                 <hr style="margin: 15px 0 8px 0; border: 0; border-top: 1px dashed #000;" />
                 <div style="text-align: center; font-size: 9pt;">{footer_html}</div>
@@ -928,4 +934,4 @@ async def process_ticket_pickup(
     except Exception as e:
         db.rollback()
         print(f"Error during ticket pickup: {e}")
-        raise HTTPException(status_code=500, detail="An unexpected error occurred.")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred.") 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Plus, Edit2, Trash2, Save, X, Shirt, Upload, Image, AlertCircle, 
+import {
+  Plus, Edit2, Trash2, Save, X, Shirt, Upload, Image, AlertCircle,
   Loader2, DollarSign, List, Info, Ruler // 🎯 Added Ruler for Size Icon
 } from 'lucide-react';
 import baseURL from '../lib/config';
@@ -36,262 +36,262 @@ const getAuthHeaders = () => {
 // 👔 STARCH SETTINGS COMPONENT
 // ==========================================
 const StarchSettings: React.FC = () => {
-    const [prices, setPrices] = useState({
-        starch_price_light: '',
-        starch_price_medium: '',
-        starch_price_heavy: '',
-        starch_price_extra_heavy: ''
-    });
-    const [loading, setLoading] = useState(true);
-    const [saving, setSaving] = useState(false);
-    const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [prices, setPrices] = useState({
+    starch_price_light: '',
+    starch_price_medium: '',
+    starch_price_heavy: '',
+    starch_price_extra_heavy: ''
+  });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
-    useEffect(() => {
-        fetchSettings();
-    }, []);
+  useEffect(() => {
+    fetchSettings();
+  }, []);
 
-    const fetchSettings = async () => {
-        try {
-            const headers = getAuthHeaders();
-            const response = await fetch(`${baseURL}/api/settings`, { headers });
-            if (response.ok) {
-                const data = await response.json();
-                setPrices({
-                    starch_price_light: data.starch_price_light || 0,
-                    starch_price_medium: data.starch_price_medium || 0,
-                    starch_price_heavy: data.starch_price_heavy || 0,
-                    starch_price_extra_heavy: data.starch_price_extra_heavy || 0
-                });
-            }
-        } catch (error) {
-            console.error("Error fetching starch settings:", error);
-        } finally {
-            setLoading(false);
-        }
-    };
+  const fetchSettings = async () => {
+    try {
+      const headers = getAuthHeaders();
+      const response = await fetch(`${baseURL}/api/settings`, { headers });
+      if (response.ok) {
+        const data = await response.json();
+        setPrices({
+          starch_price_light: data.starch_price_light || 0,
+          starch_price_medium: data.starch_price_medium || 0,
+          starch_price_heavy: data.starch_price_heavy || 0,
+          starch_price_extra_heavy: data.starch_price_extra_heavy || 0
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching starch settings:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const { name, value } = e.target;
-        if (parseFloat(value) < 0) return;
-        setPrices(prev => ({ ...prev, [name]: value }));
-    };
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    if (parseFloat(value) < 0) return;
+    setPrices(prev => ({ ...prev, [name]: value }));
+  };
 
-    const handleSave = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setSaving(true);
-        setMessage(null);
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    setMessage(null);
 
-        try {
-            const headers = getAuthHeaders();
-            headers.append('Content-Type', 'application/json');
+    try {
+      const headers = getAuthHeaders();
+      headers.append('Content-Type', 'application/json');
 
-            const payload = {
-                starch_price_light: parseFloat(String(prices.starch_price_light)) || 0,
-                starch_price_medium: parseFloat(String(prices.starch_price_medium)) || 0,
-                starch_price_heavy: parseFloat(String(prices.starch_price_heavy)) || 0,
-                starch_price_extra_heavy: parseFloat(String(prices.starch_price_extra_heavy)) || 0,
-            };
+      const payload = {
+        starch_price_light: parseFloat(String(prices.starch_price_light)) || 0,
+        starch_price_medium: parseFloat(String(prices.starch_price_medium)) || 0,
+        starch_price_heavy: parseFloat(String(prices.starch_price_heavy)) || 0,
+        starch_price_extra_heavy: parseFloat(String(prices.starch_price_extra_heavy)) || 0,
+      };
 
-            const response = await fetch(`${baseURL}/api/settings/starch-prices`, { // Or generic settings PUT
-                method: 'PUT',
-                headers: headers,
-                body: JSON.stringify(payload)
-            });
+      const response = await fetch(`${baseURL}/api/settings/starch-prices`, { // Or generic settings PUT
+        method: 'PUT',
+        headers: headers,
+        body: JSON.stringify(payload)
+      });
 
-            if (!response.ok) {
-                const err = await response.json().catch(() => ({}));
-                throw new Error(err.detail || 'Failed to update prices');
-            }
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.detail || 'Failed to update prices');
+      }
 
-            setMessage({ type: 'success', text: "Starch prices updated successfully!" });
-            fetchSettings();
-        } catch (error: any) {
-            setMessage({ type: 'error', text: error.message || "Failed to update prices." });
-        } finally {
-            setSaving(false);
-        }
-    };
+      setMessage({ type: 'success', text: "Starch prices updated successfully!" });
+      fetchSettings();
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error.message || "Failed to update prices." });
+    } finally {
+      setSaving(false);
+    }
+  };
 
-    if (loading) return <div className="p-12 flex justify-center"><Loader2 className="animate-spin text-blue-600 w-8 h-8" /></div>;
+  if (loading) return <div className="p-12 flex justify-center"><Loader2 className="animate-spin text-blue-600 w-8 h-8" /></div>;
 
-    return (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 max-w-4xl">
-            <div className="p-6 border-b border-gray-100 bg-gray-50">
-                <h3 className="text-lg font-semibold flex items-center gap-2 text-gray-900">
-                    <DollarSign className="w-5 h-5 text-blue-600" /> Starch Pricing Configuration
-                </h3>
-                <p className="text-sm text-gray-500 mt-1">Set the additional upcharge applied to items for each starch level.</p>
+  return (
+    <div className="bg-white rounded-lg shadow-sm border border-gray-200 max-w-4xl">
+      <div className="p-6 border-b border-gray-100 bg-gray-50">
+        <h3 className="text-lg font-semibold flex items-center gap-2 text-gray-900">
+          <DollarSign className="w-5 h-5 text-blue-600" /> Starch Pricing Configuration
+        </h3>
+        <p className="text-sm text-gray-500 mt-1">Set the additional upcharge applied to items for each starch level.</p>
+      </div>
+      <form onSubmit={handleSave} className="p-6">
+        {message && (
+          <div className={`mb-6 p-4 rounded-lg flex items-center ${message.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+            <Info className="w-5 h-5 mr-2" /> {message.text}
+          </div>
+        )}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {[
+            { key: 'starch_price_light', label: 'Light Starch' },
+            { key: 'starch_price_medium', label: 'Medium Starch' },
+            { key: 'starch_price_heavy', label: 'Heavy Starch' },
+            { key: 'starch_price_extra_heavy', label: 'Extra Heavy Starch' }
+          ].map(({ key, label }) => (
+            <div key={key}>
+              <label className="block text-sm font-medium text-gray-700 mb-2">{label} ($)</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">$</span>
+                <input
+                  type="number" step="0.01"
+                  name={key}
+                  value={(prices as any)[key]}
+                  onChange={handleChange}
+                  className="w-full pl-8 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  placeholder="0.00"
+                />
+              </div>
             </div>
-            <form onSubmit={handleSave} className="p-6">
-                {message && (
-                    <div className={`mb-6 p-4 rounded-lg flex items-center ${message.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-                        <Info className="w-5 h-5 mr-2" /> {message.text}
-                    </div>
-                )}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {[
-                        { key: 'starch_price_light', label: 'Light Starch' },
-                        { key: 'starch_price_medium', label: 'Medium Starch' },
-                        { key: 'starch_price_heavy', label: 'Heavy Starch' },
-                        { key: 'starch_price_extra_heavy', label: 'Extra Heavy Starch' }
-                    ].map(({ key, label }) => (
-                        <div key={key}>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">{label} ($)</label>
-                            <div className="relative">
-                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">$</span>
-                                <input
-                                    type="number" step="0.01" 
-                                    name={key} 
-                                    value={(prices as any)[key]} 
-                                    onChange={handleChange}
-                                    className="w-full pl-8 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                                    placeholder="0.00"
-                                />
-                            </div>
-                        </div>
-                    ))}
-                </div>
-                <div className="mt-8 flex justify-end">
-                    <button type="submit" disabled={saving} className="flex items-center px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium">
-                        {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />} Save Changes
-                    </button>
-                </div>
-            </form>
+          ))}
         </div>
-    );
+        <div className="mt-8 flex justify-end">
+          <button type="submit" disabled={saving} className="flex items-center px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium">
+            {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />} Save Changes
+          </button>
+        </div>
+      </form>
+    </div>
+  );
 };
 
 // ==========================================
 // 📏 NEW: SIZE SETTINGS COMPONENT
 // ==========================================
 const SizeSettings: React.FC = () => {
-    const [prices, setPrices] = useState({
-        size_price_s: '',
-        size_price_m: '',
-        size_price_l: '',
-        size_price_xl: '',
-        size_price_xxl: ''
-    });
-    const [loading, setLoading] = useState(true);
-    const [saving, setSaving] = useState(false);
-    const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [prices, setPrices] = useState({
+    size_price_s: '',
+    size_price_m: '',
+    size_price_l: '',
+    size_price_xl: '',
+    size_price_xxl: ''
+  });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
-    useEffect(() => {
-        fetchSettings();
-    }, []);
+  useEffect(() => {
+    fetchSettings();
+  }, []);
 
-    const fetchSettings = async () => {
-        try {
-            const headers = getAuthHeaders();
-            const response = await fetch(`${baseURL}/api/settings`, { headers });
-            if (response.ok) {
-                const data = await response.json();
-                setPrices({
-                    size_price_s: data.size_price_s || 0,
-                    size_price_m: data.size_price_m || 0,
-                    size_price_l: data.size_price_l || 0,
-                    size_price_xl: data.size_price_xl || 0,
-                    size_price_xxl: data.size_price_xxl || 0
-                });
-            }
-        } catch (error) {
-            console.error("Error fetching size settings:", error);
-        } finally {
-            setLoading(false);
-        }
-    };
+  const fetchSettings = async () => {
+    try {
+      const headers = getAuthHeaders();
+      const response = await fetch(`${baseURL}/api/settings`, { headers });
+      if (response.ok) {
+        const data = await response.json();
+        setPrices({
+          size_price_s: data.size_price_s || 0,
+          size_price_m: data.size_price_m || 0,
+          size_price_l: data.size_price_l || 0,
+          size_price_xl: data.size_price_xl || 0,
+          size_price_xxl: data.size_price_xxl || 0
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching size settings:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const { name, value } = e.target;
-        if (parseFloat(value) < 0) return;
-        setPrices(prev => ({ ...prev, [name]: value }));
-    };
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    if (parseFloat(value) < 0) return;
+    setPrices(prev => ({ ...prev, [name]: value }));
+  };
 
-    const handleSave = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setSaving(true);
-        setMessage(null);
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    setMessage(null);
 
-        try {
-            const headers = getAuthHeaders();
-            headers.append('Content-Type', 'application/json');
+    try {
+      const headers = getAuthHeaders();
+      headers.append('Content-Type', 'application/json');
 
-            const payload = {
-                size_price_s: parseFloat(String(prices.size_price_s)) || 0,
-                size_price_m: parseFloat(String(prices.size_price_m)) || 0,
-                size_price_l: parseFloat(String(prices.size_price_l)) || 0,
-                size_price_xl: parseFloat(String(prices.size_price_xl)) || 0,
-                size_price_xxl: parseFloat(String(prices.size_price_xxl)) || 0,
-            };
+      const payload = {
+        size_price_s: parseFloat(String(prices.size_price_s)) || 0,
+        size_price_m: parseFloat(String(prices.size_price_m)) || 0,
+        size_price_l: parseFloat(String(prices.size_price_l)) || 0,
+        size_price_xl: parseFloat(String(prices.size_price_xl)) || 0,
+        size_price_xxl: parseFloat(String(prices.size_price_xxl)) || 0,
+      };
 
-            const response = await fetch(`${baseURL}/api/settings/size-prices`, { 
-                method: 'PUT',
-                headers: headers,
-                body: JSON.stringify(payload)
-            });
+      const response = await fetch(`${baseURL}/api/settings/size-prices`, {
+        method: 'PUT',
+        headers: headers,
+        body: JSON.stringify(payload)
+      });
 
-            if (!response.ok) {
-                const err = await response.json().catch(() => ({}));
-                throw new Error(err.detail || 'Failed to update size prices');
-            }
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.detail || 'Failed to update size prices');
+      }
 
-            setMessage({ type: 'success', text: "Clothing size prices updated successfully!" });
-            fetchSettings();
-        } catch (error: any) {
-            setMessage({ type: 'error', text: error.message || "Failed to update prices." });
-        } finally {
-            setSaving(false);
-        }
-    };
+      setMessage({ type: 'success', text: "Clothing size prices updated successfully!" });
+      fetchSettings();
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error.message || "Failed to update prices." });
+    } finally {
+      setSaving(false);
+    }
+  };
 
-    if (loading) return <div className="p-12 flex justify-center"><Loader2 className="animate-spin text-purple-600 w-8 h-8" /></div>;
+  if (loading) return <div className="p-12 flex justify-center"><Loader2 className="animate-spin text-purple-600 w-8 h-8" /></div>;
 
-    return (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 max-w-4xl">
-            <div className="p-6 border-b border-gray-100 bg-purple-50">
-                <h3 className="text-lg font-semibold flex items-center gap-2 text-gray-900">
-                    <Ruler className="w-5 h-5 text-purple-600" /> Clothing Size Pricing
-                </h3>
-                <p className="text-sm text-purple-700 mt-1">Set the additional upcharge applied to items for each clothing size.</p>
+  return (
+    <div className="bg-white rounded-lg shadow-sm border border-gray-200 max-w-4xl">
+      <div className="p-6 border-b border-gray-100 bg-purple-50">
+        <h3 className="text-lg font-semibold flex items-center gap-2 text-gray-900">
+          <Ruler className="w-5 h-5 text-purple-600" /> Clothing Size Pricing
+        </h3>
+        <p className="text-sm text-purple-700 mt-1">Set the additional upcharge applied to items for each clothing size.</p>
+      </div>
+      <form onSubmit={handleSave} className="p-6">
+        {message && (
+          <div className={`mb-6 p-4 rounded-lg flex items-center ${message.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+            <Info className="w-5 h-5 mr-2" /> {message.text}
+          </div>
+        )}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          {[
+            { key: 'size_price_s', label: 'Small (S)' },
+            { key: 'size_price_m', label: 'Medium (M)' },
+            { key: 'size_price_l', label: 'Large (L)' },
+            { key: 'size_price_xl', label: 'XL' },
+            { key: 'size_price_xxl', label: 'XXL' }
+          ].map(({ key, label }) => (
+            <div key={key} className="bg-gray-50 p-3 rounded-lg border border-gray-200 hover:border-purple-300 transition-colors">
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">{label}</label>
+              <div className="relative">
+                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 font-medium">$</span>
+                <input
+                  type="number" step="0.01"
+                  name={key}
+                  value={(prices as any)[key]}
+                  onChange={handleChange}
+                  className="w-full pl-5 pr-2 py-1 bg-white border border-gray-300 rounded text-sm font-bold text-gray-900 focus:ring-2 focus:ring-purple-500"
+                  placeholder="0.00"
+                />
+              </div>
             </div>
-            <form onSubmit={handleSave} className="p-6">
-                {message && (
-                    <div className={`mb-6 p-4 rounded-lg flex items-center ${message.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-                        <Info className="w-5 h-5 mr-2" /> {message.text}
-                    </div>
-                )}
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                    {[
-                        { key: 'size_price_s', label: 'Small (S)' },
-                        { key: 'size_price_m', label: 'Medium (M)' },
-                        { key: 'size_price_l', label: 'Large (L)' },
-                        { key: 'size_price_xl', label: 'XL' },
-                        { key: 'size_price_xxl', label: 'XXL' }
-                    ].map(({ key, label }) => (
-                        <div key={key} className="bg-gray-50 p-3 rounded-lg border border-gray-200 hover:border-purple-300 transition-colors">
-                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">{label}</label>
-                            <div className="relative">
-                                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 font-medium">$</span>
-                                <input
-                                    type="number" step="0.01" 
-                                    name={key} 
-                                    value={(prices as any)[key]} 
-                                    onChange={handleChange}
-                                    className="w-full pl-5 pr-2 py-1 bg-white border border-gray-300 rounded text-sm font-bold text-gray-900 focus:ring-2 focus:ring-purple-500"
-                                    placeholder="0.00"
-                                />
-                            </div>
-                        </div>
-                    ))}
-                </div>
-                <div className="mt-8 flex justify-end">
-                    <button type="submit" disabled={saving} className="flex items-center px-6 py-2 bg-gray-900 text-white rounded-lg hover:bg-black disabled:opacity-50 font-medium shadow-md">
-                        {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />} Save Sizes
-                    </button>
-                </div>
-            </form>
+          ))}
         </div>
-    );
+        <div className="mt-8 flex justify-end">
+          <button type="submit" disabled={saving} className="flex items-center px-6 py-2 bg-gray-900 text-white rounded-lg hover:bg-black disabled:opacity-50 font-medium shadow-md">
+            {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />} Save Sizes
+          </button>
+        </div>
+      </form>
+    </div>
+  );
 };
 
 // ==========================================
@@ -314,9 +314,12 @@ export default function ClothingManagement() {
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [formError, setFormError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false); 
-  const [isDeleting, setIsDeleting] = useState(false);     
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<{ id: number, name: string } | null>(null);
+
+  // 🎯 Add ref for file input
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (imageFile) {
@@ -325,7 +328,7 @@ export default function ClothingManagement() {
       return () => URL.revokeObjectURL(url);
     }
     if (!editingId) {
-       setImagePreviewUrl(null);
+      setImagePreviewUrl(null);
     }
     return;
   }, [imageFile, editingId]);
@@ -385,40 +388,40 @@ export default function ClothingManagement() {
       return false;
     }
     if (isCreating && !imageFile) {
-        setFormError("Item Image is required when creating a new item.");
-        return false;
+      setFormError("Item Image is required when creating a new item.");
+      return false;
     }
     return true;
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     const isCreating = !editingId;
     if (!validateForm(isCreating)) {
       return;
     }
-    
-    setIsSubmitting(true); 
+
+    setIsSubmitting(true);
     setFormError(null);
 
     const form = new FormData();
     form.append('name', formData.name);
     form.append('plant_price', formData.plant_price);
     form.append('margin', formData.margin);
-    
+
     if (imageFile) {
       form.append('image_file', imageFile);
     }
     form.append('pieces', formData.pieces);
 
     const authHeaders = getAuthHeaders();
-    
+
     try {
-      const url = editingId 
+      const url = editingId
         ? `${baseURL}/api/clothing-types/${editingId}`
         : `${baseURL}/api/clothing-types`;
-      
+
       const method = editingId ? 'PUT' : 'POST';
 
       const response = await fetch(url, {
@@ -428,33 +431,33 @@ export default function ClothingManagement() {
       });
 
       if (!response.ok) {
-          const text = await response.text().catch(() => '');
-          let parsed: any = null;
-          try {
-            parsed = text ? JSON.parse(text) : null;
-          } catch (e) { }
+        const text = await response.text().catch(() => '');
+        let parsed: any = null;
+        try {
+          parsed = text ? JSON.parse(text) : null;
+        } catch (e) { }
 
-          let serverMessage = '';
-          if (parsed) {
-            if (typeof parsed.detail === 'string') serverMessage = parsed.detail;
-            else if (parsed.detail) serverMessage = JSON.stringify(parsed.detail);
-            else if (parsed.message) serverMessage = parsed.message;
-            else serverMessage = JSON.stringify(parsed);
-          } else {
-            serverMessage = text || '';
-          }
-          const verb = method === 'POST' ? 'create' : 'update';
-          const finalMsg = serverMessage ? `${serverMessage}` : `Failed to ${verb} item.`;
-          throw new Error(finalMsg);
+        let serverMessage = '';
+        if (parsed) {
+          if (typeof parsed.detail === 'string') serverMessage = parsed.detail;
+          else if (parsed.detail) serverMessage = JSON.stringify(parsed.detail);
+          else if (parsed.message) serverMessage = parsed.message;
+          else serverMessage = JSON.stringify(parsed);
+        } else {
+          serverMessage = text || '';
+        }
+        const verb = method === 'POST' ? 'create' : 'update';
+        const finalMsg = serverMessage ? `${serverMessage}` : `Failed to ${verb} item.`;
+        throw new Error(finalMsg);
       }
-      
+
       resetForm();
       fetchClothingTypes();
     } catch (error: any) {
       console.error('Submission failed:', error);
       setFormError(`Failed to save item: ${error.message || String(error)}`);
     } finally {
-      setIsSubmitting(false); 
+      setIsSubmitting(false);
     }
   };
 
@@ -540,37 +543,34 @@ export default function ClothingManagement() {
 
       {/* 🎯 TAB NAVIGATION */}
       <div className="flex space-x-4 border-b border-gray-200 mb-6">
-        <button 
-            onClick={() => setActiveTab('items')} 
-            className={`flex items-center pb-3 px-2 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === 'items' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+        <button
+          onClick={() => setActiveTab('items')}
+          className={`flex items-center pb-3 px-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'items' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
         >
-            <List className="w-4 h-4 mr-2" /> Items Inventory
+          <List className="w-4 h-4 mr-2" /> Items Inventory
         </button>
-        <button 
-            onClick={() => setActiveTab('starch')} 
-            className={`flex items-center pb-3 px-2 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === 'starch' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+        <button
+          onClick={() => setActiveTab('starch')}
+          className={`flex items-center pb-3 px-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'starch' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
         >
-            <DollarSign className="w-4 h-4 mr-2" /> Starch Pricing
+          <DollarSign className="w-4 h-4 mr-2" /> Starch Pricing
         </button>
-        <button 
-            onClick={() => setActiveTab('size')} 
-            className={`flex items-center pb-3 px-2 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === 'size' ? 'border-purple-600 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+        <button
+          onClick={() => setActiveTab('size')}
+          className={`flex items-center pb-3 px-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'size' ? 'border-purple-600 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
         >
-            <Ruler className="w-4 h-4 mr-2" /> Size Pricing
+          <Ruler className="w-4 h-4 mr-2" /> Size Pricing
         </button>
       </div>
 
       {/* 🎯 CONTENT RENDERING */}
       {activeTab === 'starch' ? (
-          <StarchSettings />
+        <StarchSettings />
       ) : activeTab === 'size' ? (
-          <SizeSettings />
+        <SizeSettings />
       ) : (
         /* ITEMS INVENTORY TAB (Original Content) */
         <>
@@ -691,28 +691,32 @@ export default function ClothingManagement() {
 
                       <div className="col-span-2">
                         <label className="block text-sm font-medium text-gray-700 mb-2">Item Image</label>
-                        <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 flex flex-col items-center justify-center bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer relative">
+                        <div
+                          onClick={() => fileInputRef.current?.click()}
+                          className="border-2 border-dashed border-gray-300 rounded-lg p-6 flex flex-col items-center justify-center bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer relative"
+                        >
                           <input
+                            ref={fileInputRef}
                             type="file"
                             accept="image/*"
                             onChange={handleImageChange}
-                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                            className="hidden"
                           />
                           {imagePreviewUrl ? (
                             <div className="relative w-full h-48">
                               <img
                                 src={imagePreviewUrl}
                                 alt="Preview"
-                                className="w-full h-full object-contain rounded-lg"
+                                className="w-full h-full object-contain rounded-lg pointer-events-none"
                               />
-                              <div className="absolute inset-0 bg-black bg-opacity-40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity rounded-lg">
+                              <div className="absolute inset-0 bg-black bg-opacity-0 hover:bg-opacity-40 flex items-center justify-center opacity-0 hover:opacity-100 transition-all rounded-lg">
                                 <span className="text-white font-medium flex items-center">
                                   <Upload className="w-5 h-5 mr-2" /> Change Image
                                 </span>
                               </div>
                             </div>
                           ) : (
-                            <div className="text-center">
+                            <div className="text-center pointer-events-none">
                               <Image className="w-12 h-12 text-gray-400 mx-auto mb-2" />
                               <p className="text-sm text-gray-600">Click to upload image</p>
                               <p className="text-xs text-gray-400 mt-1">PNG, JPG up to 5MB</p>
@@ -787,7 +791,7 @@ export default function ClothingManagement() {
                         </button>
                       </div>
                     </div>
-                    
+
                     <h4 className="font-semibold text-gray-900 text-lg mb-1">{item.name}</h4>
                     <div className="space-y-1 text-sm">
                       <div className="flex justify-between text-gray-500">
@@ -803,15 +807,15 @@ export default function ClothingManagement() {
                         <span className="font-bold text-green-600">${(item.plant_price + item.margin).toFixed(2)}</span>
                       </div>
                       {(item as any).pieces > 1 && (
-                         <div className="mt-2 inline-block px-2 py-0.5 rounded text-xs font-bold bg-gray-100 text-gray-600 border border-gray-300">
-                            {(item as any).pieces} Pieces
-                         </div>
+                        <div className="mt-2 inline-block px-2 py-0.5 rounded text-xs font-bold bg-gray-100 text-gray-600 border border-gray-300">
+                          {(item as any).pieces} Pieces
+                        </div>
                       )}
                     </div>
                   </div>
                 </div>
               ))}
-              
+
               {clothingTypes.length === 0 && (
                 <div className="col-span-full text-center py-12 text-gray-500 bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
                   <Shirt className="w-12 h-12 mx-auto text-gray-300 mb-3" />
@@ -826,7 +830,7 @@ export default function ClothingManagement() {
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[60]">
-          <div 
+          <div
             className="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full"
             onClick={(e) => e.stopPropagation()}
           >
@@ -839,7 +843,7 @@ export default function ClothingManagement() {
                 type="button"
                 onClick={() => setShowDeleteConfirm(null)}
                 className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg shadow-sm hover:bg-gray-50 transition-colors"
-                disabled={isDeleting} 
+                disabled={isDeleting}
               >
                 Cancel
               </button>
