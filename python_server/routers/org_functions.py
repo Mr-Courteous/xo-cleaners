@@ -1,6 +1,7 @@
 import os
 from typing import Optional, List, Dict, Any
-from fastapi import APIRouter, HTTPException, Depends, status, Query, BackgroundTasks
+from collections import OrderedDict
+from fastapi import APIRouter, HTTPException, Depends, status, Query, BackgroundTasks, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from pydantic import BaseModel, EmailStr, Field
@@ -162,20 +163,16 @@ async def get_racks_for_organization(
 from fastapi import APIRouter, HTTPException, Depends, status, Request # <--- 1. Import Request
 from typing import List, Dict, Any
 from sqlalchemy.orm import Session
-from sqlalchemy import text
-from utils.common import get_db, get_current_user_payload
-
-# ... existing router definition ...
 
 @router.get("/clothing-types", summary="Get all clothing types for *your* organization")
 async def get_clothing_types_for_organization(
-    request: Request,  # <--- 2. Add Request parameter here
+    request: Request,
     db: Session = Depends(get_db), 
     payload: Dict[str, Any] = Depends(get_current_user_payload)
 ):
     """
-    Returns clothing types with FULL image URLs (http://localhost:8001/...)
-    while maintaining the dictionary response format.
+    Returns clothing types grouped by category with full image URLs.
+    Response format: { "Category": [...items], "Dry Clean": [...items], ... }
     """
     try:
         # --- Auth Checks ---
@@ -189,41 +186,43 @@ async def get_clothing_types_for_organization(
         if not organization_id:
             raise HTTPException(status_code=401, detail="Invalid token")
             
-        # --- Fetch Data ---
+        # --- Fetch Data (NOW INCLUDES CATEGORY) ---
         query = text("""
-            SELECT id, name, plant_price, margin, total_price, image_url, organization_id, created_at, pieces
+            SELECT id, name, plant_price, margin, total_price, image_url, organization_id, created_at, pieces, category
             FROM clothing_types
             WHERE organization_id = :organization_id
-            ORDER BY name ASC
+            ORDER BY category ASC, name ASC
         """)
         results = db.execute(query, {"organization_id": organization_id}).fetchall()
 
         if not results:
-             return {"organization_id": organization_id, "count": 0, "clothing_types": []}
+            return {}
 
-        # --- 3. URL Construction Logic ---
-        # Get base URL (e.g. "http://localhost:8001") and strip trailing slash
+        # --- Group results by category ---
+        grouped_clothing_types: Dict[str, List[Dict]] = {}
+        
+        # Get base URL for image construction
         base_url = str(request.base_url).rstrip("/")
+        
+        for row in results:
+            category = row.category or "Uncategorized"
+            if category not in grouped_clothing_types:
+                grouped_clothing_types[category] = []
+            
+            # Build item with full image URL
+            item_dict = dict(row._mapping)
+            item_dict["image_url"] = (
+                f"{base_url}/{item_dict['image_url'].lstrip('/')}" 
+                if item_dict['image_url'] and not item_dict['image_url'].startswith("http") 
+                else item_dict['image_url']
+            )
+            
+            grouped_clothing_types[category].append(item_dict)
 
-        # Clean list comprehension to map rows and fix URLs
-        clothing_list = [
-            {
-                **dict(row._mapping),
-                # Logic: If image exists & isn't already http, prepend base_url + /
-                "image_url": (
-                    f"{base_url}/{row.image_url.lstrip('/')}" 
-                    if row.image_url and not row.image_url.startswith("http") 
-                    else row.image_url
-                )
-            }
-            for row in results
-        ]
-
-        return {
-            "organization_id": organization_id,
-            "count": len(clothing_list),
-            "clothing_types": clothing_list
-        }
+        # --- ENSURE DICTIONARY ORDER IS SORTED BY CATEGORY NAME ---
+        sorted_grouped = OrderedDict(sorted(grouped_clothing_types.items()))
+        
+        return dict(sorted_grouped)
 
     except HTTPException:
         raise

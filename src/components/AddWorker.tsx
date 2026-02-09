@@ -140,11 +140,11 @@ const AddWorker: React.FC = () => {
             {/* Assuming sidebar is part of Header or not needed here */}
             <div className="flex-1 flex flex-col overflow-hidden">
                 <Header /> {/* <-- ADDED HEADER */}
-                
+
                 <main className="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 p-6">
                     <div className="max-w-lg mx-auto bg-white p-8 rounded-lg shadow-md border border-gray-200">
                         <h2 className="text-2xl font-semibold text-gray-900 mb-6">Add New Worker</h2>
-                        
+
                         {/* --- Error Message --- */}
                         {error && (
                             <div className="mb-4 flex items-center p-4 bg-red-50 text-red-700 rounded-lg border border-red-200">
@@ -206,7 +206,7 @@ const AddWorker: React.FC = () => {
                                     required
                                 />
                             </div>
-                            
+
                             {/* --- FIXED PHONE INPUT --- */}
                             <div className="relative">
                                 <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
@@ -278,11 +278,11 @@ const AddWorker: React.FC = () => {
                                     required
                                 >
                                     <option value="">Select Role</option>
-                                    <option value="store_manager">Store Manager</option>
-                                    <option value="driver">Driver</option>
-                                    <option value="assistant">Assistant</option>
+                                    {/* <option value="store_manager">Store Manager</option> */}
+                                    {/* <option value="driver">Driver</option> */}
+                                    {/* <option value="assistant">Assistant</option> */}
                                     <option value="cashier">Cashier</option>
-                                    <option value="customer">Customer</option>
+                                    {/* <option value="customer">Customer</option> */}
                                 </select>
                             </div>
                             {/* --- END UPDATED ROLE LIST --- */}

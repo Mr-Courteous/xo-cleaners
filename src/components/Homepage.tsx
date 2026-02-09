@@ -20,7 +20,7 @@ const HomePage: React.FC<HomePageProps> = ({ onLoginClick }) => {
     const [companyEmail, setCompanyEmail] = useState('');
     const [adminPassword, setAdminPassword] = useState('');
     const [adminConfirmPassword, setAdminConfirmPassword] = useState('');
-    
+
     // UI State
     const [showAdminPassword, setShowAdminPassword] = useState(false);
     const [message, setMessage] = useState('');
@@ -63,7 +63,7 @@ const HomePage: React.FC<HomePageProps> = ({ onLoginClick }) => {
 
             if (response.ok && response.status === 201) {
                 setMessage(`✅ ${data.message || 'Organization registered successfully!'}`);
-                
+
                 // Reset form
                 setCompanyName('');
                 setAdminFirstName('');
@@ -140,10 +140,10 @@ const HomePage: React.FC<HomePageProps> = ({ onLoginClick }) => {
                 <div id="registration" className="py-20 bg-blue-50">
                     <div className="max-w-xl mx-auto px-4">
                         <div className="bg-white p-8 md:p-12 rounded-xl shadow-2xl">
-                            <h3 className="text-3xl font-bold text-center mb-6 text-gray-900">
+                            {/* <h3 className="text-3xl font-bold text-center mb-6 text-gray-900">
                                 Start Your 14-Day Free Trial
-                            </h3>
-                            
+                            </h3> */}
+
                             <form onSubmit={handleRegistration} className="space-y-5">
                                 {/* 3️⃣ New: Business Model Selection */}
                                 <div>
@@ -157,11 +157,11 @@ const HomePage: React.FC<HomePageProps> = ({ onLoginClick }) => {
                                         <option value="full_store">Full Store (Wash & Pick-up)</option>
                                         {/* <option value="drop_off_internal">Drop-off Point (Link to my Plant)</option> */}
                                         <option value="drop_off_external">Drop-off Point (Third-party Plant)</option>
-                                        <option value="smart_locker">Smart Locker (Contactless)</option>
+                                        {/* <option value="smart_locker">Smart Locker (Contactless)</option> */}
                                     </select>
-                                    <p className="mt-1 text-xs text-gray-500 italic">
+                                    {/* <p className="mt-1 text-xs text-gray-500 italic">
                                         * Choosing Smart Locker restricts rack management features.
-                                    </p>
+                                    </p> */}
                                 </div>
 
                                 <div>

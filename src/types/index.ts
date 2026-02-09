@@ -14,6 +14,9 @@ export interface ClothingType {
   plant_price: number;
   margin: number;
   total_price: number;
+  category: string;
+  pieces: number;
+  image_url?: string;
 }
 
 export interface TicketItem {

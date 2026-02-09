@@ -47,12 +47,12 @@ export default function WorkerManagement() {
   const [filteredWorkers, setFilteredWorkers] = useState<Worker[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  
+
   // Modal State
   const [showModal, setShowModal] = useState(false);
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
   const [selectedWorker, setSelectedWorker] = useState<Worker | null>(null);
-  
+
   // Feedback State
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -155,7 +155,7 @@ export default function WorkerManagement() {
 
   const handleDeactivate = async (worker: Worker) => {
     if (!window.confirm(`Are you sure you want to deactivate ${worker.first_name}? They will lose access immediately.`)) return;
-    
+
     setActionLoading(true);
     try {
       await axios.delete(`${baseURL}/users/${worker.id}`, getAuthHeader());
@@ -214,7 +214,7 @@ export default function WorkerManagement() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6 animate-in fade-in duration-300">
-      
+
       {/* Header Section */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -304,9 +304,9 @@ export default function WorkerManagement() {
                     <td className="px-6 py-4">
                       <span className={`
                         px-2.5 py-1 rounded-md text-xs font-semibold uppercase tracking-wide border
-                        ${worker.role === 'org_owner' ? 'bg-purple-50 text-purple-700 border-purple-100' : 
+                        ${worker.role === 'org_owner' ? 'bg-purple-50 text-purple-700 border-purple-100' :
                           worker.role === 'store_manager' ? 'bg-blue-50 text-blue-700 border-blue-100' :
-                          'bg-gray-100 text-gray-600 border-gray-200'}
+                            'bg-gray-100 text-gray-600 border-gray-200'}
                       `}>
                         {worker.role.replace('_', ' ')}
                       </span>
@@ -314,8 +314,8 @@ export default function WorkerManagement() {
                     <td className="px-6 py-4 text-center">
                       <span className={`
                         inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium
-                        ${worker.is_deactivated 
-                          ? 'bg-red-50 text-red-700 border border-red-100' 
+                        ${worker.is_deactivated
+                          ? 'bg-red-50 text-red-700 border border-red-100'
                           : 'bg-green-50 text-green-700 border border-green-100'}
                       `}>
                         <span className={`w-1.5 h-1.5 rounded-full ${worker.is_deactivated ? 'bg-red-500' : 'bg-green-500'}`}></span>
@@ -324,16 +324,16 @@ export default function WorkerManagement() {
                     </td>
                     <td className="px-6 py-4 text-center">
                       <div className="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button 
+                        <button
                           onClick={() => openEditModal(worker)}
                           className="p-2 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
                           title="Edit Details"
                         >
                           <Edit2 size={18} />
                         </button>
-                        
+
                         {worker.is_deactivated ? (
-                          <button 
+                          <button
                             onClick={() => handleReactivate(worker)}
                             className="p-2 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
                             title="Reactivate Account"
@@ -341,7 +341,7 @@ export default function WorkerManagement() {
                             <RefreshCcw size={18} />
                           </button>
                         ) : (
-                          <button 
+                          <button
                             onClick={() => handleDeactivate(worker)}
                             className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                             title="Deactivate Account"
@@ -363,7 +363,7 @@ export default function WorkerManagement() {
       {showModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            
+
             {/* Modal Header */}
             <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
               <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
@@ -378,53 +378,53 @@ export default function WorkerManagement() {
             {/* Modal Body (Scrollable) */}
             <div className="p-6 overflow-y-auto">
               <form id="workerForm" onSubmit={handleSubmit} className="space-y-4">
-                
+
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1.5">First Name <span className="text-red-500">*</span></label>
-                    <input 
-                      required 
-                      type="text" 
+                    <input
+                      required
+                      type="text"
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
                       placeholder="e.g. John"
-                      value={formData.first_name} 
-                      onChange={e => setFormData({ ...formData, first_name: e.target.value })} 
+                      value={formData.first_name}
+                      onChange={e => setFormData({ ...formData, first_name: e.target.value })}
                     />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1.5">Last Name <span className="text-red-500">*</span></label>
-                    <input 
-                      required 
-                      type="text" 
+                    <input
+                      required
+                      type="text"
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
                       placeholder="e.g. Doe"
-                      value={formData.last_name} 
-                      onChange={e => setFormData({ ...formData, last_name: e.target.value })} 
+                      value={formData.last_name}
+                      onChange={e => setFormData({ ...formData, last_name: e.target.value })}
                     />
                   </div>
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">Email Address <span className="text-red-500">*</span></label>
-                  <input 
-                    required 
-                    type="email" 
+                  <input
+                    required
+                    type="email"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
                     placeholder="john@example.com"
-                    value={formData.email} 
-                    onChange={e => setFormData({ ...formData, email: e.target.value })} 
+                    value={formData.email}
+                    onChange={e => setFormData({ ...formData, email: e.target.value })}
                   />
                   {/* {modalMode === 'edit' && <p className="text-xs text-gray-500 mt-1">Changing this may require re-verification depending on your settings.</p>} */}
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">Phone Number</label>
-                  <input 
-                    type="tel" 
+                  <input
+                    type="tel"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
                     placeholder="+1 (555) 000-0000"
-                    value={formData.phone} 
-                    onChange={e => setFormData({ ...formData, phone: e.target.value })} 
+                    value={formData.phone}
+                    onChange={e => setFormData({ ...formData, phone: e.target.value })}
                   />
                 </div>
 
@@ -433,30 +433,30 @@ export default function WorkerManagement() {
                     <label className="block text-sm font-medium text-gray-700 mb-1.5">Role <span className="text-red-500">*</span></label>
                     <div className="relative">
                       <Shield className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                      <select 
+                      <select
                         className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white appearance-none"
-                        value={formData.role} 
+                        value={formData.role}
                         onChange={e => setFormData({ ...formData, role: e.target.value })}
                       >
                         <option value="cashier">Cashier</option>
-                        <option value="store_manager">Manager</option>
+                        {/* <option value="store_manager">Manager</option>
                         <option value="driver">Driver</option>
-                        <option value="operator">Operator</option>
+                        <option value="operator">Operator</option> */}
                       </select>
                     </div>
                   </div>
-                  
+
                   {modalMode === 'create' && (
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Password <span className="text-red-500">*</span></label>
                       <div className="relative">
-                        <input 
-                          required 
+                        <input
+                          required
                           type={showPasswordField ? 'text' : 'password'}
                           className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                           placeholder="••••••••"
-                          value={formData.password} 
-                          onChange={e => setFormData({ ...formData, password: e.target.value })} 
+                          value={formData.password}
+                          onChange={e => setFormData({ ...formData, password: e.target.value })}
                         />
                         <button
                           type="button"
@@ -474,7 +474,7 @@ export default function WorkerManagement() {
                     </div>
                   )}
                 </div>
-                
+
                 {error && (
                   <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg flex items-start gap-2">
                     <AlertCircle size={16} className="mt-0.5 shrink-0" />
@@ -487,14 +487,14 @@ export default function WorkerManagement() {
 
             {/* Modal Footer */}
             <div className="p-4 border-t border-gray-100 bg-gray-50/50 flex gap-3">
-              <button 
-                onClick={closeModal} 
+              <button
+                onClick={closeModal}
                 className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-white hover:border-gray-400 transition-all font-medium"
               >
                 Cancel
               </button>
-              <button 
-                type="submit" 
+              <button
+                type="submit"
                 form="workerForm"
                 disabled={actionLoading}
                 className={`

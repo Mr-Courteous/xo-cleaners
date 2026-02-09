@@ -4,6 +4,7 @@ from pydantic import BaseModel, EmailStr, Field
 from fastapi import APIRouter, HTTPException, Depends, status, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import text
+from datetime import datetime, timezone
 from sqlalchemy.exc import IntegrityError # <-- FIX 1A: IMPORT IntegrityError
 from psycopg2.errorcodes import UNIQUE_VIOLATION, FOREIGN_KEY_VIOLATION # Optional for better error handling
 
@@ -19,9 +20,70 @@ from utils.common import (
     PLATFORM_ADMIN_ROLE,
     ORG_OWNER_ROLE,
     get_db,
+
     get_current_user_payload, 
     hash_password
 )
+
+DEFAULT_IMAGE_URL = "https://cdn-icons-png.flaticon.com/512/776/776625.png"
+
+DEFAULT_CLOTHING_CATALOG = [
+    # --- LAUNDRY (User Specified) ---
+    {"name": "Shirt", "category": "Laundry", "plant_price": 2.39, "margin": 0.60, "pieces": 1},  # 2.99
+    {"name": "Jeans", "category": "Laundry", "plant_price": 2.39, "margin": 0.60, "pieces": 1},  # 2.99
+    {"name": "Pants", "category": "Laundry", "plant_price": 2.39, "margin": 0.60, "pieces": 1},  # 2.99
+    {"name": "Shorts", "category": "Laundry", "plant_price": 1.99, "margin": 0.50, "pieces": 1}, # 2.49
+    {"name": "Apron", "category": "Laundry", "plant_price": 2.60, "margin": 0.65, "pieces": 1},  # 3.25
+    {"name": "Overalls", "category": "Laundry", "plant_price": 5.59, "margin": 1.40, "pieces": 1}, # 6.99
+    {"name": "Large Apron", "category": "Laundry", "plant_price": 2.60, "margin": 0.65, "pieces": 1}, # 3.25 (User: L L Apron)
+    {"name": "Large Jump Suit", "category": "Laundry", "plant_price": 6.39, "margin": 1.60, "pieces": 1}, # 7.99
+    {"name": "Pullover", "category": "Laundry", "plant_price": 2.39, "margin": 0.60, "pieces": 1}, # 2.99
+    {"name": "T-Shirt", "category": "Laundry", "plant_price": 1.99, "margin": 0.50, "pieces": 1}, # 2.49
+    {"name": "Uniform", "category": "Laundry", "plant_price": 3.00, "margin": 0.85, "pieces": 1}, # 3.85
+    {"name": "Lab Coat", "category": "Laundry", "plant_price": 2.40, "margin": 0.60, "pieces": 1}, # 3.00
+    {"name": "African Long Shirt (2pcs)", "category": "Laundry", "plant_price": 3.99, "margin": 1.00, "pieces": 2}, # 4.99
+    {"name": "African Suit (3pcs)", "category": "Laundry", "plant_price": 7.99, "margin": 2.00, "pieces": 3}, # 9.99
+
+    # --- DRY CLEAN ---
+    {"name": "2pc Suit", "category": "Dry Clean", "plant_price": 12.00, "margin": 2.99, "pieces": 2},
+    {"name": "3pc Suit", "category": "Dry Clean", "plant_price": 16.00, "margin": 3.99, "pieces": 3},
+    {"name": "Trousers (Dry Clean)", "category": "Dry Clean", "plant_price": 5.50, "margin": 1.49, "pieces": 1},
+    {"name": "Blazer/Jacket", "category": "Dry Clean", "plant_price": 6.50, "margin": 1.49, "pieces": 1},
+    {"name": "Dress (Standard)", "category": "Dry Clean", "plant_price": 10.00, "margin": 2.99, "pieces": 1},
+    {"name": "Dress (Long/Evening)", "category": "Dry Clean", "plant_price": 14.00, "margin": 3.99, "pieces": 1},
+    {"name": "Skirt", "category": "Dry Clean", "plant_price": 5.50, "margin": 1.49, "pieces": 1},
+    {"name": "Coat (Short)", "category": "Dry Clean", "plant_price": 12.00, "margin": 2.99, "pieces": 1},
+    {"name": "Coat (Long)", "category": "Dry Clean", "plant_price": 14.00, "margin": 3.99, "pieces": 1},
+    {"name": "Silk Blouse", "category": "Dry Clean", "plant_price": 7.00, "margin": 1.99, "pieces": 1},
+    {"name": "Tie", "category": "Dry Clean", "plant_price": 3.00, "margin": 0.99, "pieces": 1},
+    {"name": "Scarf", "category": "Dry Clean", "plant_price": 4.00, "margin": 0.99, "pieces": 1},
+    {"name": "Sweater/Jumper", "category": "Dry Clean", "plant_price": 6.00, "margin": 1.99, "pieces": 1},
+
+    # --- HOUSEHOLD ---
+    {"name": "Duvet (Single)", "category": "Household", "plant_price": 15.00, "margin": 5.00, "pieces": 1},
+    {"name": "Duvet (Double)", "category": "Household", "plant_price": 20.00, "margin": 5.00, "pieces": 1},
+    {"name": "Duvet (King)", "category": "Household", "plant_price": 25.00, "margin": 5.00, "pieces": 1},
+    {"name": "Pillow Case", "category": "Household", "plant_price": 2.50, "margin": 0.50, "pieces": 1},
+    {"name": "Bed Sheet", "category": "Household", "plant_price": 5.00, "margin": 1.50, "pieces": 1},
+    {"name": "Curtain (per sq m)", "category": "Household", "plant_price": 8.00, "margin": 2.00, "pieces": 1},
+    {"name": "Rug (Small)", "category": "Household", "plant_price": 12.00, "margin": 3.00, "pieces": 1},
+    {"name": "Rug (Large)", "category": "Household", "plant_price": 25.00, "margin": 5.00, "pieces": 1},
+    {"name": "Table Cloth", "category": "Household", "plant_price": 6.00, "margin": 1.50, "pieces": 1},
+    {"name": "Blanket", "category": "Household", "plant_price": 10.00, "margin": 2.00, "pieces": 1},
+
+    # --- SPECIAL ---
+    {"name": "Wedding Gown", "category": "Special", "plant_price": 80.00, "margin": 20.00, "pieces": 1},
+    {"name": "Cocktail Dress (Beaded)", "category": "Special", "plant_price": 25.00, "margin": 5.00, "pieces": 1},
+    {"name": "Leather Jacket", "category": "Special", "plant_price": 30.00, "margin": 5.00, "pieces": 1},
+    {"name": "Suede Jacket", "category": "Special", "plant_price": 30.00, "margin": 5.00, "pieces": 1},
+    {"name": "Fur Coat", "category": "Special", "plant_price": 40.00, "margin": 10.00, "pieces": 1},
+
+    # --- WASH & FOLD ---
+    {"name": "Wash & Fold (Small Bag)", "category": "Wash & Fold", "plant_price": 10.00, "margin": 0.00, "pieces": 1},
+    {"name": "Wash & Fold (Medium Bag)", "category": "Wash & Fold", "plant_price": 15.00, "margin": 0.00, "pieces": 1},
+    {"name": "Wash & Fold (Large Bag)", "category": "Wash & Fold", "plant_price": 22.00, "margin": 0.00, "pieces": 1},
+    {"name": "Wash & Fold (per lb)", "category": "Wash & Fold", "plant_price": 1.50, "margin": 0.00, "pieces": 1},
+]
 
 # =======================
 # ROUTER SETUP
@@ -260,30 +322,33 @@ def setup_default_settings_and_clothing(db: Session, organization_id: int):
         racks
     )
 
-    # ✅ 2. Insert default clothing types (Shirt & Trousers)
-    clothing_types = [
-        {
-            "name": "Shirt",
-            "plant_price": 1000.0,
-            "margin": 200.0,
-            "image_url": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRyQRSXO6h19eofL0okaGyC3USwEnhjGFJ4WQ&s", 
+    # ✅ 2. Insert default clothing types from catalog
+    clothing_inserts = []
+    
+    # We can try to map some basic images if we have them, otherwise None
+    default_images = {
+        "Shirt": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRyQRSXO6h19eofL0okaGyC3USwEnhjGFJ4WQ&s",
+        "Trousers (Dry Clean)": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRvK_aHjnOZdc64HGwqbyds5nClwXg7O80OPA&s"
+    }
+
+    for item in DEFAULT_CLOTHING_CATALOG:
+        clothing_inserts.append({
+            "name": item["name"],
+            "category": item["category"],
+            "plant_price": item["plant_price"],
+            "margin": item["margin"],
+            "pieces": item["pieces"],
+            "image_url": default_images.get(item["name"], DEFAULT_IMAGE_URL),
             "organization_id": organization_id
-        },
-        {
-            "name": "Trousers",
-            "plant_price": 1200.0,
-            "margin": 300.0,
-            "image_url": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRvK_aHjnOZdc64HGwqbyds5nClwXg7O80OPA&s",
-            "organization_id": organization_id
-        }
-    ]
+        })
+
     db.execute(
         text("""
             INSERT INTO clothing_types
-            (name, plant_price, margin, image_url, organization_id)
-            VALUES (:name, :plant_price, :margin, :image_url, :organization_id)
+            (name, category, plant_price, margin, pieces, image_url, organization_id)
+            VALUES (:name, :category, :plant_price, :margin, :pieces, :image_url, :organization_id)
         """),
-        clothing_types
+        clothing_inserts
     )
 
     # ✅ 3. Insert Default Branding & Starch Prices
@@ -296,7 +361,7 @@ def setup_default_settings_and_clothing(db: Session, organization_id: int):
             updated_at
         )
         VALUES (
-            :org_id, '#000000', '#FFFF00',
+            :org_id, '#000000', '#0000FF',
             'Welcome to our Store', 'Thank you for visiting!',
             100.00, 200.00, 300.00, 400.00,
             NOW()

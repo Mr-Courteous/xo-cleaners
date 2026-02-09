@@ -139,14 +139,10 @@ interface ClothingGridProps {
 
 const ClothingGrid: React.FC<ClothingGridProps> = ({ clothingTypes, addItemByTypeId, onAddCustomItem }) => {
   const { colors } = useColors();
-  const sortedTypes = useMemo(() => {
-    return [...clothingTypes].sort((a, b) => a.name.localeCompare(b.name));
-  }, [clothingTypes]);
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-5 2xl:grid-cols-6 gap-4 p-4 bg-gray-50 rounded-lg">
-      {sortedTypes.map((type) => {
-        const imageUrl = CLOTHING_IMAGE_MAP[type.name] || type.image_url;
+      {clothingTypes.map((type) => {
         return (
           <button
             key={type.id}
@@ -160,28 +156,30 @@ const ClothingGrid: React.FC<ClothingGridProps> = ({ clothingTypes, addItemByTyp
               active:scale-[0.98]
             `}
           >
-            {imageUrl ? (
+            {type.image_url ? (
               <img
-                src={imageUrl}
+                src={type.image_url}
                 alt={type.name}
                 className="w-full h-8 object-contain rounded-lg mb-1"
                 onError={(e) => {
                   const target = e.target as HTMLImageElement;
                   target.style.display = 'none';
-                  const fallback = document.createElement('div');
-                  fallback.className = 'w-full h-8 flex items-center justify-center bg-gray-100 rounded-lg mb-1';
-                  fallback.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-image-off text-gray-400"><line x1="2" x2="22" y1="2" y2="22"></line><path d="M10 8h8"/><path d="M18.8 17.8a2 2 0 0 1-2.8 2.8H6a2 2 0 0 1-2-2V6c0-.5.1-1 .3-1.5"></path><path d="m2 15 3.3-3.3c.9-.9 2.2-1.3 3.3-1.3.4 0 .7.1 1 .3"></path></svg>`;
-                  target.parentNode?.insertBefore(fallback, target);
+                  // Fallback icon logic if needed, but the Shirt icon block below is cleaner as an alternative
+                  e.currentTarget.parentElement?.querySelector('.fallback-icon')?.classList.remove('hidden');
                 }}
               />
             ) : (
               <div className="w-full h-8 flex flex-col items-center justify-center bg-gray-100 rounded-lg mb-1">
                 <Shirt className="w-6 h-6 text-gray-500" />
-                <span className="text-xs text-gray-500 mt-1">No Image</span>
               </div>
             )}
+
+            {/* Invisible fallback container that shows if image fails */}
+            <div className="fallback-icon hidden w-full h-8 flex flex-col items-center justify-center bg-gray-100 rounded-lg mb-1 absolute top-2 left-0 right-0 mx-auto">
+              <Shirt className="w-6 h-6 text-gray-500" />
+            </div>
             <span className="text-sm font-bold text-center mt-1 truncate w-full px-1">{type.name}</span>
-            <span className="text-xs font-bold mt-1" style={{ color: colors.primaryColor }}>${type.total_price.toFixed(2)}</span>
+            <span className="text-xs font-bold mt-1" style={{ color: colors.primaryColor }}>${(type.total_price || (type.plant_price + type.margin) || 0).toFixed(2)}</span>
           </button>
         );
       })}
@@ -211,7 +209,13 @@ export default function DropOff() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [newCustomer, setNewCustomer] = useState({ first_name: '', last_name: '', phone: '', email: '', address: '' });
+
+  // State for all clothing types (flat array from grouped response)
   const [clothingTypes, setClothingTypes] = useState<ClothingType[]>([]);
+  // State for available categories dynamically derived from response
+  const [categories, setCategories] = useState<string[]>([]);
+  // NEW: State for selected category filter
+  const [selectedCategory, setSelectedCategory] = useState<string>('All');
 
   const [items, setItems] = useState<ExtendedTicketItem[]>([]);
 
@@ -250,6 +254,20 @@ export default function DropOff() {
     }
     return 'grid';
   });
+
+  // --- MEMOIZED FILTERING ---
+  const filteredClothingTypes = useMemo(() => {
+    // Filter out any undefined/null items and ensure they have names
+    const validItems = clothingTypes.filter((item) => item && item.name);
+    
+    if (selectedCategory === 'All') {
+      return validItems.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    }
+    return validItems
+      .filter((item) => item.category === selectedCategory)
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  }, [clothingTypes, selectedCategory]);
+
 
   useEffect(() => {
     fetchClothingTypes();
@@ -293,10 +311,25 @@ export default function DropOff() {
       const response = await axios.get(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (response.data && Array.isArray(response.data.clothing_types)) {
-        setClothingTypes(response.data.clothing_types);
+      
+      if (response.data && typeof response.data === 'object' && !Array.isArray(response.data)) {
+        // New grouped object format: { "Category": [...items], ... }
+        const flatItems = Object.values(response.data).flat() as ClothingType[];
+        const categoryList = Object.keys(response.data).sort();
+        
+        setClothingTypes(flatItems);
+        setCategories(categoryList);
+        // Set initial category to 'All'
+        setSelectedCategory('All');
+        console.log("Fetched clothing types (grouped):", response.data);
+      } else if (Array.isArray(response.data)) {
+        // Fallback for old array format
+        setClothingTypes(response.data);
+        setCategories([]);
+        setSelectedCategory('All');
       } else {
         setClothingTypes([]);
+        setCategories([]);
       }
     } catch (error: any) {
       console.error('Failed to fetch clothing types:', error);
@@ -387,7 +420,9 @@ export default function DropOff() {
   };
 
   const addItem = () => {
-    const ct = clothingTypes[0];
+    // Grab the first item from the flat array as a default
+    const ct = clothingTypes.length > 0 ? clothingTypes[0] : null;
+
     const newItem = {
       clothing_type_id: ct?.id || 1,
       clothing_name: ct?.name || 'Select Item',
@@ -409,7 +444,9 @@ export default function DropOff() {
   };
 
   const addItemByTypeId = (clothingTypeId: number) => {
-    const ct = clothingTypes.find(type => type.id === clothingTypeId);
+    // Find type from flat array
+    const ct = clothingTypes.find(t => t.id === clothingTypeId);
+
     if (!ct) return;
 
     const newItem = {
@@ -495,7 +532,7 @@ export default function DropOff() {
     if (updatedItem.is_custom) {
       basePrice = (updatedItem.plant_price || 0) + (updatedItem.margin || 0);
     } else if (clothingType) {
-      basePrice = clothingType.plant_price + clothingType.margin;
+      basePrice = clothingType.total_price;
       updatedItem.plant_price = clothingType.plant_price;
       updatedItem.margin = clothingType.margin;
     }
@@ -908,9 +945,39 @@ export default function DropOff() {
         <div className="flex flex-col lg:flex-row gap-6">
           <div className="lg:w-2/3">
             {/* ... Grid/List View ... */}
+
+            {/* CATEGORY TABS */}
+            <div className="flex flex-wrap gap-2 mb-4">
+              <button
+                onClick={() => setSelectedCategory('All')}
+                className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all border`}
+                style={
+                  selectedCategory === 'All'
+                    ? { backgroundColor: colors.primaryColor, color: '#fff', borderColor: colors.primaryColor }
+                    : { backgroundColor: '#fff', color: '#6b7280', borderColor: '#e5e7eb' }
+                }
+              >
+                All Items
+              </button>
+              {categories.map(cat => (
+                <button
+                  key={cat}
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all border`}
+                  style={
+                    selectedCategory === cat
+                      ? { backgroundColor: colors.primaryColor, color: '#fff', borderColor: colors.primaryColor }
+                      : { backgroundColor: '#fff', color: '#6b7280', borderColor: '#e5e7eb' }
+                  }
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+
             {viewMode === 'grid' ? (
               <ClothingGrid
-                clothingTypes={clothingTypes}
+                clothingTypes={filteredClothingTypes}
                 addItemByTypeId={addItemByTypeId}
                 onAddCustomItem={() => setShowCustomItemModal(true)}
               />

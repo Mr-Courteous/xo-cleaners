@@ -147,4 +147,4 @@ def create_platform_admin_on_startup():
         print("❌ Error creating platform admin!")
         print("   SQL/Error details:", sql_error)
     finally:
-        db.close()
+        db.close()  

@@ -1,5 +1,6 @@
 import os
 from typing import Dict, Any, Optional, List
+from collections import OrderedDict
 from pydantic import BaseModel
 from fastapi import (
     APIRouter, 
@@ -32,9 +33,7 @@ from utils.vercel_blob import (
     delete_from_vercel_blob,
     replace_vercel_blob
 )
-# -----------------------------------------------------------------
-# ❌ REMOVED all the mock functions (mock get_db, mock get_current_user_payload, etc.)
-# -----------------------------------------------------------------
+
 
 
 
@@ -52,8 +51,9 @@ class ClothingTypeResponse(BaseModel):
     total_price: float
     image_url: Optional[str] = None
     organization_id: int
-    created_at: datetime  # <-- Changed from Any to datetime
-    pieces: int           # <-- ADDED
+    created_at: datetime
+    pieces: int
+    category: Optional[str] = None  # <-- ADDED
     
 
 # -----------------------------------------------------------------
@@ -62,13 +62,14 @@ class ClothingTypeResponse(BaseModel):
 # -----------------------------------------------------------------
 
 
-@router.get("", response_model=List[ClothingTypeResponse], summary="Get all clothing types for *your* organization")
+@router.get("", response_model=Dict[str, List[ClothingTypeResponse]], summary="Get all clothing types for *your* organization")
 async def get_clothing_types_for_organization(
     db: Session = Depends(get_db),
     payload: Dict[str, Any] = Depends(get_current_user_payload)
 ):
     """
-    Retrieve all clothing types associated with the logged-in user's organization.
+    Retrieve all clothing types associated with the logged-in user's organization,
+    grouped by category and sorted alphabetically.
     """
     # This will now use your REAL payload
     if not payload:
@@ -88,18 +89,24 @@ async def get_clothing_types_for_organization(
     try:
         print(f"[INFO] Fetching clothing types for org_id: {org_id}")
         
-        # --- MODIFIED: Added 'pieces' to SELECT ---
+        # --- MODIFIED: Fetch with category included and sorted by category ---
         stmt = text("""
-            SELECT id, name, plant_price, margin, total_price, image_url, organization_id, created_at, pieces
+            SELECT id, name, plant_price, margin, total_price, image_url, organization_id, created_at, pieces, category
             FROM clothing_types
             WHERE organization_id = :org_id
-            ORDER BY name
+            ORDER BY category ASC, name ASC
         """)
         results = db.execute(stmt, {"org_id": org_id}).fetchall()
         
-        # Map results to Pydantic model
-        return [
-            ClothingTypeResponse(
+        # Group results by category
+        grouped_clothing_types: Dict[str, List[ClothingTypeResponse]] = {}
+        
+        for row in results:
+            category = row.category or "Uncategorized"
+            if category not in grouped_clothing_types:
+                grouped_clothing_types[category] = []
+            
+            clothing_response = ClothingTypeResponse(
                 id=row.id,
                 name=row.name,
                 plant_price=row.plant_price,
@@ -108,9 +115,17 @@ async def get_clothing_types_for_organization(
                 image_url=row.image_url,
                 organization_id=row.organization_id,
                 created_at=row.created_at,
-                pieces=row.pieces  # <-- ADDED
-            ) for row in results
-        ]
+                pieces=row.pieces,
+                category=row.category
+            )
+            grouped_clothing_types[category].append(clothing_response)
+        
+        # --- ENSURE DICTIONARY ORDER IS SORTED BY CATEGORY NAME ---
+        # Create a new ordered dict with sorted keys
+        sorted_grouped = OrderedDict(sorted(grouped_clothing_types.items()))
+        
+        return dict(sorted_grouped)
+    
     
     except Exception as e:
         print(f"[ERROR] Failed to get clothing types: {e}")
@@ -126,8 +141,10 @@ async def create_clothing_type(
     name: str = Form(...),
     plant_price: float = Form(...),
     margin: float = Form(...),
-    pieces: int = Form(..., description="Number of pieces this item consists of (e.g., Suit=2)"), # <-- ADDED
-    image_file: UploadFile = File(...),
+    pieces: int = Form(1),
+    category: str = Form("Uncategorized"),
+    image_file: UploadFile = File(None),
+    image_url: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     payload: Dict[str, Any] = Depends(get_current_user_payload)
 ):
@@ -159,27 +176,30 @@ async def create_clothing_type(
             )
 
     try:
-        # 2. Upload image to Vercel Blob Storage
-        image_url = await upload_to_vercel_blob(image_file, folder="clothing_images")
+        # 2. Handle image (File upload takes priority over manual URL)
+        final_image_url = image_url
+        if image_file:
+            final_image_url = await upload_to_vercel_blob(image_file, folder="clothing_images")
 
         # 3. Insert record (NO total_price here - database does it)
-        # --- MODIFIED: Added 'pieces' column ---
+        # --- MODIFIED: Added 'category' and 'pieces' column ---
         stmt = text("""
-            INSERT INTO clothing_types (name, plant_price, margin, image_url, organization_id, pieces)
-            VALUES (:name, :plant_price, :margin, :image_url, :org_id, :pieces)
+            INSERT INTO clothing_types (name, plant_price, margin, image_url, organization_id, pieces, category)
+            VALUES (:name, :plant_price, :margin, :image_url, :org_id, :pieces, :category)
             RETURNING id, created_at, total_price
         """)
         
-        # --- MODIFIED: Added 'pieces' parameter ---
+        # --- MODIFIED: Added 'pieces' and 'category' parameters ---
         result = db.execute(
             stmt,
             {
                 "name": name,
                 "plant_price": plant_price,
                 "margin": margin,
-                "image_url": image_url,
+                "image_url": final_image_url,
                 "org_id": org_id,
-                "pieces": pieces, # <-- ADDED
+                "pieces": pieces,
+                "category": category, # <-- ADDED
             }
         )
         db.commit()
@@ -188,7 +208,7 @@ async def create_clothing_type(
         if not row:
             raise HTTPException(status_code=500, detail="Failed to create clothing type after insertion.")
 
-        # --- MODIFIED: Added 'pieces' to response ---
+        # --- MODIFIED: Added 'pieces' and 'category' to response ---
         return ClothingTypeResponse(
             id=row.id,
             name=name,
@@ -196,9 +216,10 @@ async def create_clothing_type(
             margin=margin,
             total_price=row.total_price,
             created_at=row.created_at,
-            image_url=image_url,
+            image_url=final_image_url,
             organization_id=org_id,
-            pieces=pieces # <-- ADDED
+            pieces=pieces,
+            category=category # <-- ADDED
         )
 
     except Exception as e:
@@ -217,8 +238,10 @@ async def update_clothing_type(
     name: str = Form(...),
     plant_price: float = Form(...),
     margin: float = Form(...),
-    pieces: int = Form(...), # <-- ADDED
+    pieces: int = Form(...),
+    category: str = Form(...), # <-- ADDED
     image_file: UploadFile = File(None),
+    image_url: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     payload: Dict[str, Any] = Depends(get_current_user_payload)
 ):
@@ -272,22 +295,26 @@ async def update_clothing_type(
                 new_file=image_file,
                 folder="clothing_images"
             )
+        elif image_url is not None:
+             # Manual URL provided and no file uploaded
+             new_image_url = image_url
 
 
         # 5. Update record
-        # --- MODIFIED: Added 'pieces' to SET clause ---
+        # --- MODIFIED: Added 'category' and 'pieces' to SET clause ---
         stmt = text("""
             UPDATE clothing_types
             SET name = :name,
                 plant_price = :plant_price,
                 margin = :margin,
                 image_url = :image_url,
-                pieces = :pieces
+                pieces = :pieces,
+                category = :category
             WHERE id = :id AND organization_id = :org_id
             RETURNING created_at, total_price
         """)
         
-        # --- MODIFIED: Added 'pieces' to parameters ---
+        # --- MODIFIED: Added 'category' and 'pieces' to parameters ---
         result = db.execute(
             stmt,
             {
@@ -297,7 +324,8 @@ async def update_clothing_type(
                 "margin": margin,
                 "image_url": new_image_url,
                 "org_id": org_id,
-                "pieces": pieces # <-- ADDED
+                "pieces": pieces,
+                "category": category # <-- ADDED
             }
         )
         db.commit()
@@ -306,7 +334,7 @@ async def update_clothing_type(
         if not updated_row:
              raise HTTPException(status_code=404, detail="Failed to update clothing type after commit.")
 
-        # --- MODIFIED: Added 'pieces' to response ---
+        # --- MODIFIED: Added 'pieces' and 'category' to response ---
         return ClothingTypeResponse(
             id=id,
             name=name,
@@ -316,7 +344,8 @@ async def update_clothing_type(
             created_at=updated_row.created_at,
             image_url=new_image_url,
             organization_id=org_id,
-            pieces=pieces # <-- ADDED
+            pieces=pieces,
+            category=category # <-- ADDED
         )
 
     except HTTPException:

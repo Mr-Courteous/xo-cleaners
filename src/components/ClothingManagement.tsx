@@ -14,6 +14,7 @@ interface ClothingType {
   total_price: number;
   image_url: string | null;
   pieces?: number;
+  category?: string;
 }
 
 // Fallback image function
@@ -300,6 +301,7 @@ const SizeSettings: React.FC = () => {
 export default function ClothingManagement() {
   // 🎯 Updated Tab State
   const [activeTab, setActiveTab] = useState<'items' | 'starch' | 'size'>('items');
+  const [selectedCategory, setSelectedCategory] = useState<string>('All');
 
   const [clothingTypes, setClothingTypes] = useState<ClothingType[]>([]);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -308,7 +310,9 @@ export default function ClothingManagement() {
     name: '',
     plant_price: '',
     margin: '',
-    pieces: ''
+    pieces: '',
+    category: '',
+    image_url: '' // For manual text URL editing
   });
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
@@ -337,6 +341,11 @@ export default function ClothingManagement() {
     fetchClothingTypes();
   }, []);
 
+  const uniqueCategories = React.useMemo(() => {
+    const cats = Array.from(new Set(clothingTypes.map(c => c.category || 'Uncategorized')));
+    return ['All', ...cats.sort()];
+  }, [clothingTypes]);
+
   const fetchClothingTypes = async () => {
     setLoading(true);
     setFormError(null);
@@ -349,13 +358,24 @@ export default function ClothingManagement() {
       if (!response.ok) {
         throw new Error('Failed to fetch clothing types');
       }
-      const data: ClothingType[] = await response.json();
-      const processedData = data.map(item => ({
+      const data = await response.json();
+
+      let processedData: ClothingType[] = [];
+
+      if (typeof data === 'object' && !Array.isArray(data)) {
+        // Grouped format: { "Category": [items...] }
+        processedData = Object.values(data).flat() as ClothingType[];
+      } else {
+        processedData = data;
+      }
+
+      processedData = processedData.map(item => ({
         ...item,
         image_url: item.image_url
           ? (item.image_url.startsWith('http') ? item.image_url : `${baseURL}${item.image_url}`)
           : null,
-        pieces: (item as any).pieces ? (item as any).pieces : 1,
+        pieces: item.pieces ? item.pieces : 1,
+        category: item.category || 'Uncategorized'
       }));
       setClothingTypes(processedData);
     } catch (error: any) {
@@ -382,13 +402,17 @@ export default function ClothingManagement() {
       setFormError("Margin must be a valid, positive number.");
       return false;
     }
+    if (!formData.category.trim()) {
+      setFormError("Category is required.");
+      return false;
+    }
     const piecesVal = parseInt(formData.pieces, 10);
     if (isNaN(piecesVal) || piecesVal <= 0) {
       setFormError("Pieces must be a valid positive integer (e.g., Suit=2).");
       return false;
     }
-    if (isCreating && !imageFile) {
-      setFormError("Item Image is required when creating a new item.");
+    if (isCreating && !imageFile && !formData.image_url.trim()) {
+      setFormError("Item Image (file or URL) is required when creating a new item.");
       return false;
     }
     return true;
@@ -413,7 +437,11 @@ export default function ClothingManagement() {
     if (imageFile) {
       form.append('image_file', imageFile);
     }
+    if (formData.image_url) {
+      form.append('image_url', formData.image_url);
+    }
     form.append('pieces', formData.pieces);
+    form.append('category', formData.category);
 
     const authHeaders = getAuthHeaders();
 
@@ -472,7 +500,9 @@ export default function ClothingManagement() {
       name: clothingType.name,
       plant_price: clothingType.plant_price.toString(),
       margin: clothingType.margin.toString(),
-      pieces: (clothingType as any).pieces ? String((clothingType as any).pieces) : '1'
+      pieces: clothingType.pieces ? String(clothingType.pieces) : '1',
+      category: clothingType.category || '',
+      image_url: clothingType.image_url || ''
     });
     setImageFile(null);
     setImagePreviewUrl(clothingType.image_url);
@@ -510,7 +540,7 @@ export default function ClothingManagement() {
   };
 
   const resetForm = () => {
-    setFormData({ name: '', plant_price: '', margin: '', pieces: '' });
+    setFormData({ name: '', plant_price: '', margin: '', pieces: '', category: '', image_url: '' });
     setImageFile(null);
     setImagePreviewUrl(null);
     setShowAddForm(false);
@@ -587,7 +617,7 @@ export default function ClothingManagement() {
                 <h3 className="text-lg font-semibold">Clothing Types & Pricing</h3>
                 <button
                   onClick={() => {
-                    setFormData({ name: '', plant_price: '', margin: '', pieces: '' });
+                    setFormData({ name: '', plant_price: '', margin: '', pieces: '', category: 'Laundry', image_url: '' });
                     setImageFile(null);
                     setImagePreviewUrl(null);
                     setEditingId(null);
@@ -601,6 +631,24 @@ export default function ClothingManagement() {
                 </button>
               </div>
             </div>
+
+            {/* 🎯 CATEGORY FILTER STRIP */}
+            {!loading && activeTab === 'items' && uniqueCategories.length > 2 && (
+              <div className="px-6 py-4 border-b border-gray-100 bg-gray-50 flex flex-wrap gap-2 sticky top-[4.5rem] z-10">
+                {uniqueCategories.map((cat) => (
+                  <button
+                    key={cat}
+                    onClick={() => setSelectedCategory(cat)}
+                    className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all border shadow-sm ${selectedCategory === cat
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'
+                      }`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            )}
 
             {/* Modal for Add/Edit */}
             {showAddForm && (
@@ -690,6 +738,37 @@ export default function ClothingManagement() {
                       </div>
 
                       <div className="col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
+                        <select
+                          required
+                          value={formData.category}
+                          onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                        >
+                          <option value="">Select Category</option>
+                          <option value="Laundry">Laundry</option>
+                          <option value="Dry Clean">Dry Clean</option>
+                          <option value="Alterations">Alterations</option>
+                          <option value="Pressing">Pressing</option>
+                          <option value="Other">Other</option>
+                        </select>
+                      </div>
+
+                      <div className="col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Image URL (Manual Edit)</label>
+                        <input
+                          type="text"
+                          value={formData.image_url}
+                          onChange={(e) => setFormData({ ...formData, image_url: e.target.value })}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                          placeholder="https://example.com/image.png"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          Paste an image URL directly or upload a file below.
+                        </p>
+                      </div>
+
+                      <div className="col-span-2">
                         <label className="block text-sm font-medium text-gray-700 mb-2">Item Image</label>
                         <div
                           onClick={() => fileInputRef.current?.click()}
@@ -758,68 +837,96 @@ export default function ClothingManagement() {
               </div>
             )}
 
-            {/* List of Items */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-6">
-              {clothingTypes.map((item) => (
-                <div key={item.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow bg-white flex flex-col justify-between">
-                  <div>
-                    <div className="flex justify-between items-start mb-3">
-                      <div className="w-16 h-16 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0 border border-gray-200">
-                        <img
-                          src={item.image_url || getFallbackImage(item.name)}
-                          alt={item.name}
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).src = getFallbackImage(item.name);
-                          }}
-                        />
-                      </div>
-                      <div className="flex gap-1">
-                        <button
-                          onClick={() => handleEdit(item)}
-                          className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                          title="Edit"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(item.id, item.name)}
-                          className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                          title="Delete"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
+            {/* Grouped List of Items */}
+            <div className="p-6 space-y-12">
+              {Object.entries(
+                clothingTypes
+                  .filter(item => selectedCategory === 'All' || item.category === selectedCategory)
+                  .reduce((acc, item) => {
+                    const cat = item.category || 'Uncategorized';
+                    if (!acc[cat]) acc[cat] = [];
+                    acc[cat].push(item);
+                    return acc;
+                  }, {} as Record<string, ClothingType[]>)
+              ).map(([category, items]) => (
+                <div key={category} className="space-y-4">
+                  <div className="flex items-center gap-3 border-b border-gray-100 pb-2">
+                    <h4 className="text-xl font-bold text-gray-800">{category}</h4>
+                    <span className="px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full text-xs font-bold">
+                      {items.length} {items.length === 1 ? 'Item' : 'Items'}
+                    </span>
+                  </div>
 
-                    <h4 className="font-semibold text-gray-900 text-lg mb-1">{item.name}</h4>
-                    <div className="space-y-1 text-sm">
-                      <div className="flex justify-between text-gray-500">
-                        <span>Plant Price:</span>
-                        <span className="font-medium text-gray-700">${item.plant_price.toFixed(2)}</span>
-                      </div>
-                      <div className="flex justify-between text-gray-500">
-                        <span>Margin:</span>
-                        <span className="font-medium text-gray-700">${item.margin.toFixed(2)}</span>
-                      </div>
-                      <div className="flex justify-between text-gray-500 border-t border-dashed pt-1 mt-1">
-                        <span>Total:</span>
-                        <span className="font-bold text-green-600">${(item.plant_price + item.margin).toFixed(2)}</span>
-                      </div>
-                      {(item as any).pieces > 1 && (
-                        <div className="mt-2 inline-block px-2 py-0.5 rounded text-xs font-bold bg-gray-100 text-gray-600 border border-gray-300">
-                          {(item as any).pieces} Pieces
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {items.sort((a, b) => a.name.localeCompare(b.name)).map((item) => (
+                      <div key={item.id} className="border border-gray-200 rounded-xl p-4 hover:shadow-lg transition-all bg-white flex flex-col justify-between group">
+                        <div>
+                          <div className="flex justify-between items-start mb-4">
+                            <div className="w-20 h-20 bg-gray-50 rounded-xl overflow-hidden flex-shrink-0 border border-gray-100 shadow-sm">
+                              <img
+                                src={item.image_url || getFallbackImage(item.name)}
+                                alt={item.name}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).src = getFallbackImage(item.name);
+                                }}
+                              />
+                            </div>
+                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={() => handleEdit(item)}
+                                className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors shadow-sm bg-white"
+                                title="Edit"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleDelete(item.id, item.name)}
+                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors shadow-sm bg-white"
+                                title="Delete"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+
+                          <h4 className="font-bold text-gray-900 text-lg mb-1">{item.name}</h4>
+                          <div className="space-y-1.5 text-sm">
+                            <div className="flex justify-between text-gray-500">
+                              <span>Customer Price:</span>
+                              <span className="font-bold text-green-600 text-base">${item.total_price.toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between text-gray-400 text-xs">
+                              <span>Pieces:</span>
+                              <span className="font-medium text-gray-600">{item.pieces}</span>
+                            </div>
+                            <div className="flex justify-between text-gray-400 text-xs">
+                              <span>Plant / Margin:</span>
+                              <span className="font-medium text-gray-600">${item.plant_price.toFixed(2)} / ${item.margin.toFixed(2)}</span>
+                            </div>
+                          </div>
                         </div>
-                      )}
-                    </div>
+
+                        <div className="mt-4 pt-4 border-t border-gray-50 flex justify-between items-center text-[10px] text-gray-400 font-medium uppercase tracking-wider">
+                          <span>{item.category}</span>
+                          <span>ID: #{item.id}</span>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               ))}
 
               {clothingTypes.length === 0 && (
-                <div className="col-span-full text-center py-12 text-gray-500 bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
-                  <Shirt className="w-12 h-12 mx-auto text-gray-300 mb-3" />
-                  <p>No clothing items found. Click "Add New Item" to start.</p>
+                <div className="text-center py-20 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
+                  <Shirt className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                  <p className="text-gray-500 font-medium">No items found in your inventory</p>
+                  <button
+                    onClick={() => setShowAddForm(true)}
+                    className="mt-4 text-blue-600 font-bold hover:underline"
+                  >
+                    Add your first item
+                  </button>
                 </div>
               )}
             </div>
