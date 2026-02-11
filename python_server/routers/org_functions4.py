@@ -276,21 +276,9 @@ async def get_dashboard_analytics(
             })
 
             # --- Population of the Ledger strictly from Ticket Activity ---
-            # Every ticket processed (owned or received) creates a SALE entry
+            # We track actual cash movements: Income and Refunds
             cust_name = f"{row.first_name} {row.last_name}" if row.first_name else "Walk-in"
-            
-            # 1. The Sale Record (Full Invoice value)
-            ledger_data.append(LedgerEntry(
-                id=f"sale_{row.id}",
-                date=c_at,
-                reference=f"Ticket #{row.ticket_number}",
-                customer_name=cust_name,
-                type="SALE",
-                amount=float(row.total_amount or 0),
-                method="Ticket"
-            ))
 
-            # 2. The Income/Refund Record
             if row.is_refunded:
                  ledger_data.append(LedgerEntry(
                     id=f"ref_{row.id}",

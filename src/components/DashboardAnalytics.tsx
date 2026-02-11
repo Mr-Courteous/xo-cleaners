@@ -394,27 +394,22 @@ export default function DashboardAnalytics() {
                     </button>
                 </div>
             </div>
-            {/* Dynamic Summary Tiles (Calculated from Ticket & Item data) */}
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mt-4">
-                <div className="bg-white p-4 rounded-lg border shadow-sm border-blue-100">
-                    <div className="text-[10px] uppercase tracking-wider font-bold text-gray-400">Gross Sales</div>
-                    <div className="text-xl font-black text-blue-700">{formatCurrency(totals.grossSales)}</div>
-                    <div className="text-[10px] text-blue-600/70 mt-1">Total items value</div>
-                </div>
+            {/* Dynamic Summary Tiles (Cash Flow focused) */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
                 <div className="bg-white p-4 rounded-lg border shadow-sm border-green-100">
-                    <div className="text-[10px] uppercase tracking-wider font-bold text-gray-400">Total Revenue</div>
+                    <div className="text-[10px] uppercase tracking-wider font-bold text-gray-400">Total Collected</div>
                     <div className="text-xl font-black text-green-700">{formatCurrency(totals.revenue)}</div>
-                    <div className="text-[10px] text-green-600/70 mt-1">Cash collected</div>
+                    <div className="text-[10px] text-green-600/70 mt-1">Gross cash income</div>
                 </div>
                 <div className="bg-white p-4 rounded-lg border shadow-sm border-red-100">
-                    <div className="text-[10px] uppercase tracking-wider font-bold text-gray-400">Pending/Refunds</div>
-                    <div className="text-xl font-black text-red-600">{formatCurrency(totals.outstanding + totals.refunds)}</div>
-                    <div className="text-[10px] text-red-500/70 mt-1">Unpaid or returned</div>
+                    <div className="text-[10px] uppercase tracking-wider font-bold text-gray-400">Refunds Issued</div>
+                    <div className="text-xl font-black text-red-600">{formatCurrency(totals.refunds)}</div>
+                    <div className="text-[10px] text-red-500/70 mt-1">Amount returned to customers</div>
                 </div>
                 <div className="bg-white p-4 rounded-lg border shadow-sm bg-gray-50/50">
                     <div className="text-[10px] uppercase tracking-wider font-bold text-gray-400">Net Revenue</div>
                     <div className="text-xl font-black text-gray-900">{formatCurrency(totals.netRevenue)}</div>
-                    <div className="text-[10px] text-gray-500 mt-1">Final balance</div>
+                    <div className="text-[10px] text-gray-500 mt-1">Final period balance</div>
                 </div>
             </div>
 
@@ -576,13 +571,13 @@ export default function DashboardAnalytics() {
                             </tbody>
                             <tfoot className="bg-gray-50 font-bold text-gray-900 border-t-2 border-gray-200 sticky bottom-0 z-20">
                                 <tr>
-                                    <td className="px-6 py-4 sticky left-0 bg-gray-50 z-30">Analytical Summary</td>
-                                    <td colSpan={2} className="text-xs text-gray-500 font-normal">Calculated from {filteredData.tickets.length} tickets & {data?.items.length} total items</td>
-                                    <td className="px-6 py-4 text-right text-sm text-blue-600">
-                                        Sales: {formatCurrency(totals.grossSales)}
-                                    </td>
+                                    <td className="px-6 py-4 sticky left-0 bg-gray-50 z-30">Cash Summary</td>
+                                    <td colSpan={2} className="text-xs text-gray-500 font-normal">Calculated from {filteredData.tickets.length} tickets</td>
                                     <td className="px-6 py-4 text-right text-sm text-green-600">
-                                        Revenue: {formatCurrency(totals.revenue)}
+                                        Collected: {formatCurrency(totals.revenue)}
+                                    </td>
+                                    <td className="px-6 py-4 text-right text-sm text-red-600">
+                                        Refunds: {formatCurrency(totals.refunds)}
                                     </td>
                                     <td className={`px-6 py-4 text-right text-lg ${totals.netRevenue >= 0 ? 'text-green-700' : 'text-red-600'}`}>
                                         Net: {formatCurrency(totals.netRevenue)}
