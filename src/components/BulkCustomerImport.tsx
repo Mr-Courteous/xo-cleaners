@@ -20,7 +20,7 @@ interface BulkImportProps {
 export default function BulkCustomerImport({ onClose, onSuccess }: BulkImportProps) {
   const [defaultPassword, setDefaultPassword] = useState('Welcome123!');
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
+
   const [rows, setRows] = useState<BulkCustomerData[]>([
     { first_name: '', last_name: '', email: '', phone: '', address: '', password: '' }
   ]);
@@ -37,8 +37,8 @@ export default function BulkCustomerImport({ onClose, onSuccess }: BulkImportPro
 
   const removeRow = (index: number) => {
     if (rows.length === 1) {
-        setRows([{ first_name: '', last_name: '', email: '', phone: '', address: '', password: '' }]);
-        return;
+      setRows([{ first_name: '', last_name: '', email: '', phone: '', address: '', password: '' }]);
+      return;
     }
     const newRows = rows.filter((_, i) => i !== index);
     setRows(newRows);
@@ -66,6 +66,44 @@ export default function BulkCustomerImport({ onClose, onSuccess }: BulkImportPro
     document.body.removeChild(link);
   };
 
+  const downloadCurrentCustomers = async () => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      const response = await axios.get(`${baseURL}/api/organizations/customers`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      const customers = response.data;
+      if (!customers || customers.length === 0) {
+        alert("No customers found to export.");
+        return;
+      }
+
+      const headers = ["First Name,Last Name,Phone,Email,Address"];
+      const rows = customers.map((c: any) => {
+        const firstName = c.first_name || "";
+        const lastName = c.last_name || "";
+        const phone = c.phone || "";
+        const email = c.email || "";
+        const address = c.address ? `"${c.address.replace(/"/g, '""')}"` : "";
+        return `${firstName},${lastName},${phone},${email},${address}`;
+      });
+
+      const csvContent = "data:text/csv;charset=utf-8," + headers.concat(rows).join("\n");
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `customer_export_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+    } catch (err) {
+      console.error("Failed to export customers", err);
+      alert("Failed to export customers. Please try again.");
+    }
+  };
+
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -76,51 +114,51 @@ export default function BulkCustomerImport({ onClose, onSuccess }: BulkImportPro
       parseCSV(text);
     };
     reader.readAsText(file);
-    
+
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const parseCSV = (csvText: string) => {
     try {
-        const lines = csvText.split('\n').filter(line => line.trim() !== '');
-        
-        const startIndex = lines[0].toLowerCase().includes('phone') ? 1 : 0;
-        
-        const newRows: BulkCustomerData[] = [];
+      const lines = csvText.split('\n').filter(line => line.trim() !== '');
 
-        for (let i = startIndex; i < lines.length; i++) {
-            // ✅ FIX: Use Regex to split by comma ONLY if it's not inside quotes
-            // This allows "123 Main St, Lagos" to stay as one field
-            const cols = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => {
-                // Remove surrounding quotes if present (e.g. "Lagos" -> Lagos)
-                return c.trim().replace(/^"|"$/g, ''); 
-            });
-            
-            if (cols.length >= 3) { 
-                newRows.push({
-                    first_name: cols[0] || '',
-                    last_name: cols[1] || '',
-                    phone: cols[2] || '',
-                    email: cols[3] || '',
-                    address: cols[4] || '', // Now contains the full address including commas
-                    password: '' 
-                });
-            }
+      const startIndex = lines[0].toLowerCase().includes('phone') ? 1 : 0;
+
+      const newRows: BulkCustomerData[] = [];
+
+      for (let i = startIndex; i < lines.length; i++) {
+        // ✅ FIX: Use Regex to split by comma ONLY if it's not inside quotes
+        // This allows "123 Main St, Lagos" to stay as one field
+        const cols = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => {
+          // Remove surrounding quotes if present (e.g. "Lagos" -> Lagos)
+          return c.trim().replace(/^"|"$/g, '');
+        });
+
+        if (cols.length >= 3) {
+          newRows.push({
+            first_name: cols[0] || '',
+            last_name: cols[1] || '',
+            phone: cols[2] || '',
+            email: cols[3] || '',
+            address: cols[4] || '', // Now contains the full address including commas
+            password: ''
+          });
         }
+      }
 
-        if (newRows.length > 0) {
-            if (rows.length === 1 && !rows[0].first_name) {
-                setRows(newRows);
-            } else {
-                setRows([...rows, ...newRows]);
-            }
-            setError('');
+      if (newRows.length > 0) {
+        if (rows.length === 1 && !rows[0].first_name) {
+          setRows(newRows);
         } else {
-            setError("Could not parse any valid rows from the file.");
+          setRows([...rows, ...newRows]);
         }
+        setError('');
+      } else {
+        setError("Could not parse any valid rows from the file.");
+      }
 
     } catch (err) {
-        setError("Failed to parse CSV file. Please check the format.");
+      setError("Failed to parse CSV file. Please check the format.");
     }
   };
 
@@ -129,7 +167,7 @@ export default function BulkCustomerImport({ onClose, onSuccess }: BulkImportPro
   const handleSubmit = async () => {
     setError('');
     setSuccess('');
-    
+
     const validRows = rows.filter(r => r.first_name.trim() || r.phone.trim());
     if (validRows.length === 0) {
       setError("Please add at least one customer.");
@@ -137,22 +175,22 @@ export default function BulkCustomerImport({ onClose, onSuccess }: BulkImportPro
     }
 
     for (let i = 0; i < validRows.length; i++) {
-        if (!validRows[i].first_name || !validRows[i].phone) {
-            setError(`Row ${i + 1} is missing Name or Phone.`);
-            return;
-        }
+      if (!validRows[i].first_name || !validRows[i].phone) {
+        setError(`Row ${i + 1} is missing Name or Phone.`);
+        return;
+      }
     }
 
     const payload = validRows.map(row => ({
-        ...row,
-        email: row.email || null,
-        password: row.password.trim() ? row.password : defaultPassword
+      ...row,
+      email: row.email || null,
+      password: row.password.trim() ? row.password : defaultPassword
     }));
 
     try {
       setLoading(true);
       const token = localStorage.getItem('accessToken');
-      
+
       await axios.post(`${baseURL}/api/organizations/register-customers/bulk`, payload, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -171,57 +209,64 @@ export default function BulkCustomerImport({ onClose, onSuccess }: BulkImportPro
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
       <div className="bg-white w-full max-w-6xl rounded-2xl shadow-2xl flex flex-col h-[90vh]">
-        
+
         {/* HEADER */}
         <div className="p-6 border-b border-gray-100 flex items-center justify-between bg-gray-50/50 rounded-t-2xl">
           <div className="flex items-center gap-3">
-             <div className="p-2 bg-blue-100 rounded-lg text-blue-600"><Users size={24} /></div>
-             <div>
-                <h2 className="text-xl font-bold text-gray-900">Bulk Customer Import</h2>
-                <p className="text-sm text-gray-500">Upload a CSV or enter manually</p>
-             </div>
+            <div className="p-2 bg-blue-100 rounded-lg text-blue-600"><Users size={24} /></div>
+            <div>
+              <h2 className="text-xl font-bold text-gray-900">Bulk Customer Import</h2>
+              <p className="text-sm text-gray-500">Upload a CSV or enter manually</p>
+            </div>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-gray-200 rounded-full transition-colors"><X size={20} className="text-gray-500" /></button>
         </div>
 
         {/* TOOLBAR */}
         <div className="p-4 bg-white border-b border-gray-200 flex flex-wrap gap-4 items-center justify-between">
-           
-           {/* Left: CSV Actions */}
-           <div className="flex items-center gap-2">
-              <input 
-                type="file" 
-                accept=".csv" 
-                ref={fileInputRef} 
-                onChange={handleFileUpload} 
-                className="hidden" 
-              />
-              
-              <button 
-                onClick={() => fileInputRef.current?.click()}
-                className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium transition-colors border border-gray-300"
-              >
-                <Upload size={16} /> Upload CSV
-              </button>
 
-              <button 
-                onClick={downloadTemplate}
-                className="flex items-center gap-2 px-3 py-2 text-blue-600 hover:bg-blue-50 rounded-lg text-sm font-medium transition-colors"
-              >
-                <FileText size={16} /> Download Template
-              </button>
-           </div>
+          {/* Left: CSV Actions */}
+          <div className="flex items-center gap-2">
+            <input
+              type="file"
+              accept=".csv"
+              ref={fileInputRef}
+              onChange={handleFileUpload}
+              className="hidden"
+            />
 
-           {/* Right: Default Password */}
-           <div className="flex items-center gap-2 text-sm bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100">
-              <span className="font-medium text-blue-800">Default Password:</span>
-              <input 
-                type="text" 
-                value={defaultPassword}
-                onChange={(e) => setDefaultPassword(e.target.value)}
-                className="bg-white border border-blue-200 rounded px-2 py-0.5 text-sm w-32 focus:ring-2 focus:ring-blue-500 outline-none"
-              />
-           </div>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium transition-colors border border-gray-300"
+            >
+              <Upload size={16} /> Upload CSV
+            </button>
+
+            <button
+              onClick={downloadTemplate}
+              className="flex items-center gap-2 px-3 py-2 text-blue-600 hover:bg-blue-50 rounded-lg text-sm font-medium transition-colors"
+            >
+              <FileText size={16} /> Download Template
+            </button>
+
+            <button
+              onClick={downloadCurrentCustomers}
+              className="flex items-center gap-2 px-3 py-2 text-green-600 hover:bg-green-50 rounded-lg text-sm font-medium transition-colors"
+            >
+              <Download size={16} /> Export Customers
+            </button>
+          </div>
+
+          {/* Right: Default Password */}
+          <div className="flex items-center gap-2 text-sm bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100">
+            <span className="font-medium text-blue-800">Default Password:</span>
+            <input
+              type="text"
+              value={defaultPassword}
+              onChange={(e) => setDefaultPassword(e.target.value)}
+              className="bg-white border border-blue-200 rounded px-2 py-0.5 text-sm w-32 focus:ring-2 focus:ring-blue-500 outline-none"
+            />
+          </div>
         </div>
 
         {/* TABLE */}
@@ -249,16 +294,16 @@ export default function BulkCustomerImport({ onClose, onSuccess }: BulkImportPro
                   <td className="p-2"><input type="text" value={row.address} onChange={(e) => updateRow(index, 'address', e.target.value)} className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" /></td>
                   <td className="p-2 text-center">
                     <button onClick={() => removeRow(index)} className="text-gray-300 hover:text-red-500 transition-colors p-1.5 hover:bg-red-50 rounded-md">
-                        <Trash2 size={16} />
+                      <Trash2 size={16} />
                     </button>
                   </td>
                 </tr>
               ))}
               <tr>
                 <td colSpan={7} className="p-2">
-                   <button onClick={addRow} className="flex items-center justify-center gap-2 w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50 transition-all text-sm font-medium">
-                      <Plus size={16} /> Add Manual Row
-                   </button>
+                  <button onClick={addRow} className="flex items-center justify-center gap-2 w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50 transition-all text-sm font-medium">
+                    <Plus size={16} /> Add Manual Row
+                  </button>
                 </td>
               </tr>
             </tbody>
@@ -267,15 +312,15 @@ export default function BulkCustomerImport({ onClose, onSuccess }: BulkImportPro
 
         {/* FOOTER */}
         <div className="p-6 border-t border-gray-200 bg-gray-50 rounded-b-2xl">
-           {error && <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-lg flex items-center gap-2 text-sm border border-red-100"><AlertCircle size={16} /> {error}</div>}
-           {success && <div className="mb-4 p-3 bg-green-50 text-green-700 rounded-lg flex items-center gap-2 text-sm border border-green-100"><CheckCircle size={16} /> {success}</div>}
+          {error && <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-lg flex items-center gap-2 text-sm border border-red-100"><AlertCircle size={16} /> {error}</div>}
+          {success && <div className="mb-4 p-3 bg-green-50 text-green-700 rounded-lg flex items-center gap-2 text-sm border border-green-100"><CheckCircle size={16} /> {success}</div>}
 
-           <div className="flex justify-end gap-3">
-              <button onClick={onClose} className="px-5 py-2.5 text-gray-600 font-medium hover:bg-gray-200 rounded-lg transition-colors">Cancel</button>
-              <button onClick={handleSubmit} disabled={loading || !!success} className="px-6 py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-sm transition-all active:scale-95">
-                {loading ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Importing...</> : <><Save size={18} /> Import {rows.filter(r => r.first_name).length > 0 ? rows.filter(r => r.first_name).length : ''} Customers</>}
-              </button>
-           </div>
+          <div className="flex justify-end gap-3">
+            <button onClick={onClose} className="px-5 py-2.5 text-gray-600 font-medium hover:bg-gray-200 rounded-lg transition-colors">Cancel</button>
+            <button onClick={handleSubmit} disabled={loading || !!success} className="px-6 py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-sm transition-all active:scale-95">
+              {loading ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Importing...</> : <><Save size={18} /> Import {rows.filter(r => r.first_name).length > 0 ? rows.filter(r => r.first_name).length : ''} Customers</>}
+            </button>
+          </div>
         </div>
       </div>
     </div>
