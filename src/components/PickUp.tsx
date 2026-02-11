@@ -1,7 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Search, CheckCircle, AlertCircle, Printer,
-  CreditCard, DollarSign, User, History, Wallet, ArrowLeft, MapPin, Calculator, Loader2, X
+  CreditCard, DollarSign, User, History, Wallet, ArrowLeft, MapPin, Calculator, Loader2, X, Filter, RefreshCw
 } from 'lucide-react';
 import { Ticket } from '../types';
 import axios from 'axios';
@@ -41,9 +41,17 @@ export default function PickUp() {
   const { colors } = useColors();
   const [step, setStep] = useState<Step>('search');
   const [searchQuery, setSearchQuery] = useState('');
-  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [allTickets, setAllTickets] = useState<Ticket[]>([]);
+  const [filteredTickets, setFilteredTickets] = useState<Ticket[]>([]);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Filter States
+  const [showFilters, setShowFilters] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string | null>(null);
+  const [dateFromFilter, setDateFromFilter] = useState('');
+  const [dateToFilter, setDateToFilter] = useState('');
+  const [rackFilter, setRackFilter] = useState('');
 
   // --- Checkout Profile State ---
   const [checkoutProfile, setCheckoutProfile] = useState<CustomerCheckoutProfile | null>(null);
@@ -63,6 +71,87 @@ export default function PickUp() {
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [printContent, setPrintContent] = useState('');
   const [plantPrintContent, setPlantPrintContent] = useState('');
+
+  // --- Fetch All Tickets on Mount ---
+  useEffect(() => {
+    fetchAllTickets();
+  }, []);
+
+  // --- Apply Filters Whenever Filter State Changes ---
+  useEffect(() => {
+    applyFilters();
+  }, [allTickets, searchQuery, statusFilter, dateFromFilter, dateToFilter, rackFilter]);
+
+  // --- Fetch All Tickets ---
+  const fetchAllTickets = async () => {
+    setLoading(true);
+    try {
+      const token = localStorage.getItem('accessToken');
+      const response = await axios.get(`${baseURL}/api/organizations/tickets`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setAllTickets(response.data || []);
+    } catch (error) {
+      console.error("Failed to fetch tickets:", error);
+      showModal("Error", "Failed to load tickets.", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- Apply Filters ---
+  const applyFilters = () => {
+    let result = [...allTickets];
+
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter(t =>
+        t.ticket_number?.toLowerCase().includes(query) ||
+        t.customer_name?.toLowerCase().includes(query) ||
+        t.customer_phone?.toLowerCase().includes(query)
+      );
+    }
+
+    // Filter by status
+    if (statusFilter) {
+      result = result.filter(t => t.status === statusFilter);
+    }
+
+    // Filter by date range
+    if (dateFromFilter) {
+      const fromDate = new Date(dateFromFilter);
+      result = result.filter(t => {
+        const ticketDate = new Date(t.created_at);
+        return ticketDate >= fromDate;
+      });
+    }
+
+    if (dateToFilter) {
+      const toDate = new Date(dateToFilter);
+      toDate.setHours(23, 59, 59, 999);
+      result = result.filter(t => {
+        const ticketDate = new Date(t.created_at);
+        return ticketDate <= toDate;
+      });
+    }
+
+    // Filter by rack number
+    if (rackFilter) {
+      result = result.filter(t => String(t.rack_number) === rackFilter);
+    }
+
+    setFilteredTickets(result);
+  };
+
+  // --- Clear All Filters ---
+  const clearFilters = () => {
+    setSearchQuery('');
+    setStatusFilter(null);
+    setDateFromFilter('');
+    setDateToFilter('');
+    setRackFilter('');
+  };
 
   // --- Helper: Print Job (Iframe Method) ---
   const handlePrintJob = (content: string) => {
@@ -116,35 +205,10 @@ export default function PickUp() {
     return { subtotal, env, tax, total, paid, balance };
   }, [selectedTicket]);
 
-  // --- 1. Search Tickets ---
+  // --- 1. Search Tickets (Now integrated with filtering) ---
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!searchQuery.trim()) return;
-
-    setLoading(true);
-    try {
-      const token = localStorage.getItem('accessToken');
-      const response = await axios.get(`${baseURL}/api/organizations/tickets`, {
-        headers: { Authorization: `Bearer ${token}` },
-        params: { search: searchQuery } // Assuming backend supports ?search= param
-      });
-
-      // If backend doesn't support ?search, filter manually here like previous version
-      const allTickets: Ticket[] = response.data;
-      // Ensure we filter if the API returns all
-      const filtered = allTickets.filter(t =>
-        t.ticket_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        t.customer_name.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-
-      setTickets(filtered);
-      setStep('search');
-    } catch (error) {
-      console.error("Search error:", error);
-      showModal("Error", "Failed to search tickets.", "error");
-    } finally {
-      setLoading(false);
-    }
+    applyFilters();
   };
 
   // --- 2. Select Ticket ---
@@ -259,7 +323,7 @@ export default function PickUp() {
         setShowPrintPreview(true);
 
         // Reset Local Data
-        setTickets([]);
+        fetchAllTickets();
         setSearchQuery('');
         setSelectedTicket(null);
         setStep('search');
@@ -299,31 +363,132 @@ export default function PickUp() {
 
       {/* --- STEP 1: SEARCH --- */}
       {step === 'search' && (
-        <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 max-w-2xl mx-auto">
-          <form onSubmit={handleSearch} className="relative">
+        <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 max-w-4xl mx-auto">
+          {/* Search & Filter Bar */}
+          <form onSubmit={handleSearch} className="relative mb-6">
             <Search className="absolute left-4 top-3.5 text-gray-400" size={20} />
             <input
               type="text"
               placeholder="Scan ticket or search by name/phone..."
-              className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
+              className="w-full pl-12 pr-32 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               autoFocus
             />
-            <button
-              type="submit"
-              disabled={loading}
-              className="absolute right-2 top-2 bottom-2 px-4 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
-              style={{ backgroundColor: colors.primaryColor }}
-            >
-              {loading ? 'Searching...' : 'Search'}
-            </button>
+            <div className="absolute right-2 top-2 bottom-2 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setShowFilters(!showFilters)}
+                className="px-3 text-gray-600 hover:text-gray-800 font-medium transition-colors flex items-center gap-1"
+              >
+                <Filter size={16} />
+              </button>
+              <button
+                type="button"
+                onClick={fetchAllTickets}
+                disabled={loading}
+                className="px-3 text-gray-600 hover:text-gray-800 disabled:text-gray-300 transition-colors"
+              >
+                <RefreshCw size={16} />
+              </button>
+              <button
+                type="submit"
+                disabled={loading}
+                className="px-4 text-white rounded-lg font-medium transition-colors"
+                style={{ backgroundColor: colors.primaryColor }}
+              >
+                {loading ? 'Loading...' : 'Search'}
+              </button>
+            </div>
           </form>
 
-          {tickets.length > 0 && (
+          {/* Filter Panel */}
+          {showFilters && (
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-3 mb-6">
+              <div className="flex justify-between items-center">
+                <h3 className="font-semibold text-gray-700">Filters</h3>
+                <button 
+                  onClick={() => setShowFilters(false)}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                {/* Status Filter */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                  <select 
+                    value={statusFilter || ''}
+                    onChange={(e) => setStatusFilter(e.target.value || null)}
+                    className="w-full p-2 border border-gray-300 rounded-lg text-sm"
+                  >
+                    <option value="">All Statuses</option>
+                    <option value="received">Received</option>
+                    <option value="ready_for_pickup">Ready for Pickup</option>
+                    <option value="picked_up">Picked Up</option>
+                  </select>
+                </div>
+
+                {/* Date From */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">From Date</label>
+                  <input 
+                    type="date"
+                    value={dateFromFilter}
+                    onChange={(e) => setDateFromFilter(e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded-lg text-sm"
+                  />
+                </div>
+
+                {/* Date To */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">To Date</label>
+                  <input 
+                    type="date"
+                    value={dateToFilter}
+                    onChange={(e) => setDateToFilter(e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded-lg text-sm"
+                  />
+                </div>
+
+                {/* Rack Filter */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Rack Number</label>
+                  <input 
+                    type="text"
+                    value={rackFilter}
+                    onChange={(e) => setRackFilter(e.target.value)}
+                    placeholder="e.g., A1"
+                    className="w-full p-2 border border-gray-300 rounded-lg text-sm"
+                  />
+                </div>
+              </div>
+
+              {/* Clear Filters Button */}
+              <div className="pt-2 border-t border-gray-200">
+                <button 
+                  onClick={clearFilters}
+                  className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                >
+                  Clear All Filters
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Results Summary */}
+          {!loading && (
+            <div className="mb-4 text-sm text-gray-600">
+              Showing <span className="font-semibold">{filteredTickets.length}</span> of <span className="font-semibold">{allTickets.length}</span> tickets ready for pickup
+            </div>
+          )}
+
+          {filteredTickets.length > 0 && (
             <div className="mt-6 space-y-3">
               <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Results</h3>
-              {tickets.map(ticket => (
+              {filteredTickets.map(ticket => (
                 <div
                   key={ticket.id}
                   onClick={() => handleSelectTicket(ticket)}
@@ -336,17 +501,26 @@ export default function PickUp() {
                     <div>
                       <p className="font-bold text-gray-800 group-hover:text-indigo-700">{ticket.customer_name}</p>
                       <p className="text-xs text-gray-500">Ticket #{ticket.ticket_number}</p>
+                      <p className="text-xs text-gray-400 mt-1">Created: {new Date(ticket.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
                     </div>
                   </div>
                   <div className="text-right">
-                    <span className={`px-2 py-1 rounded-full text-xs font-bold ${ticket.status === 'ready_for_pickup' ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600'
+                    <span className={`px-2 py-1 rounded-full text-xs font-bold ${ticket.status === 'ready' ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600'
                       }`}>
                       {ticket.status.replace(/_/g, ' ').toUpperCase()}
                     </span>
                     <p className="text-sm font-bold text-gray-800 mt-1">${ticket.total_amount.toFixed(2)}</p>
+                    <p className="text-xs text-gray-500 mt-2">Due: {ticket.pickup_date ? new Date(ticket.pickup_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'N/A'}</p>
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+
+          {!loading && filteredTickets.length === 0 && (
+            <div className="text-center p-8 text-gray-500">
+              <Search className="h-12 w-12 mx-auto mb-2 text-gray-300" />
+              <p>{allTickets.length === 0 ? 'No tickets available.' : 'No tickets match your filters.'}</p>
             </div>
           )}
         </div>
@@ -365,6 +539,10 @@ export default function PickUp() {
                   <p className="text-gray-500 flex items-center gap-2 mt-1">
                     <User size={16} /> {selectedTicket.customer_name}
                   </p>
+                  <div className="text-xs text-gray-400 mt-3 space-y-1">
+                    <p>Created: {new Date(selectedTicket.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                    <p>Due: {selectedTicket.pickup_date ? new Date(selectedTicket.pickup_date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : 'N/A'}</p>
+                  </div>
                 </div>
                 <div className="text-right">
                   <div className="flex items-center text-blue-800 bg-blue-50 px-3 py-1 rounded-full mb-2">

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Plus, Edit2, Trash2, Save, X, Shirt, Upload, Image, AlertCircle,
-  Loader2, DollarSign, List, Info, Ruler // 🎯 Added Ruler for Size Icon
+  Loader2, DollarSign, List, Info, Ruler, Search // 🎯 Added Search icon
 } from 'lucide-react';
 import baseURL from '../lib/config';
 
@@ -302,6 +302,7 @@ export default function ClothingManagement() {
   // 🎯 Updated Tab State
   const [activeTab, setActiveTab] = useState<'items' | 'starch' | 'size'>('items');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  const [searchTerm, setSearchTerm] = useState(''); // 🎯 Added searchTerm state
 
   const [clothingTypes, setClothingTypes] = useState<ClothingType[]>([]);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -613,35 +614,58 @@ export default function ClothingManagement() {
 
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
             <div className="p-6 border-b border-gray-200">
-              <div className="flex justify-between items-center">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <h3 className="text-lg font-semibold">Clothing Types & Pricing</h3>
-                <button
-                  onClick={() => {
-                    setFormData({ name: '', plant_price: '', margin: '', pieces: '', category: 'Laundry', image_url: '' });
-                    setImageFile(null);
-                    setImagePreviewUrl(null);
-                    setEditingId(null);
-                    setShowAddForm(true);
-                    setFormError(null);
-                  }}
-                  className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center hover:bg-blue-700 transition-colors"
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add New Item
-                </button>
+
+                <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
+                  {/* 🔍 Search Bar */}
+                  <div className="relative w-full sm:w-64">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Search items..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                    />
+                    {searchTerm && (
+                      <button
+                        onClick={() => setSearchTerm('')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      setFormData({ name: '', plant_price: '', margin: '', pieces: '', category: 'Laundry', image_url: '' });
+                      setImageFile(null);
+                      setImagePreviewUrl(null);
+                      setEditingId(null);
+                      setShowAddForm(true);
+                      setFormError(null);
+                    }}
+                    className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center hover:bg-blue-700 transition-colors w-full sm:w-auto justify-center"
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add New Item
+                  </button>
+                </div>
               </div>
             </div>
 
             {/* 🎯 CATEGORY FILTER STRIP */}
             {!loading && activeTab === 'items' && uniqueCategories.length > 2 && (
-              <div className="px-6 py-4 border-b border-gray-100 bg-gray-50 flex flex-wrap gap-2 sticky top-[4.5rem] z-10">
+              <div className="px-6 py-4 border-b border-gray-100 bg-gray-50 flex flex-wrap gap-2 transition-all duration-300">
                 {uniqueCategories.map((cat) => (
                   <button
                     key={cat}
                     onClick={() => setSelectedCategory(cat)}
                     className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all border shadow-sm ${selectedCategory === cat
-                        ? 'bg-blue-600 text-white border-blue-600'
-                        : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'
                       }`}
                   >
                     {cat}
@@ -841,7 +865,11 @@ export default function ClothingManagement() {
             <div className="p-6 space-y-12">
               {Object.entries(
                 clothingTypes
-                  .filter(item => selectedCategory === 'All' || item.category === selectedCategory)
+                  .filter(item => {
+                    const matchesCategory = selectedCategory === 'All' || item.category === selectedCategory;
+                    const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
+                    return matchesCategory && matchesSearch;
+                  })
                   .reduce((acc, item) => {
                     const cat = item.category || 'Uncategorized';
                     if (!acc[cat]) acc[cat] = [];

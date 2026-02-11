@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useColors } from '../state/ColorsContext';
 import { 
   Search, Package, User, Calendar, MapPin, 
   Eye, Printer, Edit3, 
-  Ban, RefreshCcw, RotateCcw, DollarSign, Loader2
+  Ban, RefreshCcw, RotateCcw, DollarSign, Loader2, Filter, X
 } from 'lucide-react';
 import axios from 'axios'; 
 import baseURL from '../lib/config'; 
@@ -25,25 +25,42 @@ interface EditableItem {
 export default function TicketManagement() {
   const { colors } = useColors();
   const [searchQuery, setSearchQuery] = useState('');
-  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [allTickets, setAllTickets] = useState<Ticket[]>([]);
+  const [filteredTickets, setFilteredTickets] = useState<Ticket[]>([]);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [modal, setModal] = useState({ isOpen: false, title: '', message: '', type: 'success' as 'success' | 'error' });
   
+  // Filter States
+  const [showFilters, setShowFilters] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string | null>(null);
+  const [dateFromFilter, setDateFromFilter] = useState('');
+  const [dateToFilter, setDateToFilter] = useState('');
+  const [rackFilter, setRackFilter] = useState('');
+  
   // Printing States
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [customerPrintContent, setCustomerPrintContent] = useState('');      
   const [plantPrintContent, setPlantPrintContent] = useState(''); 
-  const [tagPrintContent, setTagPrintContent] = useState(''); 
+  const [tagPrintContent, setTagPrintContent] = useState('');
 
   // Edit Modal State
   const [showEditModal, setShowEditModal] = useState(false);
   const [editedItems, setEditedItems] = useState<EditableItem[]>([]);
 
-  // --- Search Tickets ---
-  const searchTickets = async () => {
-    if (!searchQuery.trim()) return;
+  // --- Fetch All Tickets on Mount ---
+  useEffect(() => {
+    fetchAllTickets();
+  }, []);
+
+  // --- Apply Filters Whenever Filter State Changes ---
+  useEffect(() => {
+    applyFilters();
+  }, [allTickets, searchQuery, statusFilter, dateFromFilter, dateToFilter, rackFilter]);
+
+  // --- Fetch All Tickets ---
+  const fetchAllTickets = async () => {
     setLoading(true);
     setError(null);
     try {
@@ -52,18 +69,77 @@ export default function TicketManagement() {
       const headers = { 'Authorization': `Bearer ${token}` };
 
       const response = await axios.get(
-        `${baseURL}/api/organizations/find-tickets?query=${encodeURIComponent(searchQuery)}`,
+        `${baseURL}/api/organizations/tickets`,
         { headers }
       );
-      setTickets(response.data);
+      setAllTickets(response.data || []);
     } catch (error: any) {
       console.error(error);
-      const errorMsg = error.response?.data?.detail || 'Failed to search tickets. Please try again.';
+      const errorMsg = error.response?.data?.detail || 'Failed to load tickets. Please try again.';
       setError(errorMsg);
-      setModal({ isOpen: true, title: 'Search Error', message: errorMsg, type: 'error' });
+      setModal({ isOpen: true, title: 'Load Error', message: errorMsg, type: 'error' });
     } finally {
       setLoading(false);
     }
+  };
+
+  // --- Apply Filters ---
+  const applyFilters = () => {
+    let result = [...allTickets];
+
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter(t =>
+        t.ticket_number?.toLowerCase().includes(query) ||
+        t.customer_name?.toLowerCase().includes(query) ||
+        t.customer_phone?.toLowerCase().includes(query)
+      );
+    }
+
+    // Filter by status
+    if (statusFilter) {
+      result = result.filter(t => t.status === statusFilter);
+    }
+
+    // Filter by date range
+    if (dateFromFilter) {
+      const fromDate = new Date(dateFromFilter);
+      result = result.filter(t => {
+        const ticketDate = new Date(t.created_at);
+        return ticketDate >= fromDate;
+      });
+    }
+
+    if (dateToFilter) {
+      const toDate = new Date(dateToFilter);
+      toDate.setHours(23, 59, 59, 999);
+      result = result.filter(t => {
+        const ticketDate = new Date(t.created_at);
+        return ticketDate <= toDate;
+      });
+    }
+
+    // Filter by rack number
+    if (rackFilter) {
+      result = result.filter(t => String(t.rack_number) === rackFilter);
+    }
+
+    setFilteredTickets(result);
+  };
+
+  // --- Clear All Filters ---
+  const clearFilters = () => {
+    setSearchQuery('');
+    setStatusFilter(null);
+    setDateFromFilter('');
+    setDateToFilter('');
+    setRackFilter('');
+  };
+
+  // --- Search Tickets (Now integrated with filtering) ---
+  const searchTickets = async () => {
+    applyFilters();
   };
 
   // --- View Details Modal ---
@@ -221,7 +297,7 @@ export default function TicketManagement() {
       alert('Ticket updated successfully!');
       setShowEditModal(false);
       setSelectedTicket(null);
-      searchTickets(); 
+      fetchAllTickets(); 
     } catch (error: any) {
       alert(`Failed to save: ${error.response?.data?.detail || error.message}`);
     } finally {
@@ -259,8 +335,18 @@ export default function TicketManagement() {
 
       const { is_void, is_refunded, status, message } = response.data;
 
-      // Update Local State for the List
-      setTickets(prev => prev.map(t => {
+      // Update Local State for Both Lists
+      setAllTickets(prev => prev.map(t => {
+        if (t.id !== ticket.id) return t;
+        return { 
+            ...t, 
+            ...(is_void !== undefined && { is_void }),
+            ...(is_refunded !== undefined && { is_refunded }),
+            ...(status !== undefined && { status })
+        };
+      }));
+
+      setFilteredTickets(prev => prev.map(t => {
         if (t.id !== ticket.id) return t;
         return { 
             ...t, 
@@ -309,25 +395,112 @@ export default function TicketManagement() {
         </div>
       )}
 
-      {/* Search Bar */}
-      <div className="flex items-center space-x-2 mb-6">
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          onKeyPress={(e) => e.key === 'Enter' && searchTickets()}
-          placeholder="Search by Ticket #, Name, or Phone..."
-          className="flex-grow p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none"
-          style={{ boxShadow: undefined }}
-        />
-        <button 
-            onClick={searchTickets} 
-            disabled={loading} 
-            className="px-6 py-3 text-white rounded-lg disabled:bg-gray-400"
-            style={{ backgroundColor: colors.primaryColor }}
-        >
-          <Search className="h-5 w-5" />
-        </button>
+      {/* Search & Filter Bar */}
+      <div className="mb-6 space-y-3">
+        <div className="flex items-center space-x-2">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyPress={(e) => e.key === 'Enter' && searchTickets()}
+            placeholder="Search by Ticket #, Name, or Phone..."
+            className="flex-grow p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none"
+            style={{ boxShadow: undefined }}
+          />
+          <button 
+              onClick={() => setShowFilters(!showFilters)} 
+              className="px-4 py-3 text-white rounded-lg flex items-center gap-2"
+              style={{ backgroundColor: colors.primaryColor }}
+          >
+            <Filter className="h-5 w-5" />
+            Filters
+          </button>
+          <button 
+              onClick={fetchAllTickets} 
+              disabled={loading} 
+              className="px-4 py-3 text-white rounded-lg disabled:bg-gray-400"
+              style={{ backgroundColor: colors.secondaryColor }}
+          >
+            <RefreshCcw className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Filter Panel */}
+        {showFilters && (
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-3">
+            <div className="flex justify-between items-center">
+              <h3 className="font-semibold text-gray-700">Filters</h3>
+              <button 
+                onClick={() => setShowFilters(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+              {/* Status Filter */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                <select 
+                  value={statusFilter || ''}
+                  onChange={(e) => setStatusFilter(e.target.value || null)}
+                  className="w-full p-2 border border-gray-300 rounded-lg text-sm"
+                >
+                  <option value="">All Statuses</option>
+                  <option value="received">Received</option>
+                  <option value="ready_for_pickup">Ready for Pickup</option>
+                  <option value="picked_up">Picked Up</option>
+                  <option value="voided">Voided</option>
+                </select>
+              </div>
+
+              {/* Date From */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">From Date</label>
+                <input 
+                  type="date"
+                  value={dateFromFilter}
+                  onChange={(e) => setDateFromFilter(e.target.value)}
+                  className="w-full p-2 border border-gray-300 rounded-lg text-sm"
+                />
+              </div>
+
+              {/* Date To */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">To Date</label>
+                <input 
+                  type="date"
+                  value={dateToFilter}
+                  onChange={(e) => setDateToFilter(e.target.value)}
+                  className="w-full p-2 border border-gray-300 rounded-lg text-sm"
+                />
+              </div>
+
+              {/* Rack Filter */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Rack Number</label>
+                <input 
+                  type="text"
+                  value={rackFilter}
+                  onChange={(e) => setRackFilter(e.target.value)}
+                  placeholder="e.g., A1"
+                  className="w-full p-2 border border-gray-300 rounded-lg text-sm"
+                />
+              </div>
+            </div>
+
+            {/* Clear Filters Button */}
+            <div className="pt-2 border-t border-gray-200">
+              <button 
+                onClick={clearFilters}
+                className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+              >
+                Clear All Filters
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Loading State */}
@@ -338,20 +511,27 @@ export default function TicketManagement() {
         </div>
       )}
 
+      {/* Results Summary */}
+      {!loading && (
+        <div className="mb-4 text-sm text-gray-600">
+          Showing <span className="font-semibold">{filteredTickets.length}</span> of <span className="font-semibold">{allTickets.length}</span> tickets
+        </div>
+      )}
+
       {/* No Results */}
-      {!loading && tickets.length === 0 && searchQuery && (
+      {!loading && filteredTickets.length === 0 && (
          <div className="text-center p-6 text-gray-500">
              <Package className="h-12 w-12 mx-auto mb-2 text-gray-300" />
-             <p>No tickets found.</p>
+             <p>{allTickets.length === 0 ? 'No tickets available.' : 'No tickets match your filters.'}</p>
          </div>
       )}
 
       {/* Ticket List */}
-      {!loading && tickets.length > 0 && !selectedTicket && !showEditModal && (
+      {!loading && filteredTickets.length > 0 && !selectedTicket && !showEditModal && (
         <div className="space-y-4">
-          {tickets.map((ticket) => {
-            const isVoid = ticket.is_void || ticket.status === 'voided';
-            const isRefunded = ticket.is_refunded;
+          {filteredTickets.map((ticket) => {
+            const isVoid = ticket.is_void || false;
+            const isRefunded = ticket.is_refunded || false;
 
             let cardClasses = 'bg-white border-gray-200';
             if (isVoid) {
@@ -400,9 +580,12 @@ export default function TicketManagement() {
                   <div className="text-sm text-gray-500 mt-2 md:mt-0 md:text-right">
                     <div>
                         <Calendar className="inline h-4 w-4 mr-2" />
-                        Due: {ticket.pickup_date ? new Date(ticket.pickup_date).toLocaleDateString() : 'N/A'}
+                        Due: {ticket.pickup_date ? new Date(ticket.pickup_date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : 'N/A'}
                     </div>
                     <div className="mt-1">
+                        Created: {new Date(ticket.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                    <div>
                         Status: <span className="font-medium">{ticket.status.replace('_', ' ').toUpperCase()}</span>
                     </div>
                   </div>
@@ -488,20 +671,20 @@ export default function TicketManagement() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y">
-                                {selectedTicket.items.map(i => (
+                                {selectedTicket.items?.map(i => (
                                     <tr key={i.id}>
                                         <td className="px-4 py-2">{i.clothing_name}</td>
                                         <td className="px-4 py-2 text-right">{i.quantity}</td>
                                         <td className="px-4 py-2 text-right">${i.item_total.toFixed(2)}</td>
                                     </tr>
-                                ))}
+                                )) || <tr><td colSpan={3} className="px-4 py-2 text-center text-gray-500">No items</td></tr>}
                             </tbody>
                         </table>
                     </div>
 
                     <div className="flex justify-between items-center pt-2 border-t">
                         <div className="text-right w-full">
-                            <p className="text-sm text-gray-600">Paid: ${selectedTicket.paid_amount.toFixed(2)}</p>
+                            <p className="text-sm text-gray-600">Paid: ${(selectedTicket.paid_amount || 0).toFixed(2)}</p>
                             <p className="text-xl font-bold" style={{ color: colors.primaryColor }}>Total: ${selectedTicket.total_amount.toFixed(2)}</p>
                         </div>
                     </div>

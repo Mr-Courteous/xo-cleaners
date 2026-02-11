@@ -40,7 +40,7 @@ export interface Ticket {
   customer_phone: string;
   customer_address?: string;
   status: 'dropped_off' | 'in_process' | 'ready' | 'picked_up';
-  rack_number?: number;
+  rack_number?: string | number;
   total_amount: number;
   drop_off_date: string;
   pickup_date?: string;
@@ -48,6 +48,8 @@ export interface Ticket {
   special_instructions?: string;
   items?: TicketItem[];
   paid_amount?: number;
+  is_void?: boolean;
+  is_refunded?: boolean;
 }
 
 export interface Rack {
