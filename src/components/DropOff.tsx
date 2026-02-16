@@ -3,7 +3,7 @@ import { useColors } from '../state/ColorsContext';
 import {
   Plus, Search, Trash2, User, Phone, Calendar, Grid, List, Shirt,
   Image as LucideImage, Mail, Printer, PenTool, Loader2, Settings,
-  Calculator, DollarSign
+  Calculator, DollarSign, X
 } from 'lucide-react';
 import axios from "axios";
 import baseURL from "../lib/config";
@@ -216,6 +216,8 @@ export default function DropOff() {
   const [categories, setCategories] = useState<string[]>([]);
   // NEW: State for selected category filter
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  // NEW: State for search term filtering
+  const [searchTerm, setSearchTerm] = useState('');
 
   const [items, setItems] = useState<ExtendedTicketItem[]>([]);
 
@@ -258,15 +260,23 @@ export default function DropOff() {
   // --- MEMOIZED FILTERING ---
   const filteredClothingTypes = useMemo(() => {
     // Filter out any undefined/null items and ensure they have names
-    const validItems = clothingTypes.filter((item) => item && item.name);
-    
-    if (selectedCategory === 'All') {
-      return validItems.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    let validItems = clothingTypes.filter((item) => item && item.name);
+
+    // Apply category filter
+    if (selectedCategory !== 'All') {
+      validItems = validItems.filter((item) => item.category === selectedCategory);
     }
-    return validItems
-      .filter((item) => item.category === selectedCategory)
-      .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-  }, [clothingTypes, selectedCategory]);
+
+    // Apply search filter
+    if (searchTerm.trim()) {
+      const searchLower = searchTerm.toLowerCase();
+      validItems = validItems.filter((item) =>
+        item.name.toLowerCase().includes(searchLower)
+      );
+    }
+
+    return validItems.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  }, [clothingTypes, selectedCategory, searchTerm]);
 
 
   useEffect(() => {
@@ -311,12 +321,12 @@ export default function DropOff() {
       const response = await axios.get(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      
+
       if (response.data && typeof response.data === 'object' && !Array.isArray(response.data)) {
         // New grouped object format: { "Category": [...items], ... }
         const flatItems = Object.values(response.data).flat() as ClothingType[];
         const categoryList = Object.keys(response.data).sort();
-        
+
         setClothingTypes(flatItems);
         setCategories(categoryList);
         // Set initial category to 'All'
@@ -944,7 +954,27 @@ export default function DropOff() {
       {step === 'items' && (
         <div className="flex flex-col lg:flex-row gap-6">
           <div className="lg:w-2/3">
-            {/* ... Grid/List View ... */}
+            {/* SEARCH BAR */}
+            <div className="mb-4">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search items..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                />
+                {searchTerm && (
+                  <button
+                    onClick={() => setSearchTerm('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            </div>
 
             {/* CATEGORY TABS */}
             <div className="flex flex-wrap gap-2 mb-4">
