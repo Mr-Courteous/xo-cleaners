@@ -178,8 +178,8 @@ const ClothingGrid: React.FC<ClothingGridProps> = ({ clothingTypes, addItemByTyp
             <div className="fallback-icon hidden w-full h-8 flex flex-col items-center justify-center bg-gray-100 rounded-lg mb-1 absolute top-2 left-0 right-0 mx-auto">
               <Shirt className="w-6 h-6 text-gray-500" />
             </div>
-            <span className="text-sm font-bold text-center mt-1 truncate w-full px-1">{type.name}</span>
-            <span className="text-xs font-bold mt-1" style={{ color: colors.primaryColor }}>${(type.total_price || (type.plant_price + type.margin) || 0).toFixed(2)}</span>
+            <span className="text-xs font-semibold text-center mt-1 line-clamp-2 w-full px-1 leading-tight">{type.name}</span>
+            <span className="text-xs font-bold mt-auto" style={{ color: colors.primaryColor }}>${(type.total_price || (type.plant_price + type.margin) || 0).toFixed(2)}</span>
           </button>
         );
       })}
