@@ -28,59 +28,59 @@ from utils.common import (
 DEFAULT_IMAGE_URL = "https://sy0plcgagn6r7nqd.public.blob.vercel-storage.com/clothing_images/6c8e1e00-1085-4fc8-bbcc-5fa200060724-UXjJDF5eWgDdNDdiC6lW0gvCLtDWag.png"
 
 DEFAULT_CLOTHING_CATALOG = [
-
     # --- LAUNDRY ---
-        {"name": "Shirt Short Sleeve", "category": "Laundry", "plant_price": 2.99, "margin": 1.00, "pieces": 1},  # 3.99
-        {"name": "Shirt Special", "category": "Laundry", "plant_price": 11.48, "margin": 3.02, "pieces": 1},  # 14.50
-        {"name": "Pants", "category": "Laundry", "plant_price": 2.99, "margin": 1.00, "pieces": 1},  # 3.99
-        {"name": "Jeans", "category": "Laundry", "plant_price": 2.99, "margin": 1.00, "pieces": 1},  # 3.99
-        {"name": "Jean / Pant Special", "category": "Laundry", "plant_price": 14.50, "margin": 3.78, "pieces": 1},  # 18.28
-        {"name": "Shorts", "category": "Laundry", "plant_price": 2.45, "margin": 0.54, "pieces": 1},  # 2.99
-        {"name": "Jersey Shirt / Pullover", "category": "Laundry", "plant_price": 2.99, "margin": 2.00, "pieces": 1},  # 4.99
-        {"name": "Small Body Suit (Women)", "category": "Laundry", "plant_price": 5.99, "margin": 2.00, "pieces": 1},  # 7.99
-        {"name": "Medium Body Suit (Women)", "category": "Laundry", "plant_price": 6.99, "margin": 2.00, "pieces": 1},  # 8.99
-        {"name": "Large Body Suit (Women)", "category": "Laundry", "plant_price": 7.99, "margin": 2.00, "pieces": 1},  # 9.99
-        {"name": "Overalls", "category": "Laundry", "plant_price": 7.99, "margin": 2.00, "pieces": 1},  # 9.99
-        {"name": "Uniforms", "category": "Laundry", "plant_price": 3.65, "margin": 1.00, "pieces": 1},  # 4.65
-        {"name": "Lab Coat", "category": "Laundry", "plant_price": 3.99, "margin": 3.00, "pieces": 1},  # 6.99
-        {"name": "African Long Shirt", "category": "Laundry", "plant_price": 4.99, "margin": 4.00, "pieces": 1},  # 8.99
-        {"name": "2 Piece African Suit", "category": "Laundry", "plant_price": 6.99, "margin": 2.00, "pieces": 2},  # 8.99
-        {"name": "3 Piece African Suit", "category": "Laundry", "plant_price": 8.99, "margin": 3.00, "pieces": 3},  # 11.99
-        {"name": "Blouse", "category": "Laundry", "plant_price": 2.99, "margin": 1.00, "pieces": 1},  # 3.99
-        {"name": "Dress", "category": "Laundry", "plant_price": 6.99, "margin": 83.00, "pieces": 1},  # 89.99 (Special-level laundry)
-        {"name": "Skirt", "category": "Laundry", "plant_price": 3.50, "margin": 6.49, "pieces": 1},  # 9.99
-        {"name": "Sweater", "category": "Laundry", "plant_price": 3.99, "margin": 2.00, "pieces": 1},  # 5.99
-        {"name": "Hoodie", "category": "Laundry", "plant_price": 4.99, "margin": 2.00, "pieces": 1},  # 6.99
-        {"name": "Hat", "category": "Laundry", "plant_price": 2.99, "margin": 1.00, "pieces": 1},  # 3.99
-        {"name": "Vest", "category": "Laundry", "plant_price": 2.99, "margin": 1.00, "pieces": 1},  # 3.99
-        {"name": "Infant Top", "category": "Laundry", "plant_price": 2.99, "margin": 0.00, "pieces": 1},  # 2.99
+    {"name": "T-shirt short sleeve", "category": "Laundry", "plant_price": 2.45, "margin": 1.54, "pieces": 1},
+    {"name": "S S shirt", "category": "Laundry", "plant_price": 2.45, "margin": 1.54, "pieces": 1},
+    {"name": "Jeans pants", "category": "Laundry", "plant_price": 2.99, "margin": 1.11, "pieces": 1},
+    {"name": "Pants", "category": "Laundry", "plant_price": 2.99, "margin": 1.11, "pieces": 1},
+    {"name": "Long L short", "category": "Laundry", "plant_price": 2.99, "margin": 1.11, "pieces": 1},
+    {"name": "Blouse", "category": "Laundry", "plant_price": 2.99, "margin": 1.11, "pieces": 1},
+    {"name": "Pull over", "category": "Laundry", "plant_price": 2.99, "margin": 1.00, "pieces": 1},
+    {"name": "Regular shirt dress", "category": "Laundry", "plant_price": 6.99, "margin": 2.00, "pieces": 1},
+    {"name": "Skirt", "category": "Laundry", "plant_price": 3.50, "margin": 1.49, "pieces": 1},
+    {"name": "Long skirt", "category": "Laundry", "plant_price": 5.50, "margin": 2.00, "pieces": 1},
+    {"name": "Sweater", "category": "Laundry", "plant_price": 3.99, "margin": 2.00, "pieces": 1},
+    {"name": "Big hoodie /Big sweater", "category": "Laundry", "plant_price": 4.99, "margin": 2.00, "pieces": 1},
 
     # --- DRY CLEAN ---
-    {"name": "Silk", "category": "Dry Clean", "plant_price": 2.99, "margin": 2.00, "pieces": 1},  # 4.99
-    {"name": "Knit", "category": "Dry Clean", "plant_price": 2.99, "margin": 1.00, "pieces": 1},  # 3.99
-    {"name": "Cashmere", "category": "Dry Clean", "plant_price": 2.99, "margin": 3.00, "pieces": 1},  # 5.99
-    {"name": "Wool Coat", "category": "Dry Clean", "plant_price": 5.99, "margin": 2.00, "pieces": 1},  # 7.99
-    {"name": "Small Jacket", "category": "Dry Clean", "plant_price": 3.99, "margin": 2.00, "pieces": 1},  # 5.99
-    {"name": "Large Jacket / Coat", "category": "Dry Clean", "plant_price": 4.99, "margin": 4.00, "pieces": 1},  # 8.99
-    {"name": "Special Jacket", "category": "Dry Clean", "plant_price": 5.99, "margin": 1.51, "pieces": 1},  # 7.50
-    {"name": "Over Coat", "category": "Dry Clean", "plant_price": 8.99, "margin": 3.00, "pieces": 1},  # 11.99
-    {"name": "Tie", "category": "Dry Clean", "plant_price": 2.99, "margin": 1.00, "pieces": 1},  # 3.99
-    {"name": "Scarf", "category": "Dry Clean", "plant_price": 2.99, "margin": 2.00, "pieces": 1},  # 4.99
-    {"name": "2 Piece Suit", "category": "Dry Clean", "plant_price": 6.99, "margin": 2.00, "pieces": 2},  # 8.99
-    {"name": "3 Piece Suit", "category": "Dry Clean", "plant_price": 8.99, "margin": 3.00, "pieces": 3},  # 11.99
+    {"name": "2 piece suit", "category": "Dry Clean", "plant_price": 8.50, "margin": 4.00, "pieces": 2},
+    {"name": "3 piece suit", "category": "Dry Clean", "plant_price": 11.50, "margin": 4.00, "pieces": 3},
+    {"name": "Vest", "category": "Dry Clean", "plant_price": 2.99, "margin": 1.00, "pieces": 1},
+    {"name": "Tie", "category": "Dry Clean", "plant_price": 1.99, "margin": 1.00, "pieces": 1},
+    {"name": "Scarf", "category": "Dry Clean", "plant_price": 1.99, "margin": 1.00, "pieces": 1},
+    {"name": "Face cap", "category": "Dry Clean", "plant_price": 3.99, "margin": 2.00, "pieces": 1},
+    {"name": "Wool coat", "category": "Dry Clean", "plant_price": 7.50, "margin": 3.00, "pieces": 1},
+    {"name": "Small jacket", "category": "Dry Clean", "plant_price": 4.99, "margin": 2.00, "pieces": 1},
+    {"name": "Special jacket", "category": "Dry Clean", "plant_price": 6.50, "margin": 2.00, "pieces": 1},
+    {"name": "Over coat", "category": "Dry Clean", "plant_price": 10.00, "margin": 2.00, "pieces": 1},
 
     # --- SPECIAL ---
-    {"name": "Fur", "category": "Special", "plant_price": 2.99, "margin": 3.00, "pieces": 1},  # 5.99
-    {"name": "Wedding Dress", "category": "Special", "plant_price": 59.99, "margin": 70.00, "pieces": 1},  # 129.99
-    {"name": "Long Dress", "category": "Special", "plant_price": 8.99, "margin": 5.00, "pieces": 1},  # 13.99
+    {"name": "Long dress", "category": "Special", "plant_price": 8.99, "margin": 2.00, "pieces": 1},
+    {"name": "Gloves", "category": "Special", "plant_price": 6.00, "margin": 2.00, "pieces": 1},
+    {"name": "Leather jacket", "category": "Special", "plant_price": 39.00, "margin": 10.00, "pieces": 1},
+    {"name": "Big leather jacket", "category": "Special", "plant_price": 49.99, "margin": 10.00, "pieces": 1},
+    {"name": "Hand bag", "category": "Special", "plant_price": 12.00, "margin": 2.00, "pieces": 1},
+    {"name": "Infant Top", "category": "Special", "plant_price": 1.99, "margin": 1.00, "pieces": 1},
+    {"name": "Incense mat", "category": "Special", "plant_price": 1.00, "margin": 3.00, "pieces": 1},
+    {"name": "Uniform 2 pieces", "category": "Special", "plant_price": 3.85, "margin": 2.00, "pieces": 2},
+    {"name": "African suit 3 pieces", "category": "Special", "plant_price": 9.99, "margin": 3.00, "pieces": 3},
+    {"name": "African suit 2 pieces", "category": "Special", "plant_price": 7.99, "margin": 2.00, "pieces": 2},
+    {"name": "African long shirt", "category": "Special", "plant_price": 4.99, "margin": 2.00, "pieces": 1},
+    {"name": "Lab coat", "category": "Special", "plant_price": 3.00, "margin": 2.00, "pieces": 1},
+    {"name": "Shorts", "category": "Special", "plant_price": 2.49, "margin": 1.50, "pieces": 1},
+    {"name": "Overall", "category": "Special", "plant_price": 6.99, "margin": 3.00, "pieces": 1},
 
     # --- HOUSEHOLD ---
-    {"name": "Delay Pick Up / Sell Clothes", "category": "Household", "plant_price": 5.00, "margin": 0.00, "pieces": 1},  # 5.00
-
-    # --- WASH & FOLD ---
-    {"name": "Wash & Fold (Per Load)", "category": "Wash & Fold", "plant_price": 0.00, "margin": 0.00, "pieces": 1},
+    {"name": "Bed sheet", "category": "Household", "plant_price": 8.00, "margin": 2.00, "pieces": 1},
+    {"name": "Comforter", "category": "Household", "plant_price": 16.00, "margin": 2.50, "pieces": 1},
+    {"name": "Q comforter", "category": "Household", "plant_price": 22.00, "margin": 2.00, "pieces": 1},
+    {"name": "King comforter", "category": "Household", "plant_price": 24.00, "margin": 2.50, "pieces": 1},
+    {"name": "Blanket", "category": "Household", "plant_price": 14.99, "margin": 2.00, "pieces": 1},
+    {"name": "Apron", "category": "Household", "plant_price": 4.50, "margin": 2.00, "pieces": 1},
+    {"name": "Chair cover", "category": "Household", "plant_price": 16.75, "margin": 2.24, "pieces": 1},
+    {"name": "Table clothe", "category": "Household", "plant_price": 8.50, "margin": 2.00, "pieces": 1},
+    {"name": "Table place mat", "category": "Household", "plant_price": 1.75, "margin": 1.24, "pieces": 1},
 ]
-
 
 # =======================
 # ROUTER SETUP
@@ -360,7 +360,7 @@ def setup_default_settings_and_clothing(db: Session, organization_id: int):
         VALUES (
             :org_id, '#000000', '#0000FF',
             'Welcome to our Store', 'Thank you for visiting!',
-            100.00, 200.00, 300.00, 400.00,
+            0.50, 0.75, 1.00, 1.25,
             NOW()
         )
     """), {"org_id": organization_id})

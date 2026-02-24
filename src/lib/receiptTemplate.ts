@@ -129,6 +129,11 @@ export function renderReceiptHtml(ticket: Ticket, organizationName: string = "Yo
         <div style="display:flex; justify-content:space-between; font-size:10pt; font-weight:400; margin-top:2px;">
           <div>TOTAL:</div> <div>$${finalTotal.toFixed(2)}</div>
         </div>
+        <div style="margin-top:15px; text-align:center;">
+          <div style="display:inline-block; padding: 4px 10px; font-weight:800; font-size:8pt; text-transform: uppercase;">
+            PIECES: ${totalPieces}
+        </div>
+      </div>
 
         <div style="display:flex; justify-content:space-between; margin-top:4px; font-size:10pt; font-weight:400;"> 
             <div>Paid:</div> 
@@ -144,11 +149,7 @@ export function renderReceiptHtml(ticket: Ticket, organizationName: string = "Yo
     }
       </div>
       
-      <div style="margin-top:15px; text-align:center;">
-        <div style="display:inline-block; padding: 4px 10px; font-weight:400; font-size:8pt; text-transform: uppercase;">
-            PIECES: ${totalPieces}
-        </div>
-      </div>
+
       
       <div style="margin-top:12px; text-align:center; font-size:8pt; font-weight:600; text-transform: uppercase;">
         Pickup: ${ticket.pickup_date ? new Date(ticket.pickup_date).toLocaleDateString() : 'See Counter'}
