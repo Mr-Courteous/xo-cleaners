@@ -26,16 +26,16 @@ export function renderPlantReceiptHtml(ticket: Ticket, organizationName: string 
   const isPaid = balance <= 0.05;
 
   const totalPieces = items.reduce((sum, item) => sum + (Number(item.quantity) * (Number(item.pieces) || 1)), 0);
-  let createdAt = ticket.created_at || Date.now();
-  if (typeof createdAt === 'string' && !createdAt.endsWith('Z')) {
+let createdAt = ticket.created_at || Date.now();
+if (typeof createdAt === 'string' && !createdAt.endsWith('Z')) {
     createdAt += 'Z';
-  }
+}
 
 
-  const dateObj = new Date(createdAt);
+const dateObj = new Date(createdAt);
 
-  const dateStr = dateObj.toLocaleDateString();
-  const timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const dateStr = dateObj.toLocaleDateString();
+const timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   // --- ITEMS LIST ---
   const itemsHtml = items.map(item => {
@@ -136,11 +136,9 @@ export function renderPlantReceiptHtml(ticket: Ticket, organizationName: string 
           <div>$${finalPlantTotal.toFixed(2)}</div>
         </div>
 
-        <div style="margin-top:15px; text-align:center;">
-         <div style="display:inline-block; padding: 4px 10px; font-weight:800; font-size:8pt; text-transform: uppercase;">
+        <div style="display:flex; justify-content:space-between; align-items:center; font-size:10pt; font-weight:800; margin-top:2px;">
             PIECES: ${totalPieces}
         </div>
-      </div>
 
 
       </div>
