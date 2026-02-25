@@ -908,9 +908,20 @@ export default function DropOff() {
                 />
                 <input
                   type="tel"
-                  placeholder="Phone Number"
+                  placeholder="123-456-7890"
                   value={newCustomer.phone}
-                  onChange={(e) => setNewCustomer({ ...newCustomer, phone: e.target.value })}
+                  onChange={(e) => {
+                    // Strip all non-digit characters
+                    const digits = e.target.value.replace(/\D/g, '').slice(0, 10);
+                    // Format as XXX-XXX-XXXX
+                    let formatted = digits;
+                    if (digits.length > 6) {
+                      formatted = `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+                    } else if (digits.length > 3) {
+                      formatted = `${digits.slice(0, 3)}-${digits.slice(3)}`;
+                    }
+                    setNewCustomer({ ...newCustomer, phone: formatted });
+                  }}
                   className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
                 <input

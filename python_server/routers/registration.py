@@ -25,7 +25,7 @@ from utils.common import (
     hash_password
 )
 
-DEFAULT_IMAGE_URL = "https://sy0plcgagn6r7nqd.public.blob.vercel-storage.com/clothing_images/6c8e1e00-1085-4fc8-bbcc-5fa200060724-UXjJDF5eWgDdNDdiC6lW0gvCLtDWag.png"
+DEFAULT_IMAGE_URL = "https://images.unsplash.com/photo-1544441893-675973e31985?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MTJ8fGNsb3RoaW5nfGVufDB8fDB8fHww"
 
 DEFAULT_CLOTHING_CATALOG = [
     # --- LAUNDRY ---
