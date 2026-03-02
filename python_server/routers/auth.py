@@ -235,7 +235,6 @@ async def login_organization_owner(
     if is_branch and org["parent_name"]:
         display_name = f"{org['parent_name']}, {org['name']}"
     
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     user_role = org.get("role", "STORE_OWNER").upper()
     
     # STEP 3: Update Token Data
@@ -252,7 +251,7 @@ async def login_organization_owner(
     
     access_token = create_access_token(
         data=token_data,
-        expires_delta=access_token_expires,
+        expires_delta=None,  # ✅ Never expires
     )
 
     # STEP 4: Return formatted response
@@ -339,9 +338,8 @@ async def login_user(
         "first_name": user_map.get("first_name"),
         "last_name": user_map.get("last_name"),
     }
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data=token_data, expires_delta=access_token_expires
+        data=token_data, expires_delta=None  # ✅ Never expires
     )
 
     user_data = LoginUser(
@@ -390,8 +388,6 @@ def customer_login(login_data: LoginRequest, db: Session = Depends(get_db)):
         if org_result:
             organization_name = org_result.name
 
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    
     token_payload = {
         "sub": user.email,
         "id": user.id,          # ✅ NEW: Added User ID here
@@ -403,7 +399,7 @@ def customer_login(login_data: LoginRequest, db: Session = Depends(get_db)):
     
     access_token = create_access_token(
         data=token_payload, 
-        expires_delta=access_token_expires
+        expires_delta=None  # ✅ Never expires
     )
     
     return {
@@ -446,7 +442,6 @@ async def platform_admin_login(
             detail="Invalid email or password."
         )
 
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     token_data = {
         "sub": admin["email"],
         "id": admin["id"],      # ✅ NEW: Added Admin ID here
@@ -455,7 +450,7 @@ async def platform_admin_login(
         "organization_id": None,
         "organization_name": "Platform Admin",
     }
-    access_token = create_access_token(data=token_data, expires_delta=access_token_expires)
+    access_token = create_access_token(data=token_data, expires_delta=None)  # ✅ Never expires
 
     return PlatformAdminLoginResponse(
         access_token=access_token,

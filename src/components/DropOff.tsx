@@ -12,6 +12,7 @@ import Modal from './Modal';
 import PrintPreviewModal from './PrintPreviewModal';
 import renderReceiptHtml from '../lib/receiptTemplate';
 import renderPlantReceiptHtml from '../lib/plantReceiptTemplate';
+import renderCustomerPlantReceiptHtml from '../lib/customerPlantReceiptTemplate';
 // --- IMPORTED TAG GENERATOR ---
 import { generateTagHtml } from '../lib/tagTemplates';
 
@@ -63,8 +64,11 @@ interface UpchargeProps {
 const UpchargeSelector = ({ currentCharge, onUpdate }: UpchargeProps) => {
   const handleAdd = (amount: number) => {
     const newVal = Math.max(0, currentCharge + amount);
-    onUpdate(newVal);
+    // round to cents
+    onUpdate(Math.round(newVal * 100) / 100);
   };
+
+  const increments = [0.10, 0.20, 0.30, 0.50];
 
   return (
     <div className="flex flex-col mt-2 pt-2 border-t border-gray-100" onClick={(e) => e.stopPropagation()}>
@@ -85,45 +89,30 @@ const UpchargeSelector = ({ currentCharge, onUpdate }: UpchargeProps) => {
       <div className="flex flex-wrap gap-2 items-center">
         {/* MINUS BUTTONS */}
         <div className="flex gap-1 bg-red-50 p-1 rounded">
-          <button
-            type="button"
-            onClick={() => handleAdd(-1)}
-            className="px-2 py-1 text-[10px] font-bold rounded bg-white border border-red-200 text-red-700 hover:bg-red-100"
-          >
-            -$1
-          </button>
-          <button
-            type="button"
-            onClick={() => handleAdd(-5)}
-            className="px-2 py-1 text-[10px] font-bold rounded bg-white border border-red-200 text-red-700 hover:bg-red-100"
-          >
-            -$5
-          </button>
+          {increments.map((inc) => (
+            <button
+              key={`minus-${inc}`}
+              type="button"
+              onClick={() => handleAdd(-inc)}
+              className="px-2 py-1 text-[10px] font-bold rounded bg-white border border-red-200 text-red-700 hover:bg-red-100"
+            >
+              -${inc.toFixed(2)}
+            </button>
+          ))}
         </div>
 
         {/* ADD BUTTONS */}
         <div className="flex gap-1 bg-green-50 p-1 rounded">
-          <button
-            type="button"
-            onClick={() => handleAdd(1)}
-            className="px-2 py-1 text-[10px] font-bold rounded bg-white border border-green-200 text-green-700 hover:bg-green-100"
-          >
-            +$1
-          </button>
-          <button
-            type="button"
-            onClick={() => handleAdd(5)}
-            className="px-2 py-1 text-[10px] font-bold rounded bg-white border border-green-200 text-green-700 hover:bg-green-100"
-          >
-            +$5
-          </button>
-          <button
-            type="button"
-            onClick={() => handleAdd(10)}
-            className="px-2 py-1 text-[10px] font-bold rounded bg-white border border-green-200 text-green-700 hover:bg-green-100"
-          >
-            +$10
-          </button>
+          {increments.map((inc) => (
+            <button
+              key={`plus-${inc}`}
+              type="button"
+              onClick={() => handleAdd(inc)}
+              className="px-2 py-1 text-[10px] font-bold rounded bg-white border border-green-200 text-green-700 hover:bg-green-100"
+            >
+              +${inc.toFixed(2)}
+            </button>
+          ))}
         </div>
       </div>
     </div>
@@ -245,6 +234,7 @@ export default function DropOff() {
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [printContent, setPrintContent] = useState('');
   const [plantHtmlState, setPlantHtmlState] = useState('');
+  const [customerPlantHtmlState, setCustomerPlantHtmlState] = useState('');
   const [tagHtmlState, setTagHtmlState] = useState('');
   const [showCustomItemModal, setShowCustomItemModal] = useState(false);
   const [customItemForm, setCustomItemForm] = useState({ name: '', price: '', margin: '' });
@@ -682,11 +672,27 @@ export default function DropOff() {
 
       const customerHtml = renderReceiptHtml(newTicket as any);
       const plantHtml = renderPlantReceiptHtml(newTicket as any);
+      const customerPlantHtml = renderCustomerPlantReceiptHtml(newTicket as any);
       // ✅ Use imported generator
       const tagHtml = generateTagHtml(newTicket);
 
+      // build a combined document containing all three receipts in the order
+      // normal -> plant -> customer/plant so that the printer can spit them out
+      // back-to-back with page breaks between each copy.
+      const combinedAll = `
+        <div class="page-break-receipt">${customerHtml}</div>
+        <div class="page-break-receipt">${plantHtml}</div>
+        <div class="page-break-receipt">${customerPlantHtml}</div>
+      `;
+
+      // automatically kick off a print job as soon as the ticket is created
+      // (user will still see the preview and can re‑print if needed)
+      handlePrintJob(combinedAll);
+
+      // store the individual pieces for the preview modal
       setPrintContent(customerHtml);
       setPlantHtmlState(plantHtml);
+      setCustomerPlantHtmlState(customerPlantHtml);
       setTagHtmlState(tagHtml);
 
       setShowPrintPreview(true);
@@ -723,10 +729,11 @@ export default function DropOff() {
   }, [items]);
 
   const handlePrintAll = () => {
+    // include normal receipt, plant copy, and customer/plant copy
     const combinedHtml = `
       <div class="page-break-receipt">${printContent}</div>
       <div class="page-break-receipt">${plantHtmlState}</div>
-      <div>${tagHtmlState}</div>
+      <div class="page-break-receipt">${customerPlantHtmlState}</div>
     `;
     handlePrintJob(combinedHtml);
     setShowPrintPreview(false);
@@ -1187,12 +1194,12 @@ export default function DropOff() {
                     <UpchargeSelector
                       currentCharge={item.additional_charge || 0}
                       onUpdate={(newAmount) => {
-                        // 1. Remove ANY existing price tags like (+$5), (+$10)
-                        const cleanNote = (item.item_instructions || '').replace(/\s*\(\+\$\d+(\.\d+)?\)/g, '').trim();
+                        // 1. Remove ANY existing price tags like (+$0.10), (+$0.20)
+                        const cleanNote = (item.item_instructions || '').replace(/\s*\(\+\$\d+(\.\d{1,2})?\)/g, '').trim();
 
                         // 2. Add the single new total tag only if > 0
                         const newNote = newAmount > 0
-                          ? `${cleanNote} (+$${newAmount})`
+                          ? `${cleanNote} (+$${newAmount.toFixed(2)})`
                           : cleanNote;
 
                         updateItem(index, {
@@ -1402,6 +1409,7 @@ export default function DropOff() {
         onClose={() => setShowPrintPreview(false)}
         onPrint={() => { }}
         content={printContent}
+        note="The machine will automatically print the normal receipt, plant copy, and customer/plant copy."
         hideDefaultButton={true}
         extraActions={(
           <>
@@ -1409,13 +1417,8 @@ export default function DropOff() {
               <Printer size={18} /> Print Customer Only
             </button>
             <button onClick={handlePrintPlant} className="px-4 py-2 text-white rounded flex items-center gap-2 hover:opacity-95" style={{ backgroundColor: colors.secondaryColor }}>
-              <Printer size={18} /> Print Plant Only
+              <Printer size={18} /> Print Plant Copy
             </button>
-            {tagHtmlState && (
-              <button onClick={handlePrintTags} className="px-4 py-2 text-white rounded flex items-center gap-2 hover:opacity-95" style={{ backgroundColor: colors.brandColor }}>
-                <Printer size={18} /> Print Tags Only
-              </button>
-            )}
             <button onClick={handlePrintAll} className="px-4 py-2 text-white rounded flex items-center gap-2 hover:opacity-95" style={{ backgroundImage: `linear-gradient(to right, ${colors.primaryColor}, ${colors.secondaryColor})` }}>
               <Printer size={18} /> Print All
             </button>

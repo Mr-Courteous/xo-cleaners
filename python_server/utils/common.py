@@ -96,11 +96,10 @@ def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta]
     # 1. Handle Expiration
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        to_encode.update({"exp": expire})
         
     # 2. Add standard JWT claims
-    to_encode.update({"exp": expire, "iat": datetime.utcnow()})
+    to_encode.update({"iat": datetime.utcnow()})
     
     # ✅ THE FIX: Ensure all values are JSON serializable (converts UUIDs and Dates to strings)
     # This prevents the 'TypeError: Object of type UUID is not JSON serializable'
