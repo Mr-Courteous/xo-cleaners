@@ -1,6 +1,6 @@
 import { Ticket } from '../types';
 
-export function renderPlantReceiptHtml(ticket: Ticket, organizationName: string = "Your Cleaners") {
+export function renderPlantReceiptHtml(ticket: Ticket, organizationName: string = "Your Cleaners", orgAddress: string = "") {
   const items = ticket.items || [];
 
   // --- CALCULATIONS (Plant Specific - NO MARGIN) ---
@@ -26,16 +26,16 @@ export function renderPlantReceiptHtml(ticket: Ticket, organizationName: string 
   const isPaid = balance <= 0.05;
 
   const totalPieces = items.reduce((sum, item) => sum + (Number(item.quantity) * (Number(item.pieces) || 1)), 0);
-let createdAt = ticket.created_at || Date.now();
-if (typeof createdAt === 'string' && !createdAt.endsWith('Z')) {
+  let createdAt = ticket.created_at || Date.now();
+  if (typeof createdAt === 'string' && !createdAt.endsWith('Z')) {
     createdAt += 'Z';
-}
+  }
 
 
-const dateObj = new Date(createdAt);
+  const dateObj = new Date(createdAt);
 
-const dateStr = dateObj.toLocaleDateString();
-const timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const dateStr = dateObj.toLocaleDateString();
+  const timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   // --- ITEMS LIST ---
   const itemsHtml = items.map(item => {
@@ -51,10 +51,10 @@ const timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-dig
 
     const details = [];
 
-    if (item.starch_level && item.starch_level !== 'none' && item.starch_level !== 'no_starch') {
-      const cost = item.starch_charge ? `(+$${Number(item.starch_charge).toFixed(2)})` : '';
-      details.push(`STARCH: ${item.starch_level.toUpperCase()} ${cost}`);
-    }
+    // if (item.starch_level && item.starch_level !== 'none' && item.starch_level !== 'no_starch') {
+    //   const cost = item.starch_charge ? `(+$${Number(item.starch_charge).toFixed(2)})` : '';
+    //   details.push(`STARCH: ${item.starch_level.toUpperCase()} ${cost}`);
+    // }
     if (item.size_charge > 0 || (item.clothing_size && item.clothing_size !== 'm' && item.clothing_size !== 'standard')) {
       const sizeName = (item.clothing_size || 'Std').toUpperCase();
       const cost = item.size_charge ? `(+$${Number(item.size_charge).toFixed(2)})` : '';
@@ -81,9 +81,11 @@ const timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-dig
     return `
       <div style="margin-bottom: 6px; padding-bottom: 6px;">
          <div style="display:flex; justify-content:space-between; align-items:flex-start; font-size:11pt; font-weight:400; color: #000; line-height:1.1;">
-            <div style="flex:1; text-transform: uppercase;">${item.clothing_name}</div>
+            <div style="flex:1; display:flex; align-items:center; gap:6px; text-transform: uppercase;">
+               <div style="font-weight:700; font-size:11pt; min-width:20px; text-align:left;">${quantity}</div>
+               <div style="flex:1;">${item.clothing_name}</div>
+            </div>
             <div style="text-align: right; min-width: 65px;">
-                <span style="margin-right: 2px;">${quantity}</span>
                 <span>$${plantLineTotal.toFixed(2)}</span>
             </div>
         </div>
@@ -93,15 +95,16 @@ const timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-dig
   }).join('');
 
   return `
-    <div style="width:58mm; margin:0 auto; font-family: 'Arial', 'Helvetica', sans-serif; font-weight:700; color:#000; background: white; padding: 2px;">
-      
+    <div style="width:58mm; margin:4px auto 0; font-family: 'Arial', 'Helvetica', sans-serif; font-weight:700; color:#000; background: white; padding: 10px 2px 2px;">
+      <br><br>
       <div style="text-align:center; margin-bottom: 10px;">
         <div style="font-size:13pt; font-weight:400; text-transform:uppercase; margin-bottom:4px; line-height:1;">
             ${ticket.organization_name || organizationName}
           </div>
+        ${orgAddress ? `<div style="font-size:9pt; font-weight:700; color:#000; margin-top:3px; text-align:left;">${orgAddress}</div>` : ''}
         <div style="font-size:18pt; font-weight:700; letter-spacing: -1px;">${ticket.ticket_number}</div>
         <div style="font-size:8pt; font-weight:400;">${dateStr} ${timeStr}</div>
-        </div>
+       </div>
 
       <div style="margin-bottom: 10px; padding-bottom: 4px;">
         <div style=" font-size:8pt; text-transform: uppercase;">

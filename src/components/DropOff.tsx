@@ -15,6 +15,7 @@ import renderPlantReceiptHtml from '../lib/plantReceiptTemplate';
 import renderCustomerPlantReceiptHtml from '../lib/customerPlantReceiptTemplate';
 // --- IMPORTED TAG GENERATOR ---
 import { generateTagHtml } from '../lib/tagTemplates';
+import { getOrgAddress } from '../lib/getOrgAddress';
 
 // --- NEW CENTRAL IMAGE MAP FOR CORRELATION AND BETTER IMAGES ---
 const CLOTHING_IMAGE_MAP: { [key: string]: string } = {
@@ -226,7 +227,7 @@ export default function DropOff() {
   // NEW: State for the actual cash/amount tendered by user for change calc
   const [tenderedAmount, setTenderedAmount] = useState<string>('');
 
-  const [pickupDate, setPickupDate] = useState<string>(new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().substring(0, 16));
+  const [pickupDate, setPickupDate] = useState<string>(new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().substring(0, 16));
   const [showNewCustomerForm, setShowNewCustomerForm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -416,7 +417,7 @@ export default function DropOff() {
     setTenderedAmount('');
     setCustomerSearch('');
     setCustomers([]);
-    setPickupDate(new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().substring(0, 16));
+    setPickupDate(new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().substring(0, 16));
   };
 
   const addItem = () => {
@@ -670,9 +671,9 @@ export default function DropOff() {
         newTicket.items = ticketDetails.data.items || [];
       }
 
-      const customerHtml = renderReceiptHtml(newTicket as any);
-      const plantHtml = renderPlantReceiptHtml(newTicket as any);
-      const customerPlantHtml = renderCustomerPlantReceiptHtml(newTicket as any);
+      const customerHtml = renderReceiptHtml(newTicket as any, undefined, await getOrgAddress());
+      const plantHtml = renderPlantReceiptHtml(newTicket as any, undefined, await getOrgAddress());
+      const customerPlantHtml = renderCustomerPlantReceiptHtml(newTicket as any, undefined, await getOrgAddress());
       // ✅ Use imported generator
       const tagHtml = generateTagHtml(newTicket);
 
@@ -689,7 +690,7 @@ export default function DropOff() {
       // (user will still see the preview and can re‑print if needed)
       handlePrintJob(combinedAll);
 
-      // store the individual pieces for the preview modal
+      // store the individual pieces for the preview modal (tags not shown here)
       setPrintContent(customerHtml);
       setPlantHtmlState(plantHtml);
       setCustomerPlantHtmlState(customerPlantHtml);
@@ -736,22 +737,22 @@ export default function DropOff() {
       <div class="page-break-receipt">${customerPlantHtmlState}</div>
     `;
     handlePrintJob(combinedHtml);
-    setShowPrintPreview(false);
+    // keep preview open so user can choose another option
   }
 
   const handlePrintCustomer = () => {
     handlePrintJob(printContent);
-    setShowPrintPreview(false);
+    // preview remains open
   }
 
   const handlePrintPlant = () => {
     handlePrintJob(plantHtmlState);
-    setShowPrintPreview(false);
+    // preview remains open
   }
 
   const handlePrintTags = () => {
     handlePrintJob(tagHtmlState);
-    setShowPrintPreview(false);
+    // preview remains open
   }
 
   return (
@@ -1409,7 +1410,7 @@ export default function DropOff() {
         onClose={() => setShowPrintPreview(false)}
         onPrint={() => { }}
         content={printContent}
-        note="The machine will automatically print the normal receipt, plant copy, and customer/plant copy."
+        note="The machine will automatically print the normal receipt, plant copy, and customer/plant copy. Use ‘Print Tags Only’ when you need tags."
         hideDefaultButton={true}
         extraActions={(
           <>
@@ -1418,6 +1419,9 @@ export default function DropOff() {
             </button>
             <button onClick={handlePrintPlant} className="px-4 py-2 text-white rounded flex items-center gap-2 hover:opacity-95" style={{ backgroundColor: colors.secondaryColor }}>
               <Printer size={18} /> Print Plant Copy
+            </button>
+            <button onClick={handlePrintTags} className="px-4 py-2 bg-amber-600 text-white rounded hover:bg-amber-700 flex items-center gap-2">
+              <Printer size={18} /> Print Tags Only
             </button>
             <button onClick={handlePrintAll} className="px-4 py-2 text-white rounded flex items-center gap-2 hover:opacity-95" style={{ backgroundImage: `linear-gradient(to right, ${colors.primaryColor}, ${colors.secondaryColor})` }}>
               <Printer size={18} /> Print All

@@ -10,15 +10,18 @@ import {
   Loader2,
   CheckCircle,
   AlertCircle,
-  Database, // New Icon
-  UploadCloud, // New Icon
-  Package
+  Database,
+  UploadCloud,
+  Package,
+  Building2
 } from "lucide-react";
 import baseURL from "../lib/config";
 import Header from "./Header";
 import BulkCustomerImport from "./BulkCustomerImport"; // ✅ 1. Import the component
 import BulkTicketImport from "./BulkTicketImport"; // ✅ 2. Import ticket bulk importer
 import AddBranch from "./AddBranch"; // Ensure the path matches your file structure
+import OrganizationProfile from "./OrganizationProfile";
+import { useColors } from "../state/ColorsContext";
 
 export default function OrganizationSettings() {
   // ================= State Management =================
@@ -26,13 +29,17 @@ export default function OrganizationSettings() {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
+  // --- Color Context ---
+  const { colors } = useColors();
+
   // --- Branding State ---
   const [branding, setBranding] = useState({
     primary_color: "#000000",
     secondary_color: "#ffffff",
     logo_url: "",
     receipt_header: "",
-    receipt_footer: ""
+    receipt_footer: "",
+    sequence_strategy: "daily"
   });
 
   // --- Branch State ---
@@ -179,6 +186,15 @@ export default function OrganizationSettings() {
             >
               <Database size={18} /> Data & Imports
             </button>
+
+            {/* Organization Profile Tab */}
+            <button
+              onClick={() => setActiveTab("profile")}
+              className={`text-left px-4 py-3 rounded-lg font-medium transition-colors flex items-center gap-3 ${activeTab === "profile" ? "bg-blue-50 text-blue-700" : "text-gray-600 hover:bg-gray-100"
+                }`}
+            >
+              <Building2 size={18} /> Organization Profile
+            </button>
           </nav>
 
           {/* Main Content Area */}
@@ -222,7 +238,56 @@ export default function OrganizationSettings() {
                       value={branding.receipt_footer || ''} onChange={e => setBranding({ ...branding, receipt_footer: e.target.value })} />
                   </div>
 
-                  <button type="submit" disabled={loading} className="flex items-center gap-2 bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors font-medium">
+                  {/* Ticket Configuration Section */}
+                  <div className="border-t pt-6 p-4 rounded-lg" style={{ backgroundColor: `${colors.primaryColor}10`, borderColor: `${colors.primaryColor}20` }}>
+                    <div className="flex items-center gap-2 mb-4">
+                      <Settings style={{ color: colors.primaryColor }} size={18} />
+                      <h3 className="text-md font-semibold text-gray-900">Ticket Sequencing Method</h3>
+                    </div>
+                    
+                    <div className="space-y-4">
+                      <p className="text-sm text-gray-600">Choose how your ticket numbers are generated:</p>
+                      
+                      <div className="flex flex-col gap-3 max-w-md">
+                        <label className={`flex items-start p-4 border rounded-xl cursor-pointer transition-all hover:shadow-sm ${branding.sequence_strategy === 'daily' ? 'bg-white' : 'bg-gray-50/50 border-gray-200'}`} style={branding.sequence_strategy === 'daily' ? { borderColor: colors.primaryColor, boxShadow: `0 0 0 1px ${colors.primaryColor}` } : {}}>
+                          <input 
+                            type="radio" 
+                            name="strategy"
+                            className="mt-1 mr-3 h-4 w-4 transition-all border-gray-300 focus:ring-2"
+                            style={{ accentColor: colors.primaryColor }}
+                            checked={branding.sequence_strategy === 'daily'}
+                            onChange={() => setBranding({ ...branding, sequence_strategy: 'daily' })}
+                          />
+                          <div className="flex-1">
+                            <span className="font-bold text-sm text-gray-900 block">Daily Reset (Fresh Start)</span>
+                            <span className="text-xs text-gray-500 leading-relaxed">Numbers restart at 001 every morning (e.g., YYMMDD-001)</span>
+                          </div>
+                        </label>
+
+                        <label className={`flex items-start p-4 border rounded-xl cursor-pointer transition-all hover:shadow-sm ${branding.sequence_strategy === 'continuous' ? 'bg-white' : 'bg-gray-50/50 border-gray-200'}`} style={branding.sequence_strategy === 'continuous' ? { borderColor: colors.primaryColor, boxShadow: `0 0 0 1px ${colors.primaryColor}` } : {}}>
+                          <input 
+                            type="radio" 
+                            name="strategy"
+                            className="mt-1 mr-3 h-4 w-4 transition-all border-gray-300 focus:ring-2"
+                            style={{ accentColor: colors.primaryColor }}
+                            checked={branding.sequence_strategy === 'continuous'}
+                            onChange={() => setBranding({ ...branding, sequence_strategy: 'continuous' })}
+                          />
+                          <div className="flex-1">
+                            <span className="font-bold text-sm text-gray-900 block">Continuous (Keep Incrementing)</span>
+                            <span className="text-xs text-gray-500 leading-relaxed">Always continues from the last ticket number in the system.</span>
+                          </div>
+                        </label>
+                      </div>
+                      
+                      <div className="flex items-center gap-2 text-xs p-3 rounded-lg border mt-2" style={{ color: colors.primaryColor, backgroundColor: `${colors.primaryColor}10`, borderColor: `${colors.primaryColor}20` }}>
+                        <AlertCircle size={14} />
+                        <span>The system will automatically find your last ticket and calculate the next number.</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button type="submit" disabled={loading} className="flex items-center gap-2 text-white px-6 py-2 rounded-lg hover:opacity-90 transition-colors font-medium" style={{ backgroundColor: colors.primaryColor }}>
                     {loading ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
                     Save Changes
                   </button>
@@ -337,6 +402,16 @@ export default function OrganizationSettings() {
                      </div> */}
 
                 </div>
+              </div>
+            )}
+
+            {/* --- TAB: ORGANIZATION PROFILE --- */}
+            {activeTab === "profile" && (
+              <div className="p-6 animate-in fade-in duration-200">
+                <h2 className="text-lg font-bold text-gray-900 mb-6 pb-2 border-b">
+                  Organization Profile
+                </h2>
+                <OrganizationProfile />
               </div>
             )}
 

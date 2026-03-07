@@ -1509,29 +1509,97 @@ def create_ticket(
                 "organization_id": organization_id
             })
 
-        # 4. TICKET NUMBER GENERATION (Updated for Timezone)
-        tag_config_query = text("""
-            SELECT current_sequence, tag_type FROM tag_configurations 
+        # 4. SMART SEQUENCE FETCHING ---
+        # 1. Get the current settings
+        settings_query = text("""
+            SELECT current_sequence, sequence_strategy, last_sequence_date 
+            FROM organization_settings 
             WHERE organization_id = :org_id FOR UPDATE
         """)
-        tag_config = db.execute(tag_config_query, {"org_id": organization_id}).fetchone()
+        settings_row = db.execute(settings_query, {"org_id": organization_id}).fetchone()
 
-        ticket_number = ""
-        if tag_config:
-            current_seq = tag_config.current_sequence
-            ticket_number = str(current_seq)
-            db.execute(text("UPDATE tag_configurations SET current_sequence = current_sequence + 1 WHERE organization_id = :org_id"), {"org_id": organization_id})
-        else:
-            # --- TIMEZONE FIX 3: USE UTC DATE FOR PREFIX ---
-            # This ensures the prefix is consistent regardless of server location.
-            # If you want this to be the STORE'S local date, you must fetch the organization's timezone
-            # setting here and convert 'now_utc' to that timezone.
-            date_prefix = now_utc.strftime("%y%m%d")
+        strategy = settings_row.sequence_strategy if settings_row and settings_row.sequence_strategy else 'continuous'
+        last_date = settings_row.last_sequence_date if settings_row else None
+        current_seq = settings_row.current_sequence if settings_row else None
+
+        # 2. SYNC CHECK: Only relevant for non-daily strategies. If this is a new
+        # installation and the settings sequence is missing/1, sync with the last
+        # ticket number for the org so we can continue from the correct value.
+        if strategy != 'daily' and (current_seq is None or current_seq == 1):
+            # Look for the last numeric ticket number across the org
+            last_ticket_query = text("""
+                SELECT ticket_number FROM tickets 
+                WHERE organization_id = :org_id 
+                ORDER BY created_at DESC LIMIT 1
+            """)
+            last_ticket = db.execute(last_ticket_query, {"org_id": organization_id}).fetchone()
             
-            latest_ticket_query = text("SELECT ticket_number FROM tickets WHERE ticket_number LIKE :prefix_like AND organization_id = :org_id ORDER BY created_at DESC LIMIT 1")
-            row = db.execute(latest_ticket_query, {"prefix_like": f"{date_prefix}-%", "org_id": organization_id}).fetchone()
-            last_seq = int(row[0].split('-')[-1]) if row else 0
-            ticket_number = f"{date_prefix}-{last_seq + 1:03d}"
+            if last_ticket:
+                raw_val = last_ticket[0].split('-')[-1]
+                match = re.search(r'\d+', raw_val)
+                current_seq = int(match.group()) + 1 if match else 1
+            else:
+                current_seq = 1
+
+        # 3. APPLY STRATEGY
+        date_today = now_utc.date()
+        date_prefix = now_utc.strftime("%y%m%d")
+        
+        if strategy == 'daily':
+            # Always compute sequence based solely on today's tickets for this org.
+            latest_ticket_query = text("""
+                SELECT ticket_number FROM tickets
+                WHERE organization_id = :org_id
+                  AND ticket_number LIKE :prefix
+                ORDER BY ticket_number DESC LIMIT 1
+            """)
+            row = db.execute(latest_ticket_query, {
+                "org_id": organization_id,
+                "prefix": f"{date_prefix}-%"
+            }).fetchone()
+            if row:
+                try:
+                    current_seq = int(row[0].split('-')[-1]) + 1
+                except Exception:
+                    current_seq = 1
+            else:
+                current_seq = 1
+
+            ticket_number = f"{date_prefix}-{current_seq:03d}"
+        else:
+            # Continuous strategy continues from stored sequence or DB fallback
+            if current_seq is None or current_seq == 1:
+                # sync with last ticket across org
+                last_ticket_query = text("""
+                    SELECT ticket_number FROM tickets
+                    WHERE organization_id = :org_id
+                    ORDER BY created_at DESC LIMIT 1
+                """)
+                last_ticket = db.execute(last_ticket_query, {"org_id": organization_id}).fetchone()
+                if last_ticket:
+                    raw_val = last_ticket[0].split('-')[-1]
+                    match = re.search(r'\d+', raw_val)
+                    current_seq = int(match.group()) + 1 if match else 1
+                else:
+                    current_seq = 1
+
+            ticket_number = f"{date_prefix}-{current_seq:03d}"
+
+        # 4. PERSIST: Save the NEXT number back to settings
+        # This "primes" the settings table so we don't have to search the tickets table next time.
+        db.execute(text("""
+            INSERT INTO organization_settings (organization_id, current_sequence, last_sequence_date, sequence_strategy)
+            VALUES (:org_id, :next_seq, :today, :strategy)
+            ON CONFLICT (organization_id) DO UPDATE SET
+                current_sequence = :next_seq,
+                last_sequence_date = :today,
+                sequence_strategy = COALESCE(EXCLUDED.sequence_strategy, organization_settings.sequence_strategy)
+        """), {
+            "next_seq": current_seq + 1,
+            "today": date_today,
+            "org_id": organization_id,
+            "strategy": strategy
+        })
 
         # 5. Insert Ticket (Updated created_at and pickup_date)
         ticket_insert_query = text("""
@@ -1775,30 +1843,63 @@ def bulk_create_tickets(
                 } for row in types_result
             }
 
-        # --- 4. TAG CONFIG (SEQUENCE) ---
+        # --- 4. TICKET NUMBER SEQUENCE (Search DB for last ticket) ---
         tickets_needing_numbers = [t for t in tickets_data if not t.ticket_number_override]
-        count_needed = len(tickets_needing_numbers)
-        current_seq_pointer = 0
-        tag_config = None
+        settings_row = None
+        strategy = 'daily'
 
-        if count_needed > 0:
-            tag_config = db.execute(text("""
-                SELECT current_sequence FROM tag_configurations 
+        if tickets_needing_numbers:
+            settings_query = text("""
+                SELECT sequence_strategy, last_sequence_date 
+                FROM organization_settings 
                 WHERE organization_id = :org_id FOR UPDATE
-            """), {"org_id": organization_id}).fetchone()
+            """)
+            settings_row = db.execute(settings_query, {"org_id": organization_id}).fetchone()
+            strategy = settings_row.sequence_strategy if settings_row else 'daily'
 
-            if tag_config:
-                current_seq_pointer = tag_config.current_sequence
-                db.execute(text("""
-                    UPDATE tag_configurations 
-                    SET current_sequence = current_sequence + :count 
-                    WHERE organization_id = :org_id
-                """), {"count": count_needed, "org_id": organization_id})
+            # Update org_settings date
+            db.execute(text("""
+                UPDATE organization_settings 
+                SET last_sequence_date = :today
+                WHERE organization_id = :org_id
+            """), {
+                "today": now_utc.date(),
+                "org_id": organization_id
+            })
 
         # --- 5. PROCESS TICKETS ---
         audit_logs_to_queue = []
         loyalty_ids_to_update = set()
         all_items_to_insert = []
+
+        # Track the last sequence number for this batch
+        last_found_seq = 0
+        last_found_prefix = ""
+        
+        if strategy == 'daily':
+            latest_ticket = db.execute(text("SELECT ticket_number FROM tickets WHERE ticket_number LIKE :prefix AND organization_id = :org_id ORDER BY id DESC LIMIT 1"), 
+                                     {"prefix": f"{date_prefix}-%", "org_id": organization_id}).fetchone()
+            if latest_ticket:
+                last_found_seq = int(latest_ticket[0].split('-')[-1])
+            else:
+                last_found_seq = 0
+            last_found_prefix = f"{date_prefix}-"
+        else:
+            latest_ticket = db.execute(text("SELECT ticket_number FROM tickets WHERE organization_id = :org_id ORDER BY id DESC LIMIT 1"), 
+                                     {"org_id": organization_id}).fetchone()
+            if latest_ticket:
+                ticket_str = latest_ticket[0]
+                match = re.search(r'(\d+)$', ticket_str)
+                if match:
+                    last_found_seq = int(match.group(0))
+                    last_found_prefix = ticket_str[:match.start()]
+                else:
+                    last_found_seq = 1000
+                    last_found_prefix = f"{ticket_str}-"
+            else:
+                last_found_seq = 1000
+                last_found_prefix = "T-"
+
 
         for ticket_req in tickets_data:
             
@@ -1826,14 +1927,11 @@ def bulk_create_tickets(
             if ticket_req.ticket_number_override:
                 final_ticket_number = ticket_req.ticket_number_override
             else:
-                if tag_config:
-                    final_ticket_number = str(current_seq_pointer)
-                    current_seq_pointer += 1
+                last_found_seq += 1
+                if strategy == 'daily':
+                    final_ticket_number = f"{last_found_prefix}{last_found_seq:03d}"
                 else:
-                    latest_ticket = db.execute(text("SELECT ticket_number FROM tickets WHERE ticket_number LIKE :prefix AND organization_id = :org_id ORDER BY created_at DESC LIMIT 1"), 
-                                             {"prefix": f"{date_prefix}-%", "org_id": organization_id}).fetchone()
-                    last_seq = int(latest_ticket[0].split('-')[-1]) if latest_ticket else 0
-                    final_ticket_number = f"{date_prefix}-{last_seq + 1:03d}"
+                    final_ticket_number = f"{last_found_prefix}{last_found_seq}"
 
             # C. TIMEZONE NORMALIZE PICKUP DATE
             pickup_date_utc = ticket_req.pickup_date

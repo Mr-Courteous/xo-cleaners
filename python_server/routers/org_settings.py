@@ -1,9 +1,10 @@
+from datetime import date, datetime, timezone
 from typing import Dict, Any, List, Optional
 from fastapi import APIRouter, HTTPException, Depends, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-from utils.common import get_db, get_current_user_payload
+from utils.common import get_db, get_current_user_payload, hash_password
 
 # =======================
 # Role Definitions
@@ -28,6 +29,9 @@ class BrandingUpdate(BaseModel):
     logo_url: Optional[str] = None
     receipt_header: Optional[str] = None
     receipt_footer: Optional[str] = None
+    sequence_strategy: Optional[str] = "daily"  # "daily" or "continuous"
+    current_sequence: Optional[int] = 1
+    last_sequence_date: Optional[date] = None
 
 class BranchCreate(BaseModel):
     name: str
@@ -58,6 +62,15 @@ class SizePriceUpdate(BaseModel):
     size_price_l: Optional[float] = None
     size_price_xl: Optional[float] = None
     size_price_xxl: Optional[float] = None
+
+class OrganizationProfileUpdate(BaseModel):
+    name: Optional[str] = None
+    address: Optional[str] = None
+    phone: Optional[str] = None
+    owner_first_name: Optional[str] = None
+    owner_last_name: Optional[str] = None
+    owner_email: Optional[str] = None
+    owner_password: Optional[str] = None  # Plain-text; will be hashed before saving
 
 # =======================
 # Helper: Permission Check
@@ -103,16 +116,22 @@ async def update_branding(
     
     check_admin_permissions(role)
 
-    # Upsert Logic
+    # Updated Query to include sequence logic
     query = text("""
-        INSERT INTO organization_settings (organization_id, primary_color, secondary_color, logo_url, receipt_header, receipt_footer, updated_at)
-        VALUES (:org_id, :p_color, :s_color, :logo, :header, :footer, NOW())
+        INSERT INTO organization_settings (
+            organization_id, primary_color, secondary_color, logo_url, 
+            receipt_header, receipt_footer, sequence_strategy, current_sequence, last_sequence_date, updated_at
+        )
+        VALUES (:org_id, :p_color, :s_color, :logo, :header, :footer, :strategy, :seq, :last_date, NOW())
         ON CONFLICT (organization_id) DO UPDATE SET
             primary_color = COALESCE(EXCLUDED.primary_color, organization_settings.primary_color),
             secondary_color = COALESCE(EXCLUDED.secondary_color, organization_settings.secondary_color),
             logo_url = COALESCE(EXCLUDED.logo_url, organization_settings.logo_url),
             receipt_header = COALESCE(EXCLUDED.receipt_header, organization_settings.receipt_header),
             receipt_footer = COALESCE(EXCLUDED.receipt_footer, organization_settings.receipt_footer),
+            sequence_strategy = COALESCE(EXCLUDED.sequence_strategy, organization_settings.sequence_strategy),
+            current_sequence = COALESCE(EXCLUDED.current_sequence, organization_settings.current_sequence),
+            last_sequence_date = COALESCE(EXCLUDED.last_sequence_date, organization_settings.last_sequence_date),
             updated_at = NOW()
         RETURNING *;
     """)
@@ -123,12 +142,16 @@ async def update_branding(
         "s_color": settings.secondary_color,
         "logo": settings.logo_url,
         "header": settings.receipt_header,
-        "footer": settings.receipt_footer
+        "footer": settings.receipt_footer,
+        "strategy": settings.sequence_strategy,
+        "seq": settings.current_sequence,
+        "last_date": settings.last_sequence_date
     }).fetchone()
     
     db.commit()
     return dict(result._mapping)
 
+    
 # =======================
 # 2. Branch Management
 # =======================
@@ -399,3 +422,137 @@ async def update_size_prices(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update clothing size prices."
         )
+
+# =======================
+# 7. Organization Profile
+# =======================
+
+@router.put("/organization/profile")
+async def update_organization_profile(
+    data: OrganizationProfileUpdate,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_current_user_payload)
+):
+    """
+    Allows org owners to edit their organization's core profile:
+    name, address, phone, owner_first_name, owner_last_name,
+    owner_email, and owner_password.
+    Restricted to org_owner and STORE_OWNER roles.
+    """
+    org_id = payload.get("organization_id")
+    role = payload.get("role")
+
+    # Only org owners may edit the organization profile
+    if role not in [ORG_OWNER_ROLE, STORE_OWNER_ROLE]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only Organization Owners can edit the organization profile."
+        )
+
+    # Build dynamic SET clause — only update fields that were actually sent
+    set_clauses = []
+    params: dict = {"org_id": org_id}
+
+    if data.name is not None:
+        set_clauses.append("name = :name")
+        params["name"] = data.name.strip()
+
+    if data.address is not None:
+        set_clauses.append("address = :address")
+        params["address"] = data.address.strip()
+
+    if data.phone is not None:
+        set_clauses.append("phone = :phone")
+        params["phone"] = data.phone.strip()
+
+    if data.owner_first_name is not None:
+        set_clauses.append("owner_first_name = :owner_first_name")
+        params["owner_first_name"] = data.owner_first_name.strip()
+
+    if data.owner_last_name is not None:
+        set_clauses.append("owner_last_name = :owner_last_name")
+        params["owner_last_name"] = data.owner_last_name.strip()
+
+    if data.owner_email is not None:
+        set_clauses.append("owner_email = :owner_email")
+        params["owner_email"] = data.owner_email.strip().lower()
+
+    if data.owner_password is not None:
+        set_clauses.append("owner_password_hash = :owner_password_hash")
+        params["owner_password_hash"] = hash_password(data.owner_password)
+
+    if not set_clauses:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No fields provided to update."
+        )
+
+    set_clauses.append("updated_at = NOW()")
+
+    stmt = text(f"""
+        UPDATE organizations
+        SET {', '.join(set_clauses)}
+        WHERE id = :org_id
+        RETURNING id, name, address, phone,
+                  owner_first_name, owner_last_name, owner_email,
+                  updated_at
+    """)
+
+    try:
+        result = db.execute(stmt, params).fetchone()
+        db.commit()
+
+        if not result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Organization not found."
+            )
+
+        return {
+            "message": "Organization profile updated successfully.",
+            "organization": dict(result._mapping)
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"Error updating organization profile: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update organization profile."
+        )
+
+# =======================
+# 8. Organization Address
+# =======================
+
+@router.get("/organization/address")
+async def get_organization_address(
+    db: Session = Depends(get_db),
+    payload: Dict[str, Any] = Depends(get_current_user_payload)
+):
+    """
+    Returns the address of the current user's organization.
+    Used to stamp the store's address on tickets.
+    """
+    org_id = payload.get("organization_id")
+
+    if not org_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Organization ID missing from token."
+        )
+
+    result = db.execute(
+        text("SELECT address FROM organizations WHERE id = :org_id"),
+        {"org_id": org_id}
+    ).fetchone()
+
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Organization not found."
+        )
+
+    return {"address": result.address}

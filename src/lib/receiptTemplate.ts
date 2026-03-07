@@ -1,6 +1,6 @@
 import { Ticket } from '../types';
 
-export function renderReceiptHtml(ticket: Ticket, organizationName: string = "Your Cleaners") {
+export function renderReceiptHtml(ticket: Ticket, organizationName: string = "Your Cleaners", orgAddress: string = "") {
   const items = ticket.items || [];
 
   // --- 1. CALCULATIONS (Retail: Includes Margin) ---
@@ -68,9 +68,11 @@ export function renderReceiptHtml(ticket: Ticket, organizationName: string = "Yo
     return `
       <div style="margin-bottom: 6px; padding-bottom: 6px;">
          <div style="display:flex; justify-content:space-between; align-items:flex-start; font-size:11pt; font-weight:400; color: #000; line-height:1.1;">
-            <div style="flex:1; text-transform: uppercase;">${item.clothing_name}</div>
+            <div style="flex:1; display:flex; align-items:center; gap:6px; text-transform: uppercase;">
+               <div style="font-weight:700; font-size:11pt; min-width:20px; text-align:left;">${quantity}</div>
+               <div style="flex:1;">${item.clothing_name}</div>
+            </div>
             <div style="text-align: right; min-width: 65px;">
-                <span style="margin-right: 4px;">${quantity}</span>
                 <span>$${itemTotal.toFixed(2)}</span>
             </div>
         </div>
@@ -86,6 +88,7 @@ export function renderReceiptHtml(ticket: Ticket, organizationName: string = "Yo
         <div style="font-size:13pt; font-weight:400; text-transform:uppercase; margin-bottom:4px; line-height:1;">
           ${ticket.organization_name || organizationName}
         </div>
+        ${orgAddress ? `<div style="font-size:9pt; font-weight:700; color:#000; margin-top:3px; text-align:left;">${orgAddress}</div>` : ''}
       </div>
       
       <div style="text-align:center; margin-bottom: 8px;">
@@ -126,11 +129,11 @@ export function renderReceiptHtml(ticket: Ticket, organizationName: string = "Yo
 
         <div style="border-top: 1px solid #000; margin-top: 6px; padding-top: 4px;"></div>
 
-        <div style="display:flex; justify-content:space-between; font-size:10pt; font-weight:400; margin-top:2px;">
+        <div style="display:flex; justify-content:space-between; font-size:14pt; font-weight:700; margin-top:2px;">
           <div>TOTAL:</div> <div>$${finalTotal.toFixed(2)}</div>
         </div>
-        <div style="display:flex; justify-content:space-between; align-items:center; font-size:10pt; font-weight:800; margin-top:2px;">
-            PIECES: ${totalPieces}
+        <div style="display:flex; justify-content:space-between; font-size:14pt; font-weight:700; margin-top:2px;">
+          <div>PIECES:</div> <div>${totalPieces}</div>
         </div>
 
         <div style="display:flex; justify-content:space-between; margin-top:4px; font-size:10pt; font-weight:400;"> 
@@ -140,7 +143,7 @@ export function renderReceiptHtml(ticket: Ticket, organizationName: string = "Yo
 
         ${isPaid
       ? `<div style="text-align:center; margin-top:12px; padding: 4px; font-weight:400; font-size: 14pt;">PAID IN FULL</div>`
-      : `<div style="display:flex; justify-content:space-between; font-weight:400; margin-top:8px; font-size:8pt; padding: 6px 0;"> 
+      : `<div style="display:flex; justify-content:space-between; font-weight:400; margin-top:8px; font-size:8pt; padding: 2px 0;"> 
                  <div>BALANCE:</div> 
                  <div>$${balance.toFixed(2)}</div> 
                </div>`
@@ -149,9 +152,11 @@ export function renderReceiptHtml(ticket: Ticket, organizationName: string = "Yo
       
 
       
-      <div style="margin-top:12px; text-align:center; font-size:8pt; font-weight:600; text-transform: uppercase;">
+      <div style="margin-top:12px; text-align:center; font-size:14pt; font-weight:900; text-transform: uppercase;">
         Pickup: ${ticket.pickup_date ? new Date(ticket.pickup_date).toLocaleDateString() : 'See Counter'}
       </div>
+
+      
 
 
     </div>

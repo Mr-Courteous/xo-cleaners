@@ -348,19 +348,21 @@ def setup_default_settings_and_clothing(db: Session, organization_id: int):
         clothing_inserts
     )
 
-    # ✅ 3. Insert Default Branding & Starch Prices
+    # ✅ 3. Insert Default Branding & Starch Prices & Ticket Sequencing
     db.execute(text("""
         INSERT INTO organization_settings (
             organization_id, primary_color, secondary_color,
             receipt_header, receipt_footer,
             starch_price_light, starch_price_medium,
             starch_price_heavy, starch_price_extra_heavy,
+            sequence_strategy, current_sequence, last_sequence_date,
             updated_at
         )
         VALUES (
             :org_id, '#000000', '#0000FF',
             'Welcome to our Store', 'Thank you for visiting!',
             0.50, 0.75, 1.00, 1.25,
+            'continuous', 1, CURRENT_DATE,
             NOW()
         )
     """), {"org_id": organization_id})

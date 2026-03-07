@@ -76,10 +76,39 @@ class EditedItem(BaseModel):
 class TicketEditRequest(BaseModel):
     """The request body from the frontend, containing a list of edited items."""
     items: List[EditedItem]
-    
-    
+
+
+# -------------------------------------------------------
+# Full Ticket Edit — mirrors TicketCreate item structure
+# -------------------------------------------------------
+class FullEditItem(BaseModel):
+    clothing_type_id: Optional[int] = None
+    custom_name: Optional[str] = None
+    quantity: int = 1
+    unit_price: Optional[float] = 0.0          # plant_price
+    margin: Optional[float] = 0.0
+    starch_level: Optional[str] = "none"
+    starch_charge: Optional[float] = 0.0
+    clothing_size: Optional[str] = "standard"
+    size_charge: Optional[float] = 0.0
+    crease: Optional[bool] = False
+    alterations: Optional[str] = None
+    item_instructions: Optional[str] = None
+    additional_charge: Optional[float] = 0.0
+    instruction_charge: Optional[float] = 0.0
+    alteration_behavior: Optional[str] = "none"
+    item_total: Optional[float] = 0.0          # frontend pre-calculated total
+
+class FullTicketEditRequest(BaseModel):
+    customer_id: Optional[int] = None          # allow re-assigning customer
+    special_instructions: Optional[str] = None
+    pickup_date: Optional[datetime] = None
+    paid_amount: Optional[float] = None
+    items: List[FullEditItem]
+
 
 router = APIRouter(prefix="/api/organizations", tags=["Organization Resources"])
+
 
 # @router.get("/tickets/{ticket_id}", response_model=TicketResponse, summary="Get full details for a single ticket")
 # async def get_ticket_details(
@@ -1033,3 +1062,205 @@ def update_customer(
         db.rollback()
         print(f"Error updating customer: {e}")
         raise HTTPException(status_code=500, detail="An unexpected error occurred.")
+
+
+# ============================================================
+# FULL TICKET EDIT — replaces items & updates ticket header
+# ============================================================
+
+@router.put(
+    "/tickets/{ticket_id}/full-edit",
+    response_model=TicketResponse,
+    summary="Fully replace items and update ticket details"
+)
+async def full_edit_ticket(
+    ticket_id: int,
+    data: FullTicketEditRequest,
+    db: Session = Depends(get_db),
+    payload: Dict[str, Any] = Depends(get_current_user_payload)
+):
+    """
+    Allows a full re-edit of a ticket — identical to how a ticket is created:
+    - Can change any item (starch, size, crease, alterations, custom items)
+    - Can change customer, special instructions, pickup date, paid amount
+    - Deletes old ticket_items and re-inserts the new set
+    - Recalculates and saves the new total_amount
+    - Returns the fully updated TicketResponse
+    """
+    ALLOWED_ROLES = ["cashier", "store_owner", "store_admin", "org_owner", "STORE_OWNER"]
+    organization_id = payload.get("organization_id")
+    user_role = payload.get("role")
+
+    if user_role not in ALLOWED_ROLES:
+        raise HTTPException(status_code=403, detail="You do not have permission to edit tickets.")
+
+    if not organization_id:
+        raise HTTPException(status_code=401, detail="Invalid token: Organization ID missing.")
+
+    try:
+        # 1. Verify ticket exists and belongs to this org
+        ticket_row = db.execute(
+            text("SELECT id, customer_id, paid_amount, pickup_date, special_instructions FROM tickets WHERE id = :tid AND organization_id = :oid"),
+            {"tid": ticket_id, "oid": organization_id}
+        ).fetchone()
+
+        if not ticket_row:
+            raise HTTPException(status_code=404, detail="Ticket not found in your organization.")
+
+        # 2. Determine final field values (fall back to existing if not sent)
+        final_customer_id  = data.customer_id        if data.customer_id        is not None else ticket_row.customer_id
+        final_special_inst = data.special_instructions if data.special_instructions is not None else ticket_row.special_instructions
+        final_paid         = decimal.Decimal(str(data.paid_amount)) if data.paid_amount is not None else decimal.Decimal(str(ticket_row.paid_amount or 0))
+
+        # Pickup date: normalise to UTC-aware if provided
+        if data.pickup_date is not None:
+            final_pickup = data.pickup_date
+            if final_pickup.tzinfo is None:
+                final_pickup = final_pickup.replace(tzinfo=timezone.utc)
+        else:
+            final_pickup = ticket_row.pickup_date
+
+        # 3. Pre-fetch clothing-type prices for standard items
+        type_ids = [i.clothing_type_id for i in data.items if i.clothing_type_id is not None]
+        type_prices: dict = {}
+        if type_ids:
+            rows = db.execute(
+                text("SELECT id, name, plant_price, margin, total_price, pieces FROM clothing_types WHERE id IN :ids AND organization_id = :oid"),
+                {"ids": tuple(type_ids), "oid": organization_id}
+            ).fetchall()
+            type_prices = {
+                r.id: {
+                    "name": r.name,
+                    "plant_price": decimal.Decimal(str(r.plant_price)),
+                    "margin":      decimal.Decimal(str(r.margin)),
+                    "total_price": decimal.Decimal(str(r.total_price)),
+                    "pieces":      r.pieces
+                } for r in rows
+            }
+
+        # 4. Build new items list and recalculate total
+        new_total      = decimal.Decimal("0.00")
+        items_to_insert = []
+
+        for item in data.items:
+            qty = decimal.Decimal(str(item.quantity))
+
+            if item.clothing_type_id is None:
+                # Custom item — trust frontend prices
+                plant_price = decimal.Decimal(str(item.unit_price or 0))
+                margin      = decimal.Decimal(str(item.margin or 0))
+                base_price  = plant_price + margin
+                name        = item.custom_name or "Custom Item"
+                pieces      = 1
+            else:
+                prices     = type_prices.get(item.clothing_type_id)
+                if not prices:
+                    raise HTTPException(status_code=400, detail=f"Clothing type {item.clothing_type_id} not found.")
+                plant_price = prices["plant_price"]
+                margin      = prices["margin"]
+                base_price  = prices["total_price"]
+                name        = prices["name"]
+                pieces      = prices["pieces"]
+
+            alt_charge   = decimal.Decimal(str(item.additional_charge or 0))
+            inst_charge  = decimal.Decimal(str(item.instruction_charge or 0))
+            starch_charge= decimal.Decimal(str(item.starch_charge or 0))
+            size_charge  = decimal.Decimal(str(item.size_charge or 0))
+            extras       = alt_charge + inst_charge + starch_charge + size_charge
+
+            behavior = (item.alteration_behavior or "none").strip()
+            if behavior == "alteration_only":
+                item_total = extras
+            else:
+                item_total = (base_price * qty) + extras
+
+            new_total += item_total
+
+            items_to_insert.append({
+                "ticket_id":          ticket_id,
+                "clothing_type_id":   item.clothing_type_id,
+                "custom_name":        name if item.clothing_type_id is None else None,
+                "quantity":           item.quantity,
+                "starch_level":       item.starch_level or "none",
+                "starch_charge":      float(starch_charge),
+                "clothing_size":      item.clothing_size or "standard",
+                "size_charge":        float(size_charge),
+                "crease":             item.crease or False,
+                "alterations":        item.alterations,
+                "item_instructions":  item.item_instructions,
+                "additional_charge":  float(alt_charge),
+                "instruction_charge": float(inst_charge),
+                "alteration_behavior":behavior,
+                "plant_price":        float(plant_price),
+                "margin":             float(margin),
+                "item_total":         float(item_total),
+                "organization_id":    organization_id,
+            })
+
+        # 5. Delete old items
+        db.execute(
+            text("DELETE FROM ticket_items WHERE ticket_id = :tid AND organization_id = :oid"),
+            {"tid": ticket_id, "oid": organization_id}
+        )
+
+        # 6. Insert new items
+        db.execute(
+            text("""
+                INSERT INTO ticket_items (
+                    ticket_id, clothing_type_id, custom_name, quantity,
+                    starch_level, starch_charge,
+                    clothing_size, size_charge,
+                    crease, alterations, item_instructions,
+                    additional_charge, instruction_charge,
+                    alteration_behavior,
+                    plant_price, margin, item_total,
+                    organization_id
+                ) VALUES (
+                    :ticket_id, :clothing_type_id, :custom_name, :quantity,
+                    :starch_level, :starch_charge,
+                    :clothing_size, :size_charge,
+                    :crease, :alterations, :item_instructions,
+                    :additional_charge, :instruction_charge,
+                    :alteration_behavior,
+                    :plant_price, :margin, :item_total,
+                    :organization_id
+                )
+            """),
+            items_to_insert
+        )
+
+        # 7. Update the master ticket row
+        db.execute(
+            text("""
+                UPDATE tickets SET
+                    customer_id          = :customer_id,
+                    total_amount         = :total_amount,
+                    paid_amount          = :paid_amount,
+                    special_instructions = :special_instructions,
+                    pickup_date          = :pickup_date,
+                    updated_at           = NOW()
+                WHERE id = :ticket_id AND organization_id = :org_id
+            """),
+            {
+                "customer_id":          final_customer_id,
+                "total_amount":         new_total,
+                "paid_amount":          final_paid,
+                "special_instructions": final_special_inst,
+                "pickup_date":          final_pickup,
+                "ticket_id":            ticket_id,
+                "org_id":               organization_id,
+            }
+        )
+
+        db.commit()
+
+        # 8. Return the full ticket response (reuses existing GET handler)
+        return await get_ticket_details(ticket_id=ticket_id, db=db, payload=payload)
+
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"Error in full_edit_ticket {ticket_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update ticket: {str(e)}")
