@@ -12,6 +12,7 @@ import { useColors } from '../state/ColorsContext';
 // --- Imports for Template Generation ---
 import renderPickupReceiptHtml from '../lib/pickupReceiptTemplate';
 import renderPlantReceiptHtml from '../lib/plantReceiptTemplate';
+import { getOrgAddress } from '../lib/getOrgAddress';
 
 // --- Types for Checkout Profile ---
 interface TicketCheckoutItem {
@@ -314,8 +315,9 @@ export default function PickUp() {
         } as Ticket;
 
         // --- GENERATE HTML TEMPLATES ---
-        const receiptHtml = renderPickupReceiptHtml(updatedTicket);
-        const plantHtml = renderPlantReceiptHtml ? renderPlantReceiptHtml(updatedTicket) : '';
+        const orgAddress = await getOrgAddress();
+        const receiptHtml = renderPickupReceiptHtml(updatedTicket, undefined, orgAddress);
+        const plantHtml = renderPlantReceiptHtml ? renderPlantReceiptHtml(updatedTicket, undefined, orgAddress) : '';
 
         setPrintContent(receiptHtml);
         setPlantPrintContent(plantHtml);

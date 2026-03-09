@@ -25,11 +25,18 @@ export interface TicketItem {
   clothing_name?: string;
   quantity: number;
   starch_level: 'none' | 'no_starch' | 'light' | 'medium' | 'heavy';
-  crease: 'none' | 'crease' | 'no_crease';
+  crease: 'none' | 'crease' | 'no_crease' | boolean | string;
   additional_charge: number;
   plant_price: number;
   margin: number;
   item_total: number;
+  starch_charge?: number;
+  size_charge?: number;
+  alterations?: string;
+  instruction_charge?: number;
+  item_instructions?: string;
+  pieces?: number;
+  clothing_size?: string;
 }
 
 export interface Ticket {
@@ -50,6 +57,9 @@ export interface Ticket {
   paid_amount?: number;
   is_void?: boolean;
   is_refunded?: boolean;
+  organization_name?: string;
+  receipt_header?: string;
+  receipt_footer?: string;
 }
 
 export interface Rack {

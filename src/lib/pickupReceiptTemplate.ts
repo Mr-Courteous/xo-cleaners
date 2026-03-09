@@ -1,6 +1,6 @@
 import { Ticket } from '../types';
 
-export function renderPickupReceiptHtml(ticket: Ticket, organizationName: string = "Your Cleaners") {
+export function renderPickupReceiptHtml(ticket: Ticket, organizationName: string = "Your Cleaners", orgAddress: string = "") {
   const items = ticket.items || [];
 
   // --- CALCULATIONS ---
