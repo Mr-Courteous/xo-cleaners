@@ -167,12 +167,20 @@ class StarchLevel(str, Enum):
     high = "high"
 
 
-# Note: `TicketItemCreate` is intentionally defined later in this module (after TicketResponse)
-# to ensure the request model used by `TicketCreate` includes all custom fields
-# such as `unit_price` and `margin`. The canonical `TicketItemCreate` definition
-# lives further down in this file.
-    
-    
+class AlterationTypeCreate(BaseModel):
+    name: str
+    price: float
+
+class AlterationTypeResponse(BaseModel):
+    id: int
+    name: str
+    price: float
+    organization_id: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
 
 class TicketItemCreate(BaseModel):
     # Fields allowed when creating/updating ticket items from the frontend
@@ -194,6 +202,11 @@ class TicketItemCreate(BaseModel):
     starch_charge: float = 0.0
     size_charge: float = 0.0
     alteration_behavior: Optional[str] = "none"
+    
+    # --- Alteration (per ticket item) ---
+    alteration_id: Optional[int] = None
+    alteration_name: Optional[str] = None
+    alteration_price: Optional[float] = 0.0
     
     
     
@@ -230,6 +243,11 @@ class TicketItemResponse(BaseModel):
     instruction_charge: float = 0.0  # Instruction Charge
     starch_charge: float = 0.0 # ✅ Return it
     size_charge: float = 0.0 # ✅ Return it
+    
+    # --- Alteration Details (per ticket item) ---
+    alteration_id: Optional[int] = None
+    alteration_name: Optional[str] = None
+    alteration_price: float = 0.0
     
 
     

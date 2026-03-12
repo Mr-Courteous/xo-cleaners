@@ -36,7 +36,9 @@ from utils.common import (
     GeneralTicketUpdateRequest,
     TicketValidationResponse,
     CustomerResponse,
-    create_audit_log
+    create_audit_log,
+    AlterationTypeCreate,
+    AlterationTypeResponse
 )
 
 class TicketCreateBulk(TicketCreate):
@@ -228,6 +230,100 @@ async def get_clothing_types_for_organization(
         raise
     except Exception as e:
         print(f"Error fetching clothing types: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+        
+
+@router.get("/alteration-types", summary="Get all alteration types for *your* organization")
+async def get_alteration_types(
+    db: Session = Depends(get_db), 
+    payload: Dict[str, Any] = Depends(get_current_user_payload)
+):
+    try:
+        organization_id = payload.get("organization_id")
+        if not organization_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+            
+        query = text("""
+            SELECT id, name, price, organization_id, created_at
+            FROM alteration_types
+            WHERE organization_id = :org_id
+            ORDER BY name ASC
+        """)
+        results = db.execute(query, {"org_id": organization_id}).fetchall()
+        return [dict(row._mapping) for row in results]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/alteration-types", response_model=AlterationTypeResponse, summary="Create a new alteration type")
+async def create_alteration_type(
+    data: AlterationTypeCreate,
+    db: Session = Depends(get_db),
+    payload: Dict[str, Any] = Depends(get_current_user_payload)
+):
+    try:
+        organization_id = payload.get("organization_id")
+        if not organization_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+            
+        query = text("""
+            INSERT INTO alteration_types (name, price, organization_id)
+            VALUES (:name, :price, :org_id)
+            RETURNING id, name, price, organization_id, created_at
+        """)
+        result = db.execute(query, {
+            "name": data.name,
+            "price": data.price,
+            "org_id": organization_id
+        }).fetchone()
+        db.commit()
+        return dict(result._mapping)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.patch("/alteration-types/{alt_id}", response_model=AlterationTypeResponse)
+async def update_alteration_type(
+    alt_id: int,
+    data: AlterationTypeCreate,
+    db: Session = Depends(get_db),
+    payload: Dict[str, Any] = Depends(get_current_user_payload)
+):
+    try:
+        organization_id = payload.get("organization_id")
+        query = text("""
+            UPDATE alteration_types
+            SET name = :name, price = :price
+            WHERE id = :id AND organization_id = :org_id
+            RETURNING id, name, price, organization_id, created_at
+        """)
+        result = db.execute(query, {
+            "name": data.name,
+            "price": data.price,
+            "id": alt_id,
+            "org_id": organization_id
+        }).fetchone()
+        if not result:
+            raise HTTPException(status_code=404, detail="Alteration type not found")
+        db.commit()
+        return dict(result._mapping)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/alteration-types/{alt_id}")
+async def delete_alteration_type(
+    alt_id: int,
+    db: Session = Depends(get_db),
+    payload: Dict[str, Any] = Depends(get_current_user_payload)
+):
+    try:
+        organization_id = payload.get("organization_id")
+        query = text("DELETE FROM alteration_types WHERE id = :id AND organization_id = :org_id")
+        db.execute(query, {"id": alt_id, "org_id": organization_id})
+        db.commit()
+        return {"success": True}
+    except Exception as e:
+        db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
         
 
@@ -1433,6 +1529,21 @@ def create_ticket(
                     "pieces": row[5]
                 } for row in types_result
             }
+
+        # 2b. Fetch Alterations
+        alteration_ids = [item.alteration_id for item in ticket_data.items if item.alteration_id is not None]
+        alt_data_map = {}
+        if alteration_ids:
+            alt_query = text("""
+                SELECT id, name, price 
+                FROM alteration_types 
+                WHERE id IN :ids AND organization_id = :org_id
+            """)
+            alt_results = db.execute(alt_query, {
+                "ids": tuple(alteration_ids),
+                "org_id": organization_id
+            }).fetchall()
+            alt_data_map = {row.id: {"name": row.name, "price": decimal.Decimal(str(row.price))} for row in alt_results}
         
         # 3. Calculate total_amount and prepare items
         for item_create in ticket_data.items:
@@ -1464,13 +1575,27 @@ def create_ticket(
                 base_wash_price = prices["total_price"]
                 pieces = prices["pieces"]
 
+            # --- NEW ALTERATION LOGIC ---
+            final_alteration_id = item_create.alteration_id
+            final_alteration_name = item_create.alteration_name
+            final_alteration_price = decimal.Decimal(str(item_create.alteration_price or 0.0))
+
+            if final_alteration_id and final_alteration_id in alt_data_map:
+                final_alteration_name = alt_data_map[final_alteration_id]["name"]
+                final_alteration_price = alt_data_map[final_alteration_id]["price"]
+
+            # If no alteration_id but name/price provided (legacy or custom), use those
+            # Otherwise, use what we have.
+
             # --- COMMON CALCULATION ---
-            alteration_charge = decimal.Decimal(str(item_create.additional_charge or 0.0))
+            # additional_charge still used for custom/manual alterations
+            manual_alteration_charge = decimal.Decimal(str(item_create.additional_charge or 0.0))
             instruction_charge = decimal.Decimal(str(getattr(item_create, 'instruction_charge', 0.0)))
             starch_charge = decimal.Decimal(str(getattr(item_create, 'starch_charge', 0.0)))
             size_charge = decimal.Decimal(str(getattr(item_create, 'size_charge', 0.0)))
 
-            total_extra_charges = alteration_charge + instruction_charge + starch_charge + size_charge
+            # Total extra charges now includes the looked-up alteration price
+            total_extra_charges = manual_alteration_charge + final_alteration_price + instruction_charge + starch_charge + size_charge
 
             raw_behavior = getattr(item_create, 'alteration_behavior', 'none')
             behavior_val = raw_behavior.value if hasattr(raw_behavior, 'value') else raw_behavior
@@ -1498,15 +1623,19 @@ def create_ticket(
                 "clothing_size": size_val,
                 "size_charge": float(size_charge),
                 "crease": item_create.crease,
-                "alterations": item_create.alterations,
+                "alterations": item_create.alterations or final_alteration_name, # Storing name for legacy support
                 "item_instructions": item_create.item_instructions,
                 "alteration_behavior": behavior_val, 
-                "additional_charge": float(alteration_charge),
+                "additional_charge": float(manual_alteration_charge),
                 "instruction_charge": float(instruction_charge),
                 "plant_price": float(plant_price),
                 "margin": float(margin),
                 "item_total": float(item_total_price),
-                "organization_id": organization_id
+                "organization_id": organization_id,
+                # New Fields
+                "alteration_id": final_alteration_id,
+                "alteration_name": final_alteration_name,
+                "alteration_price": float(final_alteration_price)
             })
 
         # 4. SMART SEQUENCE FETCHING ---
@@ -1650,14 +1779,16 @@ def create_ticket(
                 starch_level, starch_charge, 
                 clothing_size, size_charge,
                 crease, alterations, item_instructions, additional_charge, instruction_charge,
-                plant_price, margin, item_total, organization_id, alteration_behavior
+                plant_price, margin, item_total, organization_id, alteration_behavior,
+                alteration_id, alteration_name, alteration_price
             )
             VALUES (
                 :ticket_id, :clothing_type_id, :custom_name, :quantity, 
                 :starch_level, :starch_charge, 
                 :clothing_size, :size_charge,
                 :crease, :alterations, :item_instructions, :additional_charge, :instruction_charge,
-                :plant_price, :margin, :item_total, :organization_id, :alteration_behavior
+                :plant_price, :margin, :item_total, :organization_id, :alteration_behavior,
+                :alteration_id, :alteration_name, :alteration_price
             )
         """)
         db.execute(item_insert_query, ticket_items_to_insert)
@@ -1705,7 +1836,10 @@ def create_ticket(
                     margin=float(item['margin']),
                     additional_charge=item['additional_charge'],
                     instruction_charge=item.get('instruction_charge', 0.0),
-                    pieces=final_pieces
+                    pieces=final_pieces,
+                    alteration_id=item.get('alteration_id'),
+                    alteration_name=item.get('alteration_name'),
+                    alteration_price=item.get('alteration_price', 0.0)
                 )
             )
 
@@ -1843,6 +1977,28 @@ def bulk_create_tickets(
                 } for row in types_result
             }
 
+        # 3b. PRE-FETCH ALTERATIONS
+        all_alt_ids = set()
+        for t in tickets_data:
+            for item in t.items:
+                if item.alteration_id:
+                    all_alt_ids.add(item.alteration_id)
+        
+        alt_data_map = {}
+        if all_alt_ids:
+            alt_results = db.execute(text("""
+                SELECT id, name, price 
+                FROM alteration_types 
+                WHERE id = ANY(:ids) AND organization_id = :org_id
+            """), {"ids": list(all_alt_ids), "org_id": organization_id}).fetchall()
+            
+            alt_data_map = {
+                row.id: {
+                    "name": row.name, 
+                    "price": decimal.Decimal(str(row.price))
+                } for row in alt_results
+            }
+
         # --- 4. TICKET NUMBER SEQUENCE (Search DB for last ticket) ---
         tickets_needing_numbers = [t for t in tickets_data if not t.ticket_number_override]
         settings_row = None
@@ -1964,13 +2120,22 @@ def bulk_create_tickets(
                     margin = prices["margin"]
                     base_wash_price = prices["total_price"]
 
+                # NEW ALTERATION LOGIC
+                final_alteration_id = item_req.alteration_id
+                final_alteration_name = item_req.alteration_name
+                final_alteration_price = decimal.Decimal(str(item_req.alteration_price or 0.0))
+
+                if final_alteration_id and final_alteration_id in alt_data_map:
+                    final_alteration_name = alt_data_map[final_alteration_id]["name"]
+                    final_alteration_price = alt_data_map[final_alteration_id]["price"]
+
                 # Extra Charges
-                alteration_charge = decimal.Decimal(str(item_req.additional_charge or 0.0))
+                manual_alteration_charge = decimal.Decimal(str(item_req.additional_charge or 0.0))
                 instruction_charge = decimal.Decimal(str(getattr(item_req, 'instruction_charge', 0.0)))
                 starch_charge = decimal.Decimal(str(getattr(item_req, 'starch_charge', 0.0)))
                 size_charge = decimal.Decimal(str(getattr(item_req, 'size_charge', 0.0)))
                 
-                total_extra_charges = alteration_charge + instruction_charge + starch_charge + size_charge
+                total_extra_charges = manual_alteration_charge + final_alteration_price + instruction_charge + starch_charge + size_charge
 
                 # Calc Item Total
                 raw_behavior = getattr(item_req, 'alteration_behavior', 'none')
@@ -1998,15 +2163,18 @@ def bulk_create_tickets(
                     "clothing_size": size_val,
                     "size_charge": float(size_charge),
                     "crease": item_req.crease,
-                    "alterations": item_req.alterations,
+                    "alterations": item_req.alterations or final_alteration_name,
                     "item_instructions": item_req.item_instructions,
                     "alteration_behavior": behavior_val,
-                    "additional_charge": float(alteration_charge),
+                    "additional_charge": float(manual_alteration_charge),
                     "instruction_charge": float(instruction_charge),
                     "plant_price": float(plant_price),
                     "margin": float(margin),
                     "item_total": float(item_total_price),
-                    "organization_id": organization_id
+                    "organization_id": organization_id,
+                    "alteration_id": final_alteration_id,
+                    "alteration_name": final_alteration_name,
+                    "alteration_price": float(final_alteration_price)
                 })
 
             # E. INSERT TICKET
@@ -2061,13 +2229,15 @@ def bulk_create_tickets(
                     starch_level, starch_charge, 
                     clothing_size, size_charge,
                     crease, alterations, item_instructions, additional_charge, instruction_charge,
-                    plant_price, margin, item_total, organization_id, alteration_behavior
+                    plant_price, margin, item_total, organization_id, alteration_behavior,
+                    alteration_id, alteration_name, alteration_price
                 ) VALUES (
                     :ticket_id, :clothing_type_id, :custom_name, :quantity, 
                     :starch_level, :starch_charge, 
                     :clothing_size, :size_charge,
                     :crease, :alterations, :item_instructions, :additional_charge, :instruction_charge,
-                    :plant_price, :margin, :item_total, :organization_id, :alteration_behavior
+                    :plant_price, :margin, :item_total, :organization_id, :alteration_behavior,
+                    :alteration_id, :alteration_name, :alteration_price
                 )
             """), all_items_to_insert)
 
@@ -2555,7 +2725,8 @@ async def update_ticket(
             SELECT 
                 ti.id, ti.ticket_id, ti.clothing_type_id, ti.quantity, 
                 ti.starch_level, ti.crease, ti.item_total, 
-                ti.plant_price, ti.margin,
+                ti.plant_price, ti.margin, ti.additional_charge,
+                ti.alteration_id, ti.alteration_name, ti.alteration_price,
                 ct.name AS clothing_name
             FROM ticket_items AS ti
             JOIN clothing_types AS ct ON ti.clothing_type_id = ct.id
@@ -2575,7 +2746,10 @@ async def update_ticket(
                 item_total=float(item.item_total),
                 plant_price=float(item.plant_price),
                 margin=float(item.margin),
-                additional_charge=0.0
+                additional_charge=float(item.additional_charge),
+                alteration_id=item.alteration_id,
+                alteration_name=item.alteration_name,
+                alteration_price=float(item.alteration_price)
             ) for item in items_result
         ]
 

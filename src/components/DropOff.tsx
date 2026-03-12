@@ -24,6 +24,12 @@ const CLOTHING_IMAGE_MAP: { [key: string]: string } = {
 // -------------------------------------------------------------
 
 // --- TYPE EXTENSIONS FOR MERGED LOGIC ---
+interface AlterationType {
+  id: number;
+  name: string;
+  price: number;
+}
+
 interface ExtendedTicketItem extends TicketItem {
   instruction_charge?: number;
   starch_charge?: number;
@@ -31,6 +37,9 @@ interface ExtendedTicketItem extends TicketItem {
   clothing_size?: string;
   alteration_behavior?: string;
   is_custom?: boolean;
+  alteration_id?: number | null;
+  alteration_name?: string | null;
+  alteration_price?: number;
 }
 
 interface TicketWithItems extends Ticket {
@@ -210,6 +219,8 @@ export default function DropOff() {
   const [searchTerm, setSearchTerm] = useState('');
 
   const [items, setItems] = useState<ExtendedTicketItem[]>([]);
+  const [alterationTypes, setAlterationTypes] = useState<AlterationType[]>([]);
+  const [showAlterationMenu, setShowAlterationMenu] = useState(false);
 
   // Track selected item for Quick Starch Panel
   const [selectedTicketIndex, setSelectedTicketIndex] = useState<number | null>(null);
@@ -273,7 +284,22 @@ export default function DropOff() {
   useEffect(() => {
     fetchClothingTypes();
     fetchOrganizationSettings();
+    fetchAlterationTypes();
   }, []);
+
+  const fetchAlterationTypes = async () => {
+    try {
+      const token = localStorage.getItem("accessToken");
+      const res = await axios.get(`${baseURL}/api/organizations/alteration-types`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (Array.isArray(res.data)) {
+        setAlterationTypes(res.data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch alteration types:", err);
+    }
+  };
 
   const fetchOrganizationSettings = async () => {
     try {
@@ -420,6 +446,34 @@ export default function DropOff() {
     setPickupDate(new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().substring(0, 16));
   };
 
+  const handleQuickAlterationUpdate = (altType: AlterationType | null) => {
+    if (selectedTicketIndex === null) return;
+    if (!altType) {
+      // Deselect / clear alteration
+      updateItem(selectedTicketIndex, {
+        alteration_id: null,
+        alteration_name: null,
+        alteration_price: 0,
+      });
+    } else {
+      const current = items[selectedTicketIndex];
+      // Toggle off if same alteration is clicked again
+      if (current?.alteration_id === altType.id) {
+        updateItem(selectedTicketIndex, {
+          alteration_id: null,
+          alteration_name: null,
+          alteration_price: 0,
+        });
+      } else {
+        updateItem(selectedTicketIndex, {
+          alteration_id: altType.id,
+          alteration_name: altType.name,
+          alteration_price: altType.price,
+        });
+      }
+    }
+  };
+
   const addItem = () => {
     // Grab the first item from the flat array as a default
     const ct = clothingTypes.length > 0 ? clothingTypes[0] : null;
@@ -434,7 +488,8 @@ export default function DropOff() {
       alterations: '', item_instructions: '',
       plant_price: ct?.plant_price || 0, margin: ct?.margin || 0,
       item_total: (ct?.plant_price || 0) + (ct?.margin || 0),
-      alteration_behavior: 'none', is_custom: false
+      alteration_behavior: 'none', is_custom: false,
+      alteration_id: null, alteration_name: null, alteration_price: 0
     };
 
     setItems(prev => {
@@ -460,7 +515,8 @@ export default function DropOff() {
       alterations: '', item_instructions: '',
       plant_price: ct.plant_price, margin: ct.margin,
       item_total: ct.plant_price + ct.margin,
-      alteration_behavior: 'none', is_custom: false
+      alteration_behavior: 'none', is_custom: false,
+      alteration_id: null, alteration_name: null, alteration_price: 0
     };
 
     setItems(prev => {
@@ -485,7 +541,8 @@ export default function DropOff() {
       alterations: '', item_instructions: '',
       plant_price: price, margin: margin,
       item_total: price + margin,
-      alteration_behavior: 'none', is_custom: true
+      alteration_behavior: 'none', is_custom: true,
+      alteration_id: null, alteration_name: null, alteration_price: 0
     };
 
     setItems(prev => {
@@ -547,8 +604,9 @@ export default function DropOff() {
     const instCharge = updatedItem.instruction_charge || 0;
     const starchCharge = updatedItem.starch_charge || 0;
     const sizeCharge = updatedItem.size_charge || 0;
+    const alterationCharge = updatedItem.alteration_price || 0;
 
-    updatedItem.item_total = (basePrice * qty) + altCharge + instCharge + starchCharge + sizeCharge;
+    updatedItem.item_total = (basePrice * qty) + altCharge + instCharge + starchCharge + sizeCharge + alterationCharge;
 
     setItems(newItems);
   };
@@ -646,7 +704,12 @@ export default function DropOff() {
 
           alterations: item.alterations || null,
           item_instructions: item.item_instructions || null,
-          alteration_behavior: item.alteration_behavior
+          alteration_behavior: item.alteration_behavior,
+
+          // --- Per-item alteration ---
+          alteration_id: item.alteration_id || null,
+          alteration_name: item.alteration_name || null,
+          alteration_price: Number(item.alteration_price) || 0.0,
         })),
         special_instructions: specialInstructions,
         pickup_date: pickupDate ? new Date(pickupDate).toISOString() : null,
@@ -1089,7 +1152,54 @@ export default function DropOff() {
                   </div>
                 </div>
 
-                {/* 2. CLOTHING SIZE PANEL */}
+                {/* 2. ALTERATIONS PANEL */}
+                {alterationTypes.length > 0 && (
+                  <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200">
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                        Alterations
+                      </h3>
+                      {selectedTicketIndex !== null && (items[selectedTicketIndex]?.alteration_price || 0) > 0 && (
+                        <span className="text-[10px] font-bold" style={{ color: '#7c3aed' }}>
+                          +${(items[selectedTicketIndex].alteration_price || 0).toFixed(2)}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap gap-1 max-h-[140px] overflow-y-auto custom-scrollbar p-0.5">
+                      {alterationTypes.map((alt) => {
+                        const isActive = selectedTicketIndex !== null && items[selectedTicketIndex]?.alteration_id === alt.id;
+                        return (
+                          <button
+                            key={alt.id}
+                            onClick={() => handleQuickAlterationUpdate(alt)}
+                            disabled={selectedTicketIndex === null}
+                            className="px-2 py-1.5 text-[9px] font-bold rounded border transition-all disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+                            style={
+                              isActive
+                                ? { backgroundColor: '#7c3aed', color: '#fff', borderColor: '#7c3aed' }
+                                : { backgroundColor: '#fff', color: '#7c3aed', borderColor: '#ddd6fe' }
+                            }
+                            title={`+$${alt.price.toFixed(2)}`}
+                          >
+                            {alt.name} (+${alt.price.toFixed(2)})
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {selectedTicketIndex !== null && items[selectedTicketIndex]?.alteration_id && (
+                      <button
+                        onClick={() => handleQuickAlterationUpdate(null)}
+                        className="mt-2 w-full py-1.5 text-[9px] font-semibold text-red-500 hover:text-red-700 border border-red-200 rounded hover:bg-red-50 transition-colors"
+                      >
+                        Clear Selected Alteration
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* 3. CLOTHING SIZE PANEL */}
                 <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200">
                   <div className="flex items-center justify-between mb-2">
                     <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">
@@ -1169,6 +1279,13 @@ export default function DropOff() {
                         {item.starch_level !== 'no_starch' && (
                           <span className="px-1.5 py-0.5 rounded text-[9px] border" style={{ backgroundColor: `${colors.primaryColor}08`, color: colors.primaryColor, borderColor: `${colors.primaryColor}14` }}>
                             {item.starch_level.replace('_', ' ').substring(0, 3).toUpperCase()}
+                          </span>
+                        )}
+
+                        {/* Alteration Badge */}
+                        {item.alteration_id && (
+                          <span className="px-1.5 py-0.5 rounded text-[9px] border" style={{ backgroundColor: '#f5f3ff', color: '#7c3aed', borderColor: '#ddd6fe' }}>
+                            ALT
                           </span>
                         )}
 

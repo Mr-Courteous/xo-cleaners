@@ -402,6 +402,7 @@ async def get_ticket_details(
                 ti.additional_charge, ti.instruction_charge,
                 ti.alteration_behavior, 
                 ti.custom_name,
+                ti.alteration_id, ti.alteration_name, ti.alteration_price,
                 
                 ct.name AS clothing_name,
                 ct.image_url AS clothing_image_url,
@@ -439,7 +440,10 @@ async def get_ticket_details(
                     additional_charge=float(item_row.additional_charge or 0.0),
                     instruction_charge=float(item_row.instruction_charge or 0.0),
                     clothing_name=final_name,
-                    pieces=item_row.pieces
+                    pieces=item_row.pieces,
+                    alteration_id=item_row.alteration_id,
+                    alteration_name=item_row.alteration_name,
+                    alteration_price=float(item_row.alteration_price or 0.0),
                 )
             )
 

@@ -41,9 +41,11 @@ export function renderPickupReceiptHtml(ticket: Ticket, organizationName: string
     if (item.crease === true || item.crease === 'true' || item.crease === 'crease') {
       details.push('CREASE INCLUDED');
     }
-    if (item.alterations) {
-      const cost = item.additional_charge ? `(+$${Number(item.additional_charge).toFixed(2)})` : '';
-      details.push(`ALT: ${item.alterations} ${cost}`);
+    if (item.alterations || item.alteration_name) {
+      const altText = item.alteration_name || item.alterations;
+      const altCost = Number(item.alteration_price) || Number(item.additional_charge) || 0;
+      const costStr = altCost > 0 ? `(+$${altCost.toFixed(2)})` : '';
+      details.push(`ALT: ${altText} ${costStr}`);
     }
     if (item.item_instructions) {
       const cost = item.instruction_charge ? `(+$${Number(item.instruction_charge).toFixed(2)})` : '';

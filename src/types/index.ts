@@ -37,6 +37,9 @@ export interface TicketItem {
   item_instructions?: string;
   pieces?: number;
   clothing_size?: string;
+  alteration_id?: number;
+  alteration_name?: string;
+  alteration_price?: number;
 }
 
 export interface Ticket {

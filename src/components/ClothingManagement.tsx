@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Plus, Edit2, Trash2, Save, X, Shirt, Upload, Image, AlertCircle,
-  Loader2, DollarSign, List, Info, Ruler, Search // 🎯 Added Search icon
+  Loader2, DollarSign, List, Info, Ruler, Search, Scissors
 } from 'lucide-react';
 import baseURL from '../lib/config';
 
@@ -296,11 +296,287 @@ const SizeSettings: React.FC = () => {
 };
 
 // ==========================================
+// ✂️ ALTERATIONS SETTINGS COMPONENT
+// ==========================================
+interface AlterationType {
+  id: number;
+  name: string;
+  price: number;
+  organization_id: number;
+  created_at: string;
+}
+
+const AlterationSettings: React.FC = () => {
+  const [alterations, setAlterations] = useState<AlterationType[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [formData, setFormData] = useState({ name: '', price: '' });
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<AlterationType | null>(null);
+
+  useEffect(() => { fetchAlterations(); }, []);
+
+  const fetchAlterations = async () => {
+    setLoading(true);
+    try {
+      const headers = getAuthHeaders();
+      const res = await fetch(`${baseURL}/api/organizations/alteration-types`, { headers });
+      if (!res.ok) throw new Error('Failed to load alterations');
+      const data = await res.json();
+      setAlterations(data);
+    } catch (e: any) {
+      setMessage({ type: 'error', text: e.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const openAdd = () => {
+    setEditingId(null);
+    setFormData({ name: '', price: '' });
+    setMessage(null);
+    setShowForm(true);
+  };
+
+  const openEdit = (alt: AlterationType) => {
+    setEditingId(alt.id);
+    setFormData({ name: alt.name, price: String(alt.price) });
+    setMessage(null);
+    setShowForm(true);
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.name.trim()) return;
+    const price = parseFloat(formData.price);
+    if (isNaN(price) || price < 0) {
+      setMessage({ type: 'error', text: 'Price must be a positive number.' });
+      return;
+    }
+    setSaving(true);
+    setMessage(null);
+    try {
+      const headers = getAuthHeaders();
+      headers.append('Content-Type', 'application/json');
+      const url = editingId
+        ? `${baseURL}/api/organizations/alteration-types/${editingId}`
+        : `${baseURL}/api/organizations/alteration-types`;
+      const method = editingId ? 'PATCH' : 'POST';
+      const res = await fetch(url, {
+        method,
+        headers,
+        body: JSON.stringify({ name: formData.name.trim(), price }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || 'Failed to save');
+      }
+      setMessage({ type: 'success', text: editingId ? 'Alteration updated!' : 'Alteration added!' });
+      setShowForm(false);
+      fetchAlterations();
+    } catch (e: any) {
+      setMessage({ type: 'error', text: e.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const confirmDelete = async (alt: AlterationType) => {
+    setDeleting(alt.id);
+    setDeleteConfirm(null);
+    try {
+      const headers = getAuthHeaders();
+      const res = await fetch(`${baseURL}/api/organizations/alteration-types/${alt.id}`, {
+        method: 'DELETE',
+        headers,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || 'Failed to delete');
+      }
+      setMessage({ type: 'success', text: 'Alteration deleted.' });
+      fetchAlterations();
+    } catch (e: any) {
+      setMessage({ type: 'error', text: e.message });
+    } finally {
+      setDeleting(null);
+    }
+  };
+
+  if (loading) return <div className="p-12 flex justify-center"><Loader2 className="animate-spin text-rose-500 w-8 h-8" /></div>;
+
+  return (
+    <div className="bg-white rounded-lg shadow-sm border border-gray-200 max-w-4xl">
+      {/* Header */}
+      <div className="p-6 border-b border-gray-100 bg-rose-50 flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold flex items-center gap-2 text-gray-900">
+            <Scissors className="w-5 h-5 text-rose-500" /> Alteration Types
+          </h3>
+          <p className="text-sm text-rose-700 mt-1">Define alteration services and their prices.</p>
+        </div>
+        <button
+          onClick={openAdd}
+          className="flex items-center px-4 py-2 bg-rose-500 text-white rounded-lg hover:bg-rose-600 font-medium text-sm gap-1.5 transition-colors"
+        >
+          <Plus className="w-4 h-4" /> Add Alteration
+        </button>
+      </div>
+
+      {/* Message Banner */}
+      {message && (
+        <div className={`mx-6 mt-4 p-3 rounded-lg flex items-center text-sm ${message.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+          <Info className="w-4 h-4 mr-2 flex-shrink-0" /> {message.text}
+          <button onClick={() => setMessage(null)} className="ml-auto"><X className="w-3 h-3" /></button>
+        </div>
+      )}
+
+      {/* Add / Edit Form */}
+      {showForm && (
+        <div className="mx-6 mt-4 p-4 border border-rose-200 bg-rose-50 rounded-lg">
+          <h4 className="font-semibold text-gray-700 mb-3">{editingId ? 'Edit Alteration' : 'Add New Alteration'}</h4>
+          <form onSubmit={handleSave} className="flex items-end gap-3 flex-wrap">
+            <div className="flex-1 min-w-[200px]">
+              <label className="block text-xs font-medium text-gray-500 mb-1">Alteration Name</label>
+              <input
+                type="text"
+                required
+                value={formData.name}
+                onChange={e => setFormData(p => ({ ...p, name: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-rose-400 outline-none"
+                placeholder="e.g. Hem Pants"
+                autoFocus
+              />
+            </div>
+            <div className="w-36">
+              <label className="block text-xs font-medium text-gray-500 mb-1">Price ($)</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">$</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  required
+                  value={formData.price}
+                  onChange={e => setFormData(p => ({ ...p, price: e.target.value }))}
+                  className="w-full pl-7 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-rose-400 outline-none"
+                  placeholder="0.00"
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="submit"
+                disabled={saving}
+                className="flex items-center px-4 py-2 bg-rose-500 text-white rounded-lg hover:bg-rose-600 font-medium text-sm disabled:opacity-50 gap-1"
+              >
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                {editingId ? 'Save Changes' : 'Add'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowForm(false)}
+                className="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 text-sm font-medium"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Alterations Table */}
+      <div className="p-6">
+        {alterations.length === 0 ? (
+          <div className="text-center py-10 text-gray-400">
+            <Scissors className="w-10 h-10 mx-auto mb-3 opacity-30" />
+            <p className="text-sm">No alterations defined yet. Click <strong>Add Alteration</strong> to get started.</p>
+          </div>
+        ) : (
+          <div className="overflow-hidden border border-gray-200 rounded-lg">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left font-semibold text-gray-600">Alteration Name</th>
+                  <th className="px-4 py-3 text-right font-semibold text-gray-600">Price</th>
+                  <th className="px-4 py-3 text-right font-semibold text-gray-600">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {alterations.map(alt => (
+                  <tr key={alt.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-3 font-medium text-gray-800">
+                      <span className="inline-flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-rose-400 inline-block flex-shrink-0"></span>
+                        {alt.name}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right font-bold text-gray-700">${Number(alt.price).toFixed(2)}</td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => openEdit(alt)}
+                          className="p-1.5 rounded hover:bg-blue-50 text-blue-500 transition-colors"
+                          title="Edit"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => setDeleteConfirm(alt)}
+                          disabled={deleting === alt.id}
+                          className="p-1.5 rounded hover:bg-red-50 text-red-500 transition-colors disabled:opacity-50"
+                          title="Delete"
+                        >
+                          {deleting === alt.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Delete Confirm Modal */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full mx-4">
+            <h4 className="text-lg font-bold text-gray-800 mb-2">Delete Alteration?</h4>
+            <p className="text-sm text-gray-600 mb-4">
+              Are you sure you want to delete <strong>"{deleteConfirm.name}"</strong>? This cannot be undone.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                className="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => confirmDelete(deleteConfirm)}
+                className="px-4 py-2 bg-red-500 text-white rounded-lg text-sm font-medium hover:bg-red-600"
+              >
+                Yes, Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ==========================================
 // MAIN COMPONENT
 // ==========================================
 export default function ClothingManagement() {
   // 🎯 Updated Tab State
-  const [activeTab, setActiveTab] = useState<'items' | 'starch' | 'size'>('items');
+  const [activeTab, setActiveTab] = useState<'items' | 'starch' | 'size' | 'alterations'>('items');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchTerm, setSearchTerm] = useState(''); // 🎯 Added searchTerm state
 
@@ -595,6 +871,13 @@ export default function ClothingManagement() {
         >
           <Ruler className="w-4 h-4 mr-2" /> Size Pricing
         </button>
+        <button
+          onClick={() => setActiveTab('alterations')}
+          className={`flex items-center pb-3 px-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'alterations' ? 'border-rose-500 text-rose-500' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+        >
+          <Scissors className="w-4 h-4 mr-2" /> Alterations
+        </button>
       </div>
 
       {/* 🎯 CONTENT RENDERING */}
@@ -602,6 +885,8 @@ export default function ClothingManagement() {
         <StarchSettings />
       ) : activeTab === 'size' ? (
         <SizeSettings />
+      ) : activeTab === 'alterations' ? (
+        <AlterationSettings />
       ) : (
         /* ITEMS INVENTORY TAB (Original Content) */
         <>

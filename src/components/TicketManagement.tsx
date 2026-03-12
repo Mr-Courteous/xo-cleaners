@@ -779,7 +779,14 @@ export default function TicketManagement() {
                   <tbody className="divide-y">
                     {selectedTicket.items?.map(i => (
                       <tr key={i.id}>
-                        <td className="px-4 py-2">{i.clothing_name}</td>
+                        <td className="px-4 py-2">
+                          <div>{i.clothing_name}</div>
+                          {(i.alterations || i.alteration_name) && (
+                            <div className="text-xs text-purple-600 font-medium mt-0.5 inline-flex items-center gap-1">
+                              <span className="bg-purple-100 text-purple-700 px-1.5 rounded-sm">Alt: {i.alteration_name || i.alterations}</span>
+                            </div>
+                          )}
+                        </td>
                         <td className="px-4 py-2 text-right">{i.quantity}</td>
                         <td className="px-4 py-2 text-right">${i.item_total.toFixed(2)}</td>
                       </tr>
