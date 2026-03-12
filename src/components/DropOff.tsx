@@ -65,6 +65,84 @@ const getAuthHeaders = () => {
 const RECEIPT_STORAGE_KEY = 'receiptConfig';
 const VIEW_MODE_STORAGE_KEY = 'dropOffViewMode';
 
+interface AlterationPanelProps {
+  alterationTypes: AlterationType[];
+  activeAlt: AlterationType | null;
+  altPrice: number;
+  disabled: boolean;
+  onSelect: (alt: AlterationType) => void;
+  onClear: () => void;
+}
+
+const AlterationPanel: React.FC<AlterationPanelProps> = ({
+  alterationTypes, activeAlt, altPrice, disabled, onSelect, onClear
+}) => {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        disabled={disabled}
+        className="w-full flex items-center justify-between px-3 py-2.5 text-left hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Alterations</span>
+          {activeAlt ? (
+            <span className="px-2 py-0.5 rounded-full text-[9px] font-bold" style={{ backgroundColor: '#f5f3ff', color: '#7c3aed' }}>
+              ✓ {activeAlt.name}
+            </span>
+          ) : (
+            <span className="text-[9px] text-gray-400 italic">None selected</span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {altPrice > 0 && (
+            <span className="text-[10px] font-bold" style={{ color: '#7c3aed' }}>+${altPrice.toFixed(2)}</span>
+          )}
+          <span className="text-gray-400 text-[10px]">{open ? '▲' : '▼'}</span>
+        </div>
+      </button>
+
+      {open && (
+        <div className="px-3 pb-3 border-t border-gray-100">
+          <div className="mt-2 flex flex-col gap-1 max-h-[80px] overflow-y-auto custom-scrollbar">
+            {alterationTypes.map((alt) => {
+              const isActive = activeAlt?.id === alt.id;
+              return (
+                <button
+                  key={alt.id}
+                  type="button"
+                  onClick={() => { onSelect(alt); setOpen(false); }}
+                  className="flex items-center justify-between w-full px-3 py-2 rounded-lg border text-left transition-all text-xs font-medium"
+                  style={
+                    isActive
+                      ? { backgroundColor: '#7c3aed', color: '#fff', borderColor: '#7c3aed' }
+                      : { backgroundColor: '#faf5ff', color: '#6d28d9', borderColor: '#e9d5ff' }
+                  }
+                >
+                  <span>{alt.name}</span>
+                  <span className="text-[10px] font-bold opacity-80">+${Number(alt.price).toFixed(2)}</span>
+                </button>
+              );
+            })}
+          </div>
+          {activeAlt && (
+            <button
+              type="button"
+              onClick={() => { onClear(); setOpen(false); }}
+              className="mt-2 w-full py-1.5 text-[10px] font-semibold text-red-500 hover:text-red-700 border border-red-200 rounded-lg hover:bg-red-50 transition-colors"
+            >
+              ✕ Clear Alteration
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // --- HELPER COMPONENT: UPCHARGE BUTTONS ---
 interface UpchargeProps {
   currentCharge: number;
@@ -1152,52 +1230,24 @@ export default function DropOff() {
                   </div>
                 </div>
 
-                {/* 2. ALTERATIONS PANEL */}
-                {alterationTypes.length > 0 && (
-                  <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200">
-                    <div className="flex items-center justify-between mb-2">
-                      <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">
-                        Alterations
-                      </h3>
-                      {selectedTicketIndex !== null && (items[selectedTicketIndex]?.alteration_price || 0) > 0 && (
-                        <span className="text-[10px] font-bold" style={{ color: '#7c3aed' }}>
-                          +${(items[selectedTicketIndex].alteration_price || 0).toFixed(2)}
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="flex flex-wrap gap-1 max-h-[140px] overflow-y-auto custom-scrollbar p-0.5">
-                      {alterationTypes.map((alt) => {
-                        const isActive = selectedTicketIndex !== null && items[selectedTicketIndex]?.alteration_id === alt.id;
-                        return (
-                          <button
-                            key={alt.id}
-                            onClick={() => handleQuickAlterationUpdate(alt)}
-                            disabled={selectedTicketIndex === null}
-                            className="px-2 py-1.5 text-[9px] font-bold rounded border transition-all disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
-                            style={
-                              isActive
-                                ? { backgroundColor: '#7c3aed', color: '#fff', borderColor: '#7c3aed' }
-                                : { backgroundColor: '#fff', color: '#7c3aed', borderColor: '#ddd6fe' }
-                            }
-                            title={`+$${alt.price.toFixed(2)}`}
-                          >
-                            {alt.name} (+${alt.price.toFixed(2)})
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    {selectedTicketIndex !== null && items[selectedTicketIndex]?.alteration_id && (
-                      <button
-                        onClick={() => handleQuickAlterationUpdate(null)}
-                        className="mt-2 w-full py-1.5 text-[9px] font-semibold text-red-500 hover:text-red-700 border border-red-200 rounded hover:bg-red-50 transition-colors"
-                      >
-                        Clear Selected Alteration
-                      </button>
-                    )}
-                  </div>
-                )}
+                {/* 2. ALTERATIONS PANEL — Collapsible */}
+                {alterationTypes.length > 0 && (() => {
+                  const selIdx = selectedTicketIndex;
+                  const selItem = selIdx !== null ? items[selIdx] : null;
+                  const activeAlt = selItem?.alteration_id
+                    ? alterationTypes.find(a => a.id === selItem.alteration_id)
+                    : null;
+                  return (
+                    <AlterationPanel
+                      alterationTypes={alterationTypes}
+                      activeAlt={activeAlt || null}
+                      altPrice={selItem?.alteration_price || 0}
+                      disabled={selIdx === null}
+                      onSelect={(alt) => handleQuickAlterationUpdate(alt)}
+                      onClear={() => handleQuickAlterationUpdate(null)}
+                    />
+                  );
+                })()}
 
                 {/* 3. CLOTHING SIZE PANEL */}
                 <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200">
