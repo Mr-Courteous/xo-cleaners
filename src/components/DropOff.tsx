@@ -147,10 +147,12 @@ const AlterationPanel: React.FC<AlterationPanelProps> = ({
 interface UpchargeProps {
   currentCharge: number;
   onUpdate: (amount: number) => void;
+  disabled?: boolean;
 }
 
-const UpchargeSelector = ({ currentCharge, onUpdate }: UpchargeProps) => {
+const UpchargeSelector = ({ currentCharge, onUpdate, disabled }: UpchargeProps) => {
   const handleAdd = (amount: number) => {
+    if (disabled) return;
     const newVal = Math.max(0, currentCharge + amount);
     // round to cents
     onUpdate(Math.round(newVal * 100) / 100);
@@ -164,7 +166,7 @@ const UpchargeSelector = ({ currentCharge, onUpdate }: UpchargeProps) => {
         <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
           Upcharge: <span className="text-red-600">${currentCharge.toFixed(2)}</span>
         </span>
-        {currentCharge > 0 && (
+        {currentCharge > 0 && !disabled && (
           <button
             onClick={() => onUpdate(0)}
             className="text-[10px] text-red-400 hover:text-red-600 underline"
@@ -174,7 +176,7 @@ const UpchargeSelector = ({ currentCharge, onUpdate }: UpchargeProps) => {
         )}
       </div>
 
-      <div className="flex flex-wrap gap-2 items-center">
+      <div className={`flex flex-wrap gap-2 items-center ${disabled ? 'opacity-40 cursor-not-allowed pointer-events-none' : ''}`}>
         {/* MINUS BUTTONS */}
         <div className="flex gap-1 bg-red-50 p-1 rounded">
           {increments.map((inc) => (
@@ -649,16 +651,17 @@ export default function DropOff() {
     const updatedItem = { ...oldItem, ...updates };
     newItems[index] = updatedItem;
 
+    const isAltOnly = updatedItem.alteration_behavior === 'alteration_only';
     const qty = updatedItem.quantity || 0;
 
     // 1. Starch Calculation
     const selectedStarch = updatedItem.starch_level as keyof typeof starchPrices;
-    const unitStarchPrice = starchPrices[selectedStarch] || 0;
+    const unitStarchPrice = isAltOnly ? 0 : (starchPrices[selectedStarch] || 0);
     updatedItem.starch_charge = unitStarchPrice * qty;
 
     // 2. Size Calculation
     const selectedSize = (updatedItem.clothing_size || 'm') as keyof typeof sizePrices;
-    const unitSizePrice = sizePrices[selectedSize] || 0;
+    const unitSizePrice = isAltOnly ? 0 : (sizePrices[selectedSize] || 0);
     updatedItem.size_charge = unitSizePrice * qty;
 
     // 3. Base Price
@@ -673,7 +676,7 @@ export default function DropOff() {
       updatedItem.margin = clothingType.margin;
     }
 
-    if (updatedItem.alteration_behavior === 'alteration_only') {
+    if (isAltOnly) {
       basePrice = 0;
     }
 
@@ -1196,6 +1199,54 @@ export default function DropOff() {
               {/* CONTROL PANEL CONTAINER */}
               <div className="space-y-3 mb-4">
 
+                {/* 0. SERVICE MODE PANEL */}
+                <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200" style={selectedTicketIndex !== null && items[selectedTicketIndex]?.alteration_behavior === 'alteration_only' ? { borderColor: '#7c3aed', backgroundColor: '#f5f3ff' } : {}}>
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                      Service Mode
+                    </h3>
+                    {selectedTicketIndex !== null && items[selectedTicketIndex]?.alteration_behavior === 'alteration_only' && (
+                      <span className="text-[9px] font-bold text-purple-700 uppercase">Alteration Only mode ACTIVE</span>
+                    )}
+                  </div>
+                  
+                  <button
+                    type="button"
+                    disabled={selectedTicketIndex === null}
+                    onClick={() => {
+                        if (selectedTicketIndex === null) return;
+                        const item = items[selectedTicketIndex];
+                        const isAltOnly = item.alteration_behavior === 'alteration_only';
+                        const newBehavior = isAltOnly ? 'none' : 'alteration_only';
+                        
+                        updateItem(selectedTicketIndex, { 
+                          alteration_behavior: newBehavior,
+                          starch_level: newBehavior === 'alteration_only' ? 'no_starch' : item.starch_level,
+                          crease: newBehavior === 'alteration_only' ? 'no_crease' : item.crease
+                        });
+                    }}
+                    className={`w-full flex items-center justify-center gap-2 py-2 rounded-lg border-2 transition-all font-bold text-sm ${
+                      selectedTicketIndex !== null && items[selectedTicketIndex]?.alteration_behavior === 'alteration_only'
+                        ? 'bg-purple-600 border-purple-600 text-white shadow-md'
+                        : 'bg-white border-gray-200 text-gray-600 hover:border-purple-300 hover:text-purple-600'
+                    } disabled:opacity-40 disabled:cursor-not-allowed`}
+                  >
+                    <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
+                      selectedTicketIndex !== null && items[selectedTicketIndex]?.alteration_behavior === 'alteration_only'
+                        ? 'bg-white border-white'
+                        : 'border-gray-300 bg-white'
+                    }`}>
+                      {selectedTicketIndex !== null && items[selectedTicketIndex]?.alteration_behavior === 'alteration_only' && (
+                        <div className="w-2.5 h-2.5 bg-purple-600 rounded-sm" />
+                      )}
+                    </div>
+                    <span>Alteration Only</span>
+                  </button>
+                  <p className="mt-1.5 text-[10px] text-gray-400 italic leading-tight">
+                    * Removes regular wash charges. Starch & Size options will be disabled.
+                  </p>
+                </div>
+
                 {/* 1. STARCH PANEL */}
                 <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200">
                   <div className="flex items-center justify-between mb-2">
@@ -1210,7 +1261,7 @@ export default function DropOff() {
                     )}
                   </div>
 
-                  <div className="grid grid-cols-5 gap-1">
+                  <div className={`grid grid-cols-5 gap-1 ${selectedTicketIndex !== null && items[selectedTicketIndex]?.alteration_behavior === 'alteration_only' ? 'opacity-40 pointer-events-none' : ''}`}>
                     {['no_starch', 'light', 'medium', 'heavy', 'extra_heavy'].map((key) => {
                       const levelDisplay = key.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()).replace('No Starch', 'None').replace('Extra Heavy', 'Ex.Hv');
                       const isActive = selectedTicketIndex !== null && items[selectedTicketIndex]?.starch_level === key;
@@ -1219,7 +1270,7 @@ export default function DropOff() {
                         <button
                           key={key}
                           onClick={() => handleQuickStarchUpdate(key)}
-                          disabled={selectedTicketIndex === null}
+                          disabled={selectedTicketIndex === null || items[selectedTicketIndex]?.alteration_behavior === 'alteration_only'}
                           className={`px-1 py-1.5 text-[9px] font-bold uppercase rounded border transition-all disabled:opacity-40 disabled:cursor-not-allowed`}
                           style={isActive ? { backgroundColor: colors.primaryColor, color: '#fff', borderColor: colors.primaryColor } : undefined}
                         >
@@ -1263,7 +1314,7 @@ export default function DropOff() {
                     )}
                   </div>
 
-                  <div className="grid grid-cols-5 gap-1">
+                  <div className={`grid grid-cols-5 gap-1 ${selectedTicketIndex !== null && items[selectedTicketIndex]?.alteration_behavior === 'alteration_only' ? 'opacity-40 pointer-events-none' : ''}`}>
                     {['s', 'm', 'l', 'xl', 'xxl'].map((key) => {
                       const isActive = selectedTicketIndex !== null && (items[selectedTicketIndex]?.clothing_size || 'm') === key;
 
@@ -1271,7 +1322,7 @@ export default function DropOff() {
                         <button
                           key={key}
                           onClick={() => handleQuickSizeUpdate(key)}
-                          disabled={selectedTicketIndex === null}
+                          disabled={selectedTicketIndex === null || items[selectedTicketIndex]?.alteration_behavior === 'alteration_only'}
                           className={`px-1 py-1.5 text-[10px] font-bold uppercase rounded border transition-all disabled:opacity-40 disabled:cursor-not-allowed`}
                           style={isActive ? { backgroundColor: colors.secondaryColor, color: '#fff', borderColor: colors.secondaryColor } : undefined}
                         >
@@ -1343,13 +1394,15 @@ export default function DropOff() {
                         <label className="flex items-center gap-1 cursor-pointer ml-1">
                           <input
                             type="checkbox"
-                            checked={item.crease === 'crease'}
+                            disabled={item.alteration_behavior === 'alteration_only'}
+                            checked={item.crease === 'crease' && item.alteration_behavior !== 'alteration_only'}
                             onChange={(e) => updateItem(index, { crease: e.target.checked ? 'crease' : 'no_crease' })}
-                            className="rounded w-3 h-3"
+                            className="rounded w-3 h-3 disabled:opacity-30"
                             style={{ accentColor: colors.primaryColor }}
                           />
                           <span className="text-[9px] text-gray-500">Crease</span>
                         </label>
+
                       </div>
 
                       {/* Total Price */}
@@ -1360,6 +1413,7 @@ export default function DropOff() {
 
                     {/* ROW 3: UPCHARGE BUTTONS */}
                     <UpchargeSelector
+                      disabled={item.alteration_behavior === 'alteration_only'}
                       currentCharge={item.additional_charge || 0}
                       onUpdate={(newAmount) => {
                         // 1. Remove ANY existing price tags like (+$0.10), (+$0.20)

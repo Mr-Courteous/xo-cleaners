@@ -1597,11 +1597,14 @@ def create_ticket(
             # Total extra charges now includes the looked-up alteration price
             total_extra_charges = manual_alteration_charge + final_alteration_price + instruction_charge + starch_charge + size_charge
 
+            # Calc Item Total
             raw_behavior = getattr(item_create, 'alteration_behavior', 'none')
             behavior_val = raw_behavior.value if hasattr(raw_behavior, 'value') else raw_behavior
             
             if behavior_val == 'alteration_only':
-                item_total_price = total_extra_charges
+                # Alteration Only: ignore regular charges (including starch/size) 
+                # but keep the alteration price and any manual additional charges.
+                item_total_price = manual_alteration_charge + final_alteration_price
             else:
                 item_total_price = (base_wash_price * quantity) + total_extra_charges
             
@@ -2138,11 +2141,14 @@ def bulk_create_tickets(
                 total_extra_charges = manual_alteration_charge + final_alteration_price + instruction_charge + starch_charge + size_charge
 
                 # Calc Item Total
+                # Calc Item Total
                 raw_behavior = getattr(item_req, 'alteration_behavior', 'none')
                 behavior_val = raw_behavior.value if hasattr(raw_behavior, 'value') else raw_behavior
 
                 if behavior_val == 'alteration_only':
-                    item_total_price = total_extra_charges
+                    # Alteration Only: ignore regular charges (including starch/size)
+                    # but keep the alteration price and any manual additional charges.
+                    item_total_price = manual_alteration_charge + final_alteration_price
                 else:
                     item_total_price = (base_wash_price * quantity) + total_extra_charges
 
