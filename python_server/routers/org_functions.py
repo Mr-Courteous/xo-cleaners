@@ -1608,6 +1608,9 @@ def create_ticket(
             else:
                 item_total_price = (base_wash_price * quantity) + total_extra_charges
             
+            # Ensure price never goes below zero
+            item_total_price = max(decimal.Decimal('0.0'), item_total_price)
+            
             total_amount += item_total_price
 
             raw_starch = item_create.starch_level
@@ -2151,6 +2154,9 @@ def bulk_create_tickets(
                     item_total_price = manual_alteration_charge + final_alteration_price
                 else:
                     item_total_price = (base_wash_price * quantity) + total_extra_charges
+
+                # Ensure price never goes below zero
+                item_total_price = max(decimal.Decimal('0.0'), item_total_price)
 
                 ticket_total += item_total_price
 

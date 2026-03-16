@@ -689,7 +689,8 @@ export default function DropOff() {
     const sizeCharge = updatedItem.size_charge || 0;
     const alterationCharge = updatedItem.alteration_price || 0;
 
-    updatedItem.item_total = (basePrice * qty) + altCharge + instCharge + starchCharge + sizeCharge + alterationCharge;
+    const totalBeforeFloor = (basePrice * qty) + altCharge + instCharge + starchCharge + sizeCharge + alterationCharge;
+    updatedItem.item_total = Math.max(0, totalBeforeFloor);
 
     setItems(newItems);
   };
@@ -1211,33 +1212,31 @@ export default function DropOff() {
                       <span className="text-[9px] font-bold text-purple-700 uppercase">Alteration Only mode ACTIVE</span>
                     )}
                   </div>
-                  
+
                   <button
                     type="button"
                     disabled={selectedTicketIndex === null}
                     onClick={() => {
-                        if (selectedTicketIndex === null) return;
-                        const item = items[selectedTicketIndex];
-                        const isAltOnly = item.alteration_behavior === 'alteration_only';
-                        const newBehavior = isAltOnly ? 'none' : 'alteration_only';
-                        
-                        updateItem(selectedTicketIndex, { 
-                          alteration_behavior: newBehavior,
-                          starch_level: newBehavior === 'alteration_only' ? 'no_starch' : item.starch_level,
-                          crease: newBehavior === 'alteration_only' ? 'no_crease' : item.crease
-                        });
+                      if (selectedTicketIndex === null) return;
+                      const item = items[selectedTicketIndex];
+                      const isAltOnly = item.alteration_behavior === 'alteration_only';
+                      const newBehavior = isAltOnly ? 'none' : 'alteration_only';
+
+                      updateItem(selectedTicketIndex, {
+                        alteration_behavior: newBehavior,
+                        starch_level: newBehavior === 'alteration_only' ? 'no_starch' : item.starch_level,
+                        crease: newBehavior === 'alteration_only' ? 'no_crease' : item.crease
+                      });
                     }}
-                    className={`w-full flex items-center justify-center gap-2 py-2 rounded-lg border-2 transition-all font-bold text-sm ${
-                      selectedTicketIndex !== null && items[selectedTicketIndex]?.alteration_behavior === 'alteration_only'
+                    className={`w-full flex items-center justify-center gap-2 py-2 rounded-lg border-2 transition-all font-bold text-sm ${selectedTicketIndex !== null && items[selectedTicketIndex]?.alteration_behavior === 'alteration_only'
                         ? 'bg-purple-600 border-purple-600 text-white shadow-md'
                         : 'bg-white border-gray-200 text-gray-600 hover:border-purple-300 hover:text-purple-600'
-                    } disabled:opacity-40 disabled:cursor-not-allowed`}
+                      } disabled:opacity-40 disabled:cursor-not-allowed`}
                   >
-                    <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
-                      selectedTicketIndex !== null && items[selectedTicketIndex]?.alteration_behavior === 'alteration_only'
+                    <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${selectedTicketIndex !== null && items[selectedTicketIndex]?.alteration_behavior === 'alteration_only'
                         ? 'bg-white border-white'
                         : 'border-gray-300 bg-white'
-                    }`}>
+                      }`}>
                       {selectedTicketIndex !== null && items[selectedTicketIndex]?.alteration_behavior === 'alteration_only' && (
                         <div className="w-2.5 h-2.5 bg-purple-600 rounded-sm" />
                       )}
