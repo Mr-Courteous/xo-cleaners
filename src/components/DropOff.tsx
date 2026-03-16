@@ -152,8 +152,8 @@ interface UpchargeProps {
 
 const UpchargeSelector = ({ currentCharge, onUpdate, disabled }: UpchargeProps) => {
   const handleAdd = (amount: number) => {
-    if (disabled) return;
-    const newVal = Math.max(0, currentCharge + amount);
+    // if (disabled) return; // Keep it enabled for manual overrides
+    const newVal = currentCharge + amount;
     // round to cents
     onUpdate(Math.round(newVal * 100) / 100);
   };
@@ -164,43 +164,45 @@ const UpchargeSelector = ({ currentCharge, onUpdate, disabled }: UpchargeProps) 
     <div className="flex flex-col mt-2 pt-2 border-t border-gray-100" onClick={(e) => e.stopPropagation()}>
       <div className="flex justify-between items-center mb-1">
         <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-          Upcharge: <span className="text-red-600">${currentCharge.toFixed(2)}</span>
+          Price Adjustment: <span className={currentCharge >= 0 ? "text-red-600" : "text-green-600"}>
+            $ {Math.abs(currentCharge).toFixed(2)}
+          </span>
         </span>
-        {currentCharge > 0 && !disabled && (
+        {currentCharge !== 0 && (
           <button
             onClick={() => onUpdate(0)}
-            className="text-[10px] text-red-400 hover:text-red-600 underline"
+            className="text-[10px] text-gray-400 hover:text-red-600 underline"
           >
             Reset
           </button>
         )}
       </div>
 
-      <div className={`flex flex-wrap gap-2 items-center ${disabled ? 'opacity-40 cursor-not-allowed pointer-events-none' : ''}`}>
-        {/* MINUS BUTTONS */}
-        <div className="flex gap-1 bg-red-50 p-1 rounded">
-          {increments.map((inc) => (
+      <div className="flex flex-wrap gap-2 items-center">
+        {/* DISCOUNTS (Minus) */}
+        <div className="flex gap-1 bg-green-50 p-1 rounded">
+          {[0.10, 0.50, 1.00, 5.00].map((inc) => (
             <button
               key={`minus-${inc}`}
               type="button"
               onClick={() => handleAdd(-inc)}
-              className="px-2 py-1 text-[10px] font-bold rounded bg-white border border-red-200 text-red-700 hover:bg-red-100"
+              className="px-2 py-1 text-[10px] font-bold rounded bg-white border border-green-200 text-green-700 hover:bg-green-100"
             >
-              -${inc.toFixed(2)}
+              ${inc.toFixed(2)}
             </button>
           ))}
         </div>
 
-        {/* ADD BUTTONS */}
-        <div className="flex gap-1 bg-green-50 p-1 rounded">
-          {increments.map((inc) => (
+        {/* EXTRA CHARGES (Plus) */}
+        <div className="flex gap-1 bg-red-50 p-1 rounded">
+          {[0.10, 0.50, 1.00, 5.00].map((inc) => (
             <button
               key={`plus-${inc}`}
               type="button"
               onClick={() => handleAdd(inc)}
-              className="px-2 py-1 text-[10px] font-bold rounded bg-white border border-green-200 text-green-700 hover:bg-green-100"
+              className="px-2 py-1 text-[10px] font-bold rounded bg-white border border-red-200 text-red-700 hover:bg-red-100"
             >
-              +${inc.toFixed(2)}
+              ${inc.toFixed(2)}
             </button>
           ))}
         </div>
@@ -1411,9 +1413,9 @@ export default function DropOff() {
                       </span>
                     </div>
 
-                    {/* ROW 3: UPCHARGE BUTTONS */}
+                    {/* ROW 3: ADJUSTMENT BUTTONS */}
                     <UpchargeSelector
-                      disabled={item.alteration_behavior === 'alteration_only'}
+                      disabled={false} // Always open for manual overrides
                       currentCharge={item.additional_charge || 0}
                       onUpdate={(newAmount) => {
                         // 1. Remove ANY existing price tags like (+$0.10), (+$0.20)
