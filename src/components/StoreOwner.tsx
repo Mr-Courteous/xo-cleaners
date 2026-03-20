@@ -179,51 +179,79 @@ export default function StoreOwner({ embedded = false }: StoreOwnerProps) {
 
   if (!decodedToken) return null;
 
-  // If embedded, only render the content without sidebar/layout
+  // If embedded, render content with header and footer but no sidebar
   if (embedded) {
     return (
       <ColorsScope>
-        <div className="space-y-8 animate-in fade-in duration-500">
-          {/* Overview Navigation Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {[
-              { id: 'staff', label: 'Staff Management', desc: 'Team permissions', icon: Briefcase, color: colors.primaryColor },
-              { id: 'tickets', label: 'Ticket Center', desc: 'View all orders', icon: TicketIcon, color: '#10b981' },
-              { id: 'customers', label: 'Customer Base', desc: 'Manage profiles', icon: Users, color: '#3b82f6' },
-              { id: 'analytics', label: 'Analytics', desc: 'Performance data', icon: BarChart3, color: '#f59e0b' },
-            ].map((card) => (
-              <div
-                key={card.id}
-                onClick={() => setActiveView(card.id)}
-                className="group bg-white p-6 rounded-2xl shadow-sm border border-black/5 cursor-pointer hover:shadow-md transition-all hover:-translate-y-1"
-              >
-                <div className="flex justify-between items-start mb-4">
-                  <div className="p-3 rounded-xl" style={{ backgroundColor: `${card.color}15`, color: card.color }}>
-                    <card.icon size={24} />
-                  </div>
-                  <ArrowRight size={18} className="text-gray-300 group-hover:translate-x-1 transition-transform" />
-                </div>
-                <h3 className="font-bold text-gray-800">{card.label}</h3>
-                <p className="text-xs text-gray-500 mt-1">{card.desc}</p>
+        <div className="flex flex-col min-h-screen">
+          <Header />
+          <header className="h-16 bg-white/40 backdrop-blur-md border-b border-black/5 flex items-center justify-between px-8 sticky top-0 z-20">
+            <div className="flex items-center gap-4">
+              {activeView !== 'dashboard' && (
+                <button onClick={() => setActiveView('dashboard')} className="flex items-center gap-2 px-4 py-2 bg-white hover:bg-gray-50 rounded-xl border border-gray-100 text-sm font-black shadow-sm">
+                  <ArrowLeft size={16} /> DASHBOARD
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="hidden md:block text-right">
+                <p className="text-xs font-black text-gray-400 uppercase tracking-widest leading-none mb-1">{decodedToken.org_type.replace(/_/g, ' ')}</p>
+                <p className="text-sm font-bold">{decodedToken.organization_name}</p>
               </div>
-            ))}
-          </div>
-
-          {/* Audit Log Section */}
-          <div className="bg-white rounded-2xl shadow-sm border border-black/5 overflow-hidden">
-            <div className="px-6 py-4 border-b border-black/5 flex items-center gap-2 bg-gray-50/50">
-              <History size={18} className="text-gray-400" />
-              <h3 className="font-bold text-gray-800">System Activity Audit</h3>
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-black shadow-lg" style={{ backgroundColor: colors.primaryColor }}>
+                {decodedToken.organization_name.substring(0, 2).toUpperCase()}
+              </div>
             </div>
-            <div className="p-4">
-              <AuditLogTable />
-            </div>
-          </div>
+          </header>
 
-          {/* Render active view content */}
-          <div className="mt-8">
-            {renderContent()}
-          </div>
+          <main className="flex-1 overflow-y-auto p-8">
+            <div className="max-w-7xl mx-auto">
+              <div className="space-y-8 animate-in fade-in duration-500">
+                {/* Overview Navigation Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                  {[
+                    { id: 'staff', label: 'Staff Management', desc: 'Team permissions', icon: Briefcase, color: colors.primaryColor },
+                    { id: 'tickets', label: 'Ticket Center', desc: 'View all orders', icon: TicketIcon, color: '#10b981' },
+                    { id: 'customers', label: 'Customer Base', desc: 'Manage profiles', icon: Users, color: '#3b82f6' },
+                    { id: 'analytics', label: 'Analytics', desc: 'Performance data', icon: BarChart3, color: '#f59e0b' },
+                  ].map((card) => (
+                    <div
+                      key={card.id}
+                      onClick={() => setActiveView(card.id)}
+                      className="group bg-white p-6 rounded-2xl shadow-sm border border-black/5 cursor-pointer hover:shadow-md transition-all hover:-translate-y-1"
+                    >
+                      <div className="flex justify-between items-start mb-4">
+                        <div className="p-3 rounded-xl" style={{ backgroundColor: `${card.color}15`, color: card.color }}>
+                          <card.icon size={24} />
+                        </div>
+                        <ArrowRight size={18} className="text-gray-300 group-hover:translate-x-1 transition-transform" />
+                      </div>
+                      <h3 className="font-bold text-gray-800">{card.label}</h3>
+                      <p className="text-xs text-gray-500 mt-1">{card.desc}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Audit Log Section */}
+                <div className="bg-white rounded-2xl shadow-sm border border-black/5 overflow-hidden">
+                  <div className="px-6 py-4 border-b border-black/5 flex items-center gap-2 bg-gray-50/50">
+                    <History size={18} className="text-gray-400" />
+                    <h3 className="font-bold text-gray-800">System Activity Audit</h3>
+                  </div>
+                  <div className="p-4">
+                    <AuditLogTable />
+                  </div>
+                </div>
+
+                {/* Render active view content */}
+                <div className="mt-8">
+                  {renderContent()}
+                </div>
+              </div>
+            </div>
+          </main>
+
+          <Footer />
         </div>
       </ColorsScope>
     );
