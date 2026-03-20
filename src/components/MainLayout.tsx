@@ -71,7 +71,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
 
   const menuItems = useMemo(() => {
     const allItems = [
-      { id: 'dashboard', path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, category: 'Main' },
+      { id: 'dashboard', path: '/org', label: 'Dashboard', icon: LayoutDashboard, category: 'Main' },
       { id: 'dropoff', path: '/dropoff', label: 'Drop Off', icon: Package, category: 'Operations' },
       { id: 'pickup', path: '/pickup', label: 'Pick Up', icon: Clock, category: 'Operations' },
       { id: 'tickets', path: '/tickets', label: 'Tickets', icon: TicketIcon, category: 'Operations' },

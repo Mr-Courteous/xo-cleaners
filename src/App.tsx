@@ -129,7 +129,7 @@ function AppContent() {
       <Route path="/store-owner-login" element={<Login />} />
       <Route path="/platform-admin-login" element={<PlatformAdmin />} />
       <Route path="/store-admin" element={<StoreAdmin />} />
-      <Route path="/org" element={<StoreOwner />} />
+      <Route path="/org" element={<MainLayout><StoreOwner embedded /></MainLayout>} />
       <Route path="/about" element={<About />} />
       <Route path="/services" element={<Services />} />
       <Route path="/contact" element={<Contact />} />
