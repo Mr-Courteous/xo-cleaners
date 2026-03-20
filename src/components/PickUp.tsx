@@ -409,7 +409,7 @@ export default function PickUp() {
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-3 mb-6">
               <div className="flex justify-between items-center">
                 <h3 className="font-semibold text-gray-700">Filters</h3>
-                <button 
+                <button
                   onClick={() => setShowFilters(false)}
                   className="text-gray-500 hover:text-gray-700"
                 >
@@ -421,7 +421,7 @@ export default function PickUp() {
                 {/* Status Filter */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                  <select 
+                  <select
                     value={statusFilter || ''}
                     onChange={(e) => setStatusFilter(e.target.value || null)}
                     className="w-full p-2 border border-gray-300 rounded-lg text-sm"
@@ -436,7 +436,7 @@ export default function PickUp() {
                 {/* Date From */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">From Date</label>
-                  <input 
+                  <input
                     type="date"
                     value={dateFromFilter}
                     onChange={(e) => setDateFromFilter(e.target.value)}
@@ -447,7 +447,7 @@ export default function PickUp() {
                 {/* Date To */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">To Date</label>
-                  <input 
+                  <input
                     type="date"
                     value={dateToFilter}
                     onChange={(e) => setDateToFilter(e.target.value)}
@@ -458,7 +458,7 @@ export default function PickUp() {
                 {/* Rack Filter */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Rack Number</label>
-                  <input 
+                  <input
                     type="text"
                     value={rackFilter}
                     onChange={(e) => setRackFilter(e.target.value)}
@@ -470,7 +470,7 @@ export default function PickUp() {
 
               {/* Clear Filters Button */}
               <div className="pt-2 border-t border-gray-200">
-                <button 
+                <button
                   onClick={clearFilters}
                   className="text-sm text-blue-600 hover:text-blue-800 font-medium"
                 >
@@ -640,181 +640,181 @@ export default function PickUp() {
 
       {/* --- STEP 3: PAYMENT & FINANCIALS --- */}
       {/* --- STEP 3: PAYMENT & FINANCIALS --- */}
-{step === 'payment' && selectedTicket && (
-  <div className="max-w-4xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-5 animate-in fade-in zoom-in-95 duration-300">
+      {step === 'payment' && selectedTicket && (
+        <div className="max-w-4xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-5 animate-in fade-in zoom-in-95 duration-300">
 
-    {/* --- LEFT: WALLET / HISTORY (lg:col-span-5) --- */}
-    <div className="lg:col-span-5 space-y-4">
-      <button
-        onClick={handleBack}
-        className="flex items-center gap-2 text-slate-400 font-bold text-[8px] uppercase tracking-widest hover:text-indigo-600 transition-colors mb-1"
-      >
-        <ArrowLeft size={10} /> Back to Ticket
-      </button>
+          {/* --- LEFT: WALLET / HISTORY (lg:col-span-5) --- */}
+          <div className="lg:col-span-5 space-y-4">
+            <button
+              onClick={handleBack}
+              className="flex items-center gap-2 text-slate-400 font-bold text-[8px] uppercase tracking-widest hover:text-indigo-600 transition-colors mb-1"
+            >
+              <ArrowLeft size={10} /> Back to Ticket
+            </button>
 
-      {/* Customer Wallet Card - High Contrast Slate */}
-      <div className="bg-slate-900 rounded-[1.2rem] p-4 text-white shadow-lg relative overflow-hidden border border-slate-800">
-        <div className="absolute -top-10 -right-10 p-14 bg-indigo-500/5 rounded-full pointer-events-none blur-3xl"></div>
+            {/* Customer Wallet Card - High Contrast Slate */}
+            <div className="bg-slate-900 rounded-[1.2rem] p-4 text-white shadow-lg relative overflow-hidden border border-slate-800">
+              <div className="absolute -top-10 -right-10 p-14 bg-indigo-500/5 rounded-full pointer-events-none blur-3xl"></div>
 
-        <div className="relative z-10">
-          <div className="flex items-center gap-2 mb-5">
-            <div className="p-1.5 bg-indigo-600 rounded-md">
-              <Wallet className="text-white" size={12} />
+              <div className="relative z-10">
+                <div className="flex items-center gap-2 mb-5">
+                  <div className="p-1.5 bg-indigo-600 rounded-md">
+                    <Wallet className="text-white" size={12} />
+                  </div>
+                  <h3 className="font-bold text-[9px] uppercase tracking-widest text-indigo-100/70">Customer Wallet</h3>
+                </div>
+
+                {loadingProfile ? (
+                  <div className="animate-pulse space-y-2">
+                    <div className="h-2 bg-slate-800 rounded w-1/4"></div>
+                    <div className="h-5 bg-slate-800 rounded w-1/2"></div>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <p className="text-slate-500 text-[7.5px] uppercase tracking-wider font-bold mb-0.5">Previous Debt</p>
+                        <p className="text-lg font-bold text-rose-400/90 tracking-tight">
+                          ${checkoutProfile?.total_debt.toFixed(2) || '0.00'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-slate-500 text-[7.5px] uppercase tracking-wider font-bold mb-0.5">Store Credit</p>
+                        <p className="text-lg font-bold text-emerald-400/90 tracking-tight">
+                          ${checkoutProfile?.total_credit.toFixed(2) || '0.00'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-slate-800/60">
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <p className="text-slate-500 font-bold uppercase text-[7.5px] tracking-widest mb-0.5">Net Balance</p>
+                          <p className={`text-xl font-bold tracking-tight ${(checkoutProfile?.net_balance || 0) > 0.01 ? 'text-rose-500' : 'text-emerald-500'}`}>
+                            {(checkoutProfile?.net_balance || 0) > 0.01 ? '-' : '+'}
+                            ${Math.abs(checkoutProfile?.net_balance || 0).toFixed(2)}
+                          </p>
+                        </div>
+                        <div className={`p-1 rounded-full ${(checkoutProfile?.net_balance || 0) > 0.01 ? 'bg-rose-500/10 text-rose-500' : 'bg-emerald-500/10 text-emerald-500'}`}>
+                          {(checkoutProfile?.net_balance || 0) > 0.01 ? <AlertCircle size={10} /> : <CheckCircle size={10} />}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
-            <h3 className="font-bold text-[9px] uppercase tracking-widest text-indigo-100/70">Customer Wallet</h3>
+
+            {/* Other Unpaid Tickets List */}
+            {checkoutProfile && checkoutProfile.tickets.some(t => !t.is_fully_paid && t.id !== selectedTicket.id) && (
+              <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm">
+                <h4 className="font-bold text-[8px] text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-2">
+                  <History size={10} className="text-indigo-400" /> Unpaid History
+                </h4>
+                <div className="space-y-1 max-h-32 overflow-y-auto pr-1 custom-scrollbar">
+                  {checkoutProfile.tickets
+                    .filter(t => !t.is_fully_paid && t.id !== selectedTicket.id)
+                    .map(t => (
+                      <button
+                        key={t.id}
+                        onClick={() => handleViewUnpaidTicketDetail(t.id)}
+                        disabled={loadingDetail}
+                        className="w-full flex justify-between items-center p-2 bg-slate-50 hover:bg-indigo-50 rounded-lg border border-slate-100 hover:border-indigo-200 cursor-pointer transition-all group disabled:opacity-50"
+                      >
+                        <div className="text-left">
+                          <p className="font-bold text-slate-700 text-[10px] group-hover:text-indigo-700">#{ }</p>
+                          <p className="text-[7px] text-slate-400 font-medium uppercase">{new Date(t.created_at).toLocaleDateString()}</p>
+                        </div>
+                        <span className="font-bold text-rose-600 text-[11px]">${t.remaining_balance.toFixed(2)}</span>
+                      </button>
+                    ))}
+                </div>
+              </div>
+            )}
           </div>
 
-          {loadingProfile ? (
-            <div className="animate-pulse space-y-2">
-              <div className="h-2 bg-slate-800 rounded w-1/4"></div>
-              <div className="h-5 bg-slate-800 rounded w-1/2"></div>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-2">
+          {/* --- RIGHT: PAYMENT INPUT (lg:col-span-7) --- */}
+          <div className="lg:col-span-7 bg-white p-6 rounded-[1.5rem] shadow-lg border border-slate-100 flex flex-col relative overflow-hidden">
+
+            <div className="relative z-10 flex flex-col h-full">
+              <div className="flex items-center justify-between mb-5">
                 <div>
-                  <p className="text-slate-500 text-[7.5px] uppercase tracking-wider font-bold mb-0.5">Previous Debt</p>
-                  <p className="text-lg font-bold text-rose-400/90 tracking-tight">
-                    ${checkoutProfile?.total_debt.toFixed(2) || '0.00'}
-                  </p>
+                  <h2 className="text-lg font-bold text-slate-900 tracking-tight">Checkout</h2>
+                  <p className="text-slate-400 font-medium text-[10px]">Confirm payment details</p>
                 </div>
+                <Calculator className="text-slate-100" size={24} />
+              </div>
+
+              {/* Current Ticket Summary Box */}
+              <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 flex justify-between items-center mb-5">
                 <div>
-                  <p className="text-slate-500 text-[7.5px] uppercase tracking-wider font-bold mb-0.5">Store Credit</p>
-                  <p className="text-lg font-bold text-emerald-400/90 tracking-tight">
-                    ${checkoutProfile?.total_credit.toFixed(2) || '0.00'}
-                  </p>
+                  <p className="text-slate-400 font-bold uppercase text-[7.5px] tracking-widest mb-0.5">Order Selected</p>
+                  <p className="text-slate-800 font-bold text-sm">#{selectedTicket.ticket_number}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-slate-400 font-bold uppercase text-[7.5px] tracking-widest mb-0.5">Balance Due</p>
+                  <p className="text-xl font-bold text-indigo-600 tracking-tight">${financials.balance.toFixed(2)}</p>
                 </div>
               </div>
 
-              <div className="pt-3 border-t border-slate-800/60">
-                <div className="flex justify-between items-center">
-                  <div>
-                    <p className="text-slate-500 font-bold uppercase text-[7.5px] tracking-widest mb-0.5">Net Balance</p>
-                    <p className={`text-xl font-bold tracking-tight ${(checkoutProfile?.net_balance || 0) > 0.01 ? 'text-rose-500' : 'text-emerald-500'}`}>
-                      {(checkoutProfile?.net_balance || 0) > 0.01 ? '-' : '+'}
-                      ${Math.abs(checkoutProfile?.net_balance || 0).toFixed(2)}
+              <div className="space-y-4 flex-grow">
+                {/* Amount Tendered Field */}
+                <div>
+                  <label className="block text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1 ml-1">Amount Tendered</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300 font-bold text-lg">$</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={cashTendered}
+                      onChange={(e) => setCashTendered(e.target.value)}
+                      className="w-full pl-8 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xl font-bold text-slate-900 focus:ring-4 focus:ring-emerald-500/5 focus:border-emerald-500 outline-none transition-all"
+                      placeholder="0.00"
+                      autoFocus
+                    />
+                  </div>
+                </div>
+
+                {/* Change & Remaining Balance Row */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="p-3 rounded-lg border border-slate-100 bg-slate-50/50">
+                    <p className="text-[7.5px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Change</p>
+                    <p className={`text-md font-bold ${paymentCalc.status === 'OVERPAID' ? 'text-emerald-600' : 'text-slate-300'}`}>
+                      ${paymentCalc.status === 'OVERPAID' ? paymentCalc.amount.toFixed(2) : '0.00'}
                     </p>
                   </div>
-                  <div className={`p-1 rounded-full ${(checkoutProfile?.net_balance || 0) > 0.01 ? 'bg-rose-500/10 text-rose-500' : 'bg-emerald-500/10 text-emerald-500'}`}>
-                    {(checkoutProfile?.net_balance || 0) > 0.01 ? <AlertCircle size={10} /> : <CheckCircle size={10} />}
+
+                  <div className="p-3 rounded-lg border border-slate-100 bg-slate-50/50">
+                    <p className="text-[7.5px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Remaining</p>
+                    <p className={`text-md font-bold ${paymentCalc.status === 'PARTIAL' ? 'text-rose-600' : 'text-slate-300'}`}>
+                      ${paymentCalc.status === 'PARTIAL' ? paymentCalc.amount.toFixed(2) : '0.00'}
+                    </p>
                   </div>
                 </div>
               </div>
-            </div>
-          )}
-        </div>
-      </div>
 
-      {/* Other Unpaid Tickets List */}
-      {checkoutProfile && checkoutProfile.tickets.some(t => !t.is_fully_paid && t.id !== selectedTicket.id) && (
-        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm">
-          <h4 className="font-bold text-[8px] text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-2">
-            <History size={10} className="text-indigo-400" /> Unpaid History
-          </h4>
-          <div className="space-y-1 max-h-32 overflow-y-auto pr-1 custom-scrollbar">
-            {checkoutProfile.tickets
-              .filter(t => !t.is_fully_paid && t.id !== selectedTicket.id)
-              .map(t => (
+              {/* Action Button Area - THEMED */}
+              <div className="mt-5">
                 <button
-                  key={t.id}
-                  onClick={() => handleViewUnpaidTicketDetail(t.id)}
-                  disabled={loadingDetail}
-                  className="w-full flex justify-between items-center p-2 bg-slate-50 hover:bg-indigo-50 rounded-lg border border-slate-100 hover:border-indigo-200 cursor-pointer transition-all group disabled:opacity-50"
+                  onClick={handleCompletePickup}
+                  disabled={loading || !cashTendered}
+                  className={`w-full py-3.5 rounded-lg text-[10px] font-bold text-white shadow transition-all active:scale-[0.98] flex justify-center items-center gap-2 uppercase tracking-widest`}
+                  style={paymentCalc.status === 'PARTIAL' ? undefined : { backgroundColor: colors.primaryColor }}
                 >
-                  <div className="text-left">
-                    <p className="font-bold text-slate-700 text-[10px] group-hover:text-indigo-700">#{ }</p>
-                    <p className="text-[7px] text-slate-400 font-medium uppercase">{new Date(t.created_at).toLocaleDateString()}</p>
-                  </div>
-                  <span className="font-bold text-rose-600 text-[11px]">${t.remaining_balance.toFixed(2)}</span>
+                  {loading ? <Loader2 className="animate-spin" size={14} /> : (
+                    <>
+                      <CreditCard size={14} />
+                      {paymentCalc.status === 'PARTIAL' ? 'Confirm Partial Payment' : 'Complete Pickup & Print'}
+                    </>
+                  )}
                 </button>
-              ))}
+              </div>
+            </div>
           </div>
         </div>
       )}
-    </div>
-
-    {/* --- RIGHT: PAYMENT INPUT (lg:col-span-7) --- */}
-    <div className="lg:col-span-7 bg-white p-6 rounded-[1.5rem] shadow-lg border border-slate-100 flex flex-col relative overflow-hidden">
-      
-      <div className="relative z-10 flex flex-col h-full">
-        <div className="flex items-center justify-between mb-5">
-          <div>
-            <h2 className="text-lg font-bold text-slate-900 tracking-tight">Checkout</h2>
-            <p className="text-slate-400 font-medium text-[10px]">Confirm payment details</p>
-          </div>
-          <Calculator className="text-slate-100" size={24} />
-        </div>
-
-        {/* Current Ticket Summary Box */}
-        <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 flex justify-between items-center mb-5">
-          <div>
-            <p className="text-slate-400 font-bold uppercase text-[7.5px] tracking-widest mb-0.5">Order Selected</p>
-            <p className="text-slate-800 font-bold text-sm">#{selectedTicket.ticket_number}</p>
-          </div>
-          <div className="text-right">
-            <p className="text-slate-400 font-bold uppercase text-[7.5px] tracking-widest mb-0.5">Balance Due</p>
-            <p className="text-xl font-bold text-indigo-600 tracking-tight">${financials.balance.toFixed(2)}</p>
-          </div>
-        </div>
-
-        <div className="space-y-4 flex-grow">
-          {/* Amount Tendered Field */}
-          <div>
-            <label className="block text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1 ml-1">Amount Tendered</label>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300 font-bold text-lg">$</span>
-              <input
-                type="number"
-                step="0.01"
-                value={cashTendered}
-                onChange={(e) => setCashTendered(e.target.value)}
-                className="w-full pl-8 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xl font-bold text-slate-900 focus:ring-4 focus:ring-emerald-500/5 focus:border-emerald-500 outline-none transition-all"
-                placeholder="0.00"
-                autoFocus
-              />
-            </div>
-          </div>
-
-          {/* Change & Remaining Balance Row */}
-          <div className="grid grid-cols-2 gap-2">
-            <div className="p-3 rounded-lg border border-slate-100 bg-slate-50/50">
-              <p className="text-[7.5px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Change</p>
-              <p className={`text-md font-bold ${paymentCalc.status === 'OVERPAID' ? 'text-emerald-600' : 'text-slate-300'}`}>
-                ${paymentCalc.status === 'OVERPAID' ? paymentCalc.amount.toFixed(2) : '0.00'}
-              </p>
-            </div>
-
-            <div className="p-3 rounded-lg border border-slate-100 bg-slate-50/50">
-              <p className="text-[7.5px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Remaining</p>
-              <p className={`text-md font-bold ${paymentCalc.status === 'PARTIAL' ? 'text-rose-600' : 'text-slate-300'}`}>
-                ${paymentCalc.status === 'PARTIAL' ? paymentCalc.amount.toFixed(2) : '0.00'}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Action Button Area - THEMED */}
-        <div className="mt-5">
-          <button
-            onClick={handleCompletePickup}
-            disabled={loading || !cashTendered}
-            className={`w-full py-3.5 rounded-lg text-[10px] font-bold text-white shadow transition-all active:scale-[0.98] flex justify-center items-center gap-2 uppercase tracking-widest`}
-            style={paymentCalc.status === 'PARTIAL' ? undefined : { backgroundColor: colors.primaryColor }}
-          >
-            {loading ? <Loader2 className="animate-spin" size={14} /> : (
-              <>
-                <CreditCard size={14} />
-                {paymentCalc.status === 'PARTIAL' ? 'Confirm Partial Payment' : 'Complete Pickup & Print'}
-              </>
-            )}
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-)}
       {/* --- MODALS --- */}
-      
+
       {/* Detail Modal for Unpaid Tickets */}
       {showDetailModal && detailTicket && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in">
@@ -958,34 +958,34 @@ export default function PickUp() {
         hideDefaultButton={true}
         extraActions={
           <>
-              <button
-                onClick={() => {
-                  // Concatenate both receipts with a page break
-                  const combined = `${printContent}<div class="page-break" style="page-break-before: always; height: 1px; display: block;"></div>${plantPrintContent}`;
-                  handlePrintJob(combined);
-                }}
-                className="px-4 py-2 text-white rounded-lg flex items-center gap-2"
-                style={{ background: `linear-gradient(90deg, ${colors.primaryColor}, ${colors.secondaryColor})` }}
-              >
-                <Printer size={18} />
-                Print All (Cust + Plant)
-              </button>
-              <button
-                onClick={() => handlePrintJob(printContent)}
-                className="px-4 py-2 text-white rounded-lg flex items-center gap-2"
-                style={{ backgroundColor: colors.primaryColor }}
-              >
-                <Printer size={18} />
-                Print Customer Copy
-              </button>
-              <button
-                onClick={() => handlePrintJob(plantPrintContent)}
-                className="px-4 py-2 text-white rounded-lg flex items-center gap-2"
-                style={{ backgroundColor: colors.secondaryColor }}
-              >
-                <Printer size={18} />
-                Print Plant Copy
-              </button>
+            <button
+              onClick={() => {
+                // Concatenate both receipts with a page break
+                const combined = `${printContent}<div class="page-break" style="page-break-before: always; height: 1px; display: block;"></div>${plantPrintContent}`;
+                handlePrintJob(combined);
+              }}
+              className="px-4 py-2 text-white rounded-lg flex items-center gap-2"
+              style={{ background: `linear-gradient(90deg, ${colors.primaryColor}, ${colors.secondaryColor})` }}
+            >
+              <Printer size={18} />
+              Print All (Cust + Plant)
+            </button>
+            <button
+              onClick={() => handlePrintJob(printContent)}
+              className="px-4 py-2 text-white rounded-lg flex items-center gap-2"
+              style={{ backgroundColor: colors.primaryColor }}
+            >
+              <Printer size={18} />
+              Print Customer Copy
+            </button>
+            <button
+              onClick={() => handlePrintJob(plantPrintContent)}
+              className="px-4 py-2 text-white rounded-lg flex items-center gap-2"
+              style={{ backgroundColor: colors.secondaryColor }}
+            >
+              <Printer size={18} />
+              Print Plant Copy
+            </button>
           </>
         }
         note="Pickup processed successfully! Please select a print option."

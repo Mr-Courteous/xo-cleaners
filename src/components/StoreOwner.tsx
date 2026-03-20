@@ -39,7 +39,7 @@ interface TokenPayload {
 export default function StoreOwner() {
   const { colors } = useColors();
   const navigate = useNavigate();
-  
+
   const [activeView, setActiveView] = useState("dashboard");
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
@@ -143,7 +143,7 @@ export default function StoreOwner() {
           <h3 className="font-bold text-gray-800">System Activity Audit</h3>
         </div>
         <div className="p-4">
-           <AuditLogTable />
+          <AuditLogTable />
         </div>
       </div>
     </div>
@@ -178,7 +178,7 @@ export default function StoreOwner() {
   return (
     <ColorsScope>
       <div className="flex h-screen font-sans text-gray-900 overflow-hidden" style={{ backgroundColor: `${colors.primaryColor}12` }}>
-        
+
         {/* SIDEBAR - STRICTLY FOLLOWING YOUR STYLE */}
         <aside
           className={`fixed inset-y-0 left-0 z-30 flex flex-col transition-all duration-300 border-r border-black/5 ${isSidebarOpen ? 'w-72' : 'w-20'}`}
@@ -265,7 +265,7 @@ export default function StoreOwner() {
 
           <Footer />
         </div>
-        
+
       </div>
     </ColorsScope>
   );

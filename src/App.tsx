@@ -6,8 +6,10 @@ import {
   Navigate,
   useNavigate,
 } from "react-router-dom";
+import { SidebarProvider } from "./state/SidebarContext";
 
 // Removed: import Layout from "./components/Layout"; 
+import MainLayout from "./components/MainLayout";
 import Dashboard from "./components/Dashboard";
 import DropOff from "./components/DropOff";
 import PickUp from "./components/PickUp";
@@ -38,6 +40,10 @@ import CustomerDashboard from "./components/CustomerDashboard";
 
 import CustomerLogin from "./components/CustomerLogin";
 import NotFound from "./components/NotFound";
+import DashboardAnalytics from "./components/DashboardAnalytics";
+import BatchTransfer from "./components/BatchTransfer";
+import TicketTransfersProcess from "./components/TicketTransfersProcess";
+import WorkerManagement from "./components/WorkerManagement";
 
 
 // import CustomerDirectory from "./components/customerDirectory";
@@ -97,33 +103,38 @@ function AppContent() {
         }
       />
 
-      {/* 🟢 All routes are now UNPROTECTED (removed <ProtectedRoute> wrapper) */}
+      {/* 🟢 Protected routes with MainLayout (Sidebar + Header) */}
 
-      <Route path="/dashboard" element={<Dashboard />} />
-      <Route path="/dropoff" element={<DropOff />} />
-      <Route path="/pickup" element={<PickUp />} />
-      <Route path="/tickets" element={<TicketManagement />} />
-      <Route path="/status" element={<StatusManagement />} />
-      <Route path="/customers" element={<CustomerManagement />} />
-      <Route path="/racks" element={<RackManagement />} />
-      <Route path="/clothing" element={<ClothingManagement />} />
-      <Route path="/tags" element={<Tag />} />
-      <Route path="/users" element={<UsersManagement />} />
-      <Route path="/receipt-config" element={<ReceiptConfig />} />
+      <Route path="/dashboard" element={<MainLayout><Dashboard /></MainLayout>} />
+      <Route path="/dropoff" element={<MainLayout><DropOff /></MainLayout>} />
+      <Route path="/pickup" element={<MainLayout><PickUp /></MainLayout>} />
+      <Route path="/tickets" element={<MainLayout><TicketManagement /></MainLayout>} />
+      <Route path="/status" element={<MainLayout><StatusManagement /></MainLayout>} />
+      <Route path="/customers" element={<MainLayout><CustomerManagement /></MainLayout>} />
+      <Route path="/racks" element={<MainLayout><RackManagement /></MainLayout>} />
+      <Route path="/clothing" element={<MainLayout><ClothingManagement /></MainLayout>} />
+      <Route path="/tags" element={<MainLayout><Tag /></MainLayout>} />
+      <Route path="/users" element={<MainLayout><UsersManagement /></MainLayout>} />
+      <Route path="/receipt-config" element={<MainLayout><ReceiptConfig /></MainLayout>} />
+      <Route path="/analytics" element={<MainLayout><DashboardAnalytics /></MainLayout>} />
+      <Route path="/batchtransfer" element={<MainLayout><BatchTransfer /></MainLayout>} />
+      <Route path="/transfers" element={<MainLayout><TicketTransfersProcess /></MainLayout>} />
+      <Route path="/staff" element={<MainLayout><WorkerManagement /></MainLayout>} />
+      <Route path="/add-worker" element={<MainLayout><AddWorker /></MainLayout>} />
+      <Route path="/cashier" element={<MainLayout><Cashier /></MainLayout>} />
+      <Route path="/org-settings" element={<MainLayout><OrganizationSettings /></MainLayout>} />
+
+      
+      {/* Public/Login Routes (no sidebar) */}
       <Route path="/store-owner-login" element={<Login />} />
-
-      {/* ✅ PLATFORM ADMIN ROUTE (Now Unprotected) */}
       <Route path="/platform-admin-login" element={<PlatformAdmin />} />
       <Route path="/store-admin" element={<StoreAdmin />} />
       <Route path="/org" element={<StoreOwner />} />
       <Route path="/about" element={<About />} />
       <Route path="/services" element={<Services />} />
       <Route path="/contact" element={<Contact />} />
-      <Route path="/add-worker" element={<AddWorker />} />
       <Route path="/store-worker-login" element={<WorkersLogin />} />
-      <Route path="/cashier" element={<Cashier />} />
       <Route path="/customer" element={<CustomerDashboard />} />
-      <Route path="/org-settings" element={<OrganizationSettings />} />
       <Route path="/customer-login" element={<CustomerLogin />} />
       {/* <Route path="/cashier-associate" element={<CashierAssociate />} /> */}
       <Route path="/NotFound" element={<NotFound />} />
@@ -141,7 +152,9 @@ function AppContent() {
 export default function App() {
   return (
     <Router>
-      <AppContent />
+      <SidebarProvider>
+        <AppContent />
+      </SidebarProvider>
     </Router>
   );
 }

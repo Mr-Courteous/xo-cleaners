@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useColors } from '../state/ColorsContext';
+import { useSidebar } from '../state/SidebarContext';
 import {
   Plus, Search, Trash2, User, Phone, Calendar, Grid, List, Shirt,
   Image as LucideImage, Mail, Printer, PenTool, Loader2, Settings,
-  Calculator, DollarSign, X
+  Calculator, DollarSign, X, Menu
 } from 'lucide-react';
 import axios from "axios";
 import baseURL from "../lib/config";
@@ -64,6 +65,23 @@ const getAuthHeaders = () => {
 
 const RECEIPT_STORAGE_KEY = 'receiptConfig';
 const VIEW_MODE_STORAGE_KEY = 'dropOffViewMode';
+
+// Floating Sidebar Toggle Button
+const SidebarToggleButton: React.FC = () => {
+  const { isSidebarOpen, toggleSidebar } = useSidebar();
+  const { colors } = useColors();
+
+  return (
+    <button
+      onClick={toggleSidebar}
+      className="p-1.5 rounded-md hover:bg-gray-200 transition-colors duration-150"
+      style={{ color: colors.primaryColor }}
+      title={isSidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
+    >
+      {isSidebarOpen ? <X size={20} strokeWidth={2.5} /> : <Menu size={20} strokeWidth={2.5} />}
+    </button>
+  );
+};
 
 interface AlterationPanelProps {
   alterationTypes: AlterationType[];
@@ -222,7 +240,7 @@ const ClothingGrid: React.FC<ClothingGridProps> = ({ clothingTypes, addItemByTyp
   const { colors } = useColors();
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-5 2xl:grid-cols-6 gap-4 p-4 bg-gray-50 rounded-lg">
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-5 2xl:grid-cols-6 gap-2 p-3 bg-gray-50 rounded-lg">
       {clothingTypes.map((type) => {
         return (
           <button
@@ -230,10 +248,10 @@ const ClothingGrid: React.FC<ClothingGridProps> = ({ clothingTypes, addItemByTyp
             onClick={() => addItemByTypeId(type.id)}
             className={`
               flex flex-col items-center justify-start 
-              p-2 bg-white border border-gray-200 rounded-xl shadow-md 
-              hover:shadow-lg hover:border-blue-400 
+              p-1.5 bg-white border border-gray-200 rounded-lg shadow-sm 
+              hover:shadow-md hover:border-blue-400 
               transition-all duration-200 ease-in-out
-              h-32 font-semibold text-sm 
+              h-24 font-semibold text-xs 
               active:scale-[0.98]
             `}
           >
@@ -241,7 +259,7 @@ const ClothingGrid: React.FC<ClothingGridProps> = ({ clothingTypes, addItemByTyp
               <img
                 src={type.image_url}
                 alt={type.name}
-                className="w-full h-8 object-contain rounded-lg mb-1"
+                className="w-full h-5 object-contain rounded-lg mb-0.5"
                 onError={(e) => {
                   const target = e.target as HTMLImageElement;
                   target.style.display = 'none';
@@ -250,16 +268,16 @@ const ClothingGrid: React.FC<ClothingGridProps> = ({ clothingTypes, addItemByTyp
                 }}
               />
             ) : (
-              <div className="w-full h-8 flex flex-col items-center justify-center bg-gray-100 rounded-lg mb-1">
-                <Shirt className="w-6 h-6 text-gray-500" />
+              <div className="w-full h-5 flex flex-col items-center justify-center bg-gray-100 rounded-lg mb-0.5">
+                <Shirt className="w-4 h-4 text-gray-500" />
               </div>
             )}
 
             {/* Invisible fallback container that shows if image fails */}
-            <div className="fallback-icon hidden w-full h-8 flex flex-col items-center justify-center bg-gray-100 rounded-lg mb-1 absolute top-2 left-0 right-0 mx-auto">
-              <Shirt className="w-6 h-6 text-gray-500" />
-            </div>
-            <span className="text-xs font-semibold text-center mt-1 line-clamp-2 w-full px-1 leading-tight">{type.name}</span>
+            {/* <div className="fallback-icon hidden w-full h-5 flex flex-col items-center justify-center bg-gray-100 rounded-lg mb-0.5 absolute top-2 left-0 right-0 mx-auto">
+              <Shirt className="w-4 h-4 text-gray-500" />
+            </div> */}
+            <span className="text-xs font-semibold text-center mt-0.5 line-clamp-2 w-full px-0.5 leading-tight">{type.name}</span>
             <span className="text-xs font-bold mt-auto" style={{ color: colors.primaryColor }}>${(type.total_price || (type.plant_price + type.margin) || 0).toFixed(2)}</span>
           </button>
         );
@@ -268,15 +286,15 @@ const ClothingGrid: React.FC<ClothingGridProps> = ({ clothingTypes, addItemByTyp
       <button
         onClick={onAddCustomItem}
         className={
-          "flex flex-col items-center justify-center p-2 rounded-xl shadow-sm transition-all duration-200 ease-in-out h-32 font-semibold text-sm active:scale-[0.98] hover:shadow-md hover:opacity-95"
+          "flex flex-col items-center justify-center p-1.5 rounded-lg shadow-sm transition-all duration-200 ease-in-out h-24 font-semibold text-xs active:scale-[0.98] hover:shadow-md hover:opacity-95"
         }
         style={{ backgroundColor: `${colors.secondaryColor}12`, border: `2px dashed ${colors.secondaryColor}33`, color: colors.secondaryColor }}
       >
-        <div className="w-10 h-10 flex items-center justify-center rounded-full mb-2" style={{ backgroundColor: `${colors.secondaryColor}22` }}>
-          <PenTool className="w-5 h-5" style={{ color: colors.secondaryColor }} />
+        <div className="w-8 h-8 flex items-center justify-center rounded-full mb-1" style={{ backgroundColor: `${colors.secondaryColor}22` }}>
+          <PenTool className="w-3.5 h-3.5" style={{ color: colors.secondaryColor }} />
         </div>
-        <span className="text-sm font-bold text-center w-full px-1">Custom Item</span>
-        <span className="text-xs mt-1" style={{ color: colors.secondaryColor }}>{'Add New'}</span>
+        <span className="text-xs font-bold text-center w-full px-0.5">Custom</span>
+        <span className="text-[10px] mt-0.5" style={{ color: colors.secondaryColor }}>{'Add'}</span>
       </button>
     </div>
   );
@@ -903,54 +921,57 @@ export default function DropOff() {
   }
 
   return (
-    <div className="w-full max-w-full mx-auto px-4 py-4 min-h-screen bg-gray-100 font-sans">
+    <div className="w-full max-w-full mx-auto px-3 py-1 bg-gray-100 font-sans flex flex-col relative" style={{ minHeight: '100vh' }}>
       {/* ERROR BANNER */}
       {error && (
-        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
-          <svg className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+        <div className="mb-1 p-2 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
+          <svg className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
             <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
           </svg>
           <div className="flex-1">
-            <p className="text-red-800 text-sm font-medium">{error}</p>
+            <p className="text-red-800 text-xs font-medium">{error}</p>
           </div>
           <button onClick={() => setError(null)} className="text-red-600 hover:text-red-800">
-            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+            {/* <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-            </svg>
+            </svg> */}
           </button>
         </div>
       )}
 
       {/* HEADER & TITLE */}
-      <div className="mb-8">
-        <h2 className="text-2xl font-bold text-gray-900">Drop Off Clothes</h2>
+      <div className="mb-1.5">
+        <div className="flex items-center gap-2">
+          <SidebarToggleButton />
+          <h2 className="text-lg font-bold text-gray-900">Drop Off Clothes</h2>
+        </div>
 
-        <div className="flex items-center mt-2 space-x-4">
+        <div className="flex items-center mt-0.5 space-x-2">
           <div className={`flex items-center ${step === 'customer' ? '' : 'text-gray-400'}`} style={step === 'customer' ? { color: colors.primaryColor } : undefined}>
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${step === 'customer' ? '' : 'bg-gray-100'}`} style={step === 'customer' ? { backgroundColor: `${colors.primaryColor}12`, color: colors.primaryColor } : undefined}>1</div>
-            <span className="ml-2">Customer</span>
+            <div className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium ${step === 'customer' ? '' : 'bg-gray-100'}`} style={step === 'customer' ? { backgroundColor: `${colors.primaryColor}12`, color: colors.primaryColor } : undefined}>1</div>
+            <span className="ml-0.5 text-xs">Customer</span>
           </div>
           <div className={`flex items-center ${step === 'items' ? '' : 'text-gray-400'}`} style={step === 'items' ? { color: colors.primaryColor } : undefined}>
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${step === 'items' ? '' : 'bg-gray-100'}`} style={step === 'items' ? { backgroundColor: `${colors.primaryColor}12`, color: colors.primaryColor } : undefined}>2</div>
-            <span className="ml-2">Items</span>
+            <div className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium ${step === 'items' ? '' : 'bg-gray-100'}`} style={step === 'items' ? { backgroundColor: `${colors.primaryColor}12`, color: colors.primaryColor } : undefined}>2</div>
+            <span className="ml-0.5 text-xs">Items</span>
           </div>
           <div className={`flex items-center ${step === 'review' ? '' : 'text-gray-400'}`} style={step === 'review' ? { color: colors.primaryColor } : undefined}>
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${step === 'review' ? '' : 'bg-gray-100'}`} style={step === 'review' ? { backgroundColor: `${colors.primaryColor}12`, color: colors.primaryColor } : undefined}>3</div>
-            <span className="ml-2">Review</span>
+            <div className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium ${step === 'review' ? '' : 'bg-gray-100'}`} style={step === 'review' ? { backgroundColor: `${colors.primaryColor}12`, color: colors.primaryColor } : undefined}>3</div>
+            <span className="ml-0.5 text-xs">Review</span>
           </div>
         </div>
       </div>
 
       {/* STEP 1: CUSTOMER SELECTION */}
       {step === 'customer' && (
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <h3 className="text-lg font-semibold mb-4">Select or Create Customer</h3>
+        <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200 flex-1 overflow-y-auto">
+          <h3 className="text-sm font-semibold mb-2">Select or Create Customer</h3>
 
           {!showNewCustomerForm ? (
             <div>
-              <div className="mb-4">
+              <div className="mb-3">
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-3 w-3" />
                   <input
                     type="text"
                     placeholder="Search by name or phone number..."
@@ -965,9 +986,9 @@ export default function DropOff() {
               </div>
 
               {customers.length > 0 && (
-                <div className="mb-4">
-                  <h4 className="font-medium mb-2">Existing Customers</h4>
-                  <div className="space-y-2">
+                <div className="mb-3">
+                  <h4 className="font-medium mb-1 text-sm">Existing Customers</h4>
+                  <div className="space-y-1">
                     {customers.map((customer) => (
                       <div
                         key={customer.id}
@@ -975,15 +996,15 @@ export default function DropOff() {
                           setSelectedCustomer(customer);
                           setStep('items');
                         }}
-                        className="p-3 border border-gray-200 rounded-lg cursor-pointer transition-colors"
+                        className="p-2 border border-gray-200 rounded-lg cursor-pointer transition-colors text-sm"
                         onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.backgroundColor = `${colors.primaryColor}08`; }}
                         onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.backgroundColor = ''; }}
                       >
                         <div className="flex items-center">
-                          <User className="h-4 w-4 text-gray-400 mr-2" />
+                          <User className="h-3 w-3 text-gray-400 mr-2" />
                           <span className="font-medium">{customer.first_name} {customer.last_name}</span>
-                          <Mail className="h-4 w-4 text-gray-400 ml-4 mr-2" />
-                          <span className="text-gray-600">{customer.email}</span>
+                          <Mail className="h-3 w-3 text-gray-400 ml-4 mr-2" />
+                          <span className="text-gray-600 text-xs">{customer.email}</span>
                         </div>
                       </div>
                     ))}
@@ -1045,8 +1066,8 @@ export default function DropOff() {
             </div>
           ) : (
             <div>
-              <h4 className="font-medium mb-4">New Customer Information</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-4">
+              <h4 className="font-medium mb-3 text-sm">New Customer Information</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
                 <input
                   type="text"
                   placeholder="First Name"
@@ -1118,23 +1139,183 @@ export default function DropOff() {
 
       {/* STEP 2: ITEMS SELECTION */}
       {step === 'items' && (
-        <div className="flex flex-col lg:flex-row gap-6">
-          <div className="lg:w-2/3">
+        <div className="flex flex-col lg:flex-row gap-3">
+          {/* TOP-LEFT: CONTROL PANELS */}
+          <div className="lg:w-1/4 order-last lg:order-first">
+            <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200 sticky top-4 max-h-[90vh] overflow-y-auto">
+              <h3 className="text-sm font-bold mb-3 text-gray-900">Edit Item</h3>
+
+              {selectedTicketIndex !== null && items[selectedTicketIndex] ? (
+                <div className="space-y-2">
+                  {/* Selected Item Header */}
+                  <div className="bg-gray-50 p-2 rounded-lg border border-gray-200 mb-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <h4 className="font-semibold text-xs text-gray-900 truncate">{items[selectedTicketIndex]?.clothing_name}</h4>
+                        <p className="text-[11px] text-gray-500">Total: ${items[selectedTicketIndex]?.item_total.toFixed(2)}</p>
+                      </div>
+                      <button onClick={(e) => removeItem(selectedTicketIndex, e)} className="text-gray-400 hover:text-red-600 flex-shrink-0">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 0. SERVICE MODE PANEL */}
+                  <div className="bg-blue-50 p-2 rounded-lg shadow-sm border border-blue-200 text-sm" style={items[selectedTicketIndex]?.alteration_behavior === 'alteration_only' ? { borderColor: '#7c3aed', backgroundColor: '#f5f3ff' } : {}}>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <h3 className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">Service Mode</h3>
+                      {items[selectedTicketIndex]?.alteration_behavior === 'alteration_only' && <span className="text-[8px] font-bold text-purple-700 uppercase">Alt Only</span>}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const item = items[selectedTicketIndex!];
+                        const isAltOnly = item.alteration_behavior === 'alteration_only';
+                        const newBehavior = isAltOnly ? 'none' : 'alteration_only';
+                        updateItem(selectedTicketIndex!, {
+                          alteration_behavior: newBehavior,
+                          starch_level: newBehavior === 'alteration_only' ? 'no_starch' : item.starch_level,
+                          crease: newBehavior === 'alteration_only' ? 'no_crease' : item.crease
+                        });
+                      }}
+                      className={`w-full flex items-center justify-center gap-1 py-1 rounded-lg border-2 transition-all font-bold text-xs ${items[selectedTicketIndex]?.alteration_behavior === 'alteration_only'
+                        ? 'bg-purple-600 border-purple-600 text-white shadow-md'
+                        : 'bg-white border-gray-200 text-gray-600 hover:border-purple-300 hover:text-purple-600'
+                        }`}
+                    >
+                      <div className={`w-3 h-3 rounded border flex items-center justify-center transition-colors ${items[selectedTicketIndex]?.alteration_behavior === 'alteration_only'
+                        ? 'bg-white border-white'
+                        : 'border-gray-300 bg-white'
+                        }`}>
+                        {items[selectedTicketIndex]?.alteration_behavior === 'alteration_only' && <div className="w-1.5 h-1.5 bg-purple-600 rounded-sm" />}
+                      </div>
+                      <span>Alteration Only</span>
+                    </button>
+                  </div>
+
+                  {/* 1. STARCH PANEL */}
+                  <div className="bg-white p-2 rounded-lg shadow-sm border border-gray-200 text-sm">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <h3 className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">Starch</h3>
+                      {items[selectedTicketIndex]?.starch_charge > 0 && <span className="text-[9px] font-bold" style={{ color: colors.primaryColor }}>+${items[selectedTicketIndex]?.starch_charge.toFixed(2)}</span>}
+                    </div>
+                    <div className={`grid grid-cols-5 gap-0.5 ${items[selectedTicketIndex]?.alteration_behavior === 'alteration_only' ? 'opacity-40 pointer-events-none' : ''}`}>
+                      {['no_starch', 'light', 'medium', 'heavy', 'extra_heavy'].map((key) => {
+                        const levelDisplay = key.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()).replace('No Starch', 'None').replace('Extra Heavy', 'Ex.Hv');
+                        const isActive = items[selectedTicketIndex]?.starch_level === key;
+                        return (
+                          <button
+                            key={key}
+                            onClick={() => handleQuickStarchUpdate(key)}
+                            disabled={items[selectedTicketIndex]?.alteration_behavior === 'alteration_only'}
+                            className={`px-0.5 py-1 text-[8px] font-bold uppercase rounded border transition-all disabled:opacity-40 disabled:cursor-not-allowed`}
+                            style={isActive ? { backgroundColor: colors.primaryColor, color: '#fff', borderColor: colors.primaryColor } : undefined}
+                          >
+                            {levelDisplay}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* 2. ALTERATIONS PANEL */}
+                  {alterationTypes.length > 0 && (() => {
+                    const activeAlt = items[selectedTicketIndex]?.alteration_id
+                      ? alterationTypes.find(a => a.id === items[selectedTicketIndex]?.alteration_id)
+                      : null;
+                    return (
+                      <AlterationPanel
+                        alterationTypes={alterationTypes}
+                        activeAlt={activeAlt || null}
+                        altPrice={items[selectedTicketIndex]?.alteration_price || 0}
+                        disabled={false}
+                        onSelect={(alt) => handleQuickAlterationUpdate(alt)}
+                        onClear={() => handleQuickAlterationUpdate(null)}
+                      />
+                    );
+                  })()}
+
+                  {/* 3. CLOTHING SIZE PANEL */}
+                  <div className="bg-white p-2 rounded-lg shadow-sm border border-gray-200 text-sm">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <h3 className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">Size</h3>
+                      {items[selectedTicketIndex]?.size_charge > 0 && <span className="text-[9px] font-bold" style={{ color: colors.secondaryColor }}>+${items[selectedTicketIndex]?.size_charge.toFixed(2)}</span>}
+                    </div>
+                    <div className={`grid grid-cols-5 gap-0.5 ${items[selectedTicketIndex]?.alteration_behavior === 'alteration_only' ? 'opacity-40 pointer-events-none' : ''}`}>
+                      {['s', 'm', 'l', 'xl', 'xxl'].map((key) => {
+                        const isActive = (items[selectedTicketIndex]?.clothing_size || 'm') === key;
+                        return (
+                          <button
+                            key={key}
+                            onClick={() => handleQuickSizeUpdate(key)}
+                            disabled={items[selectedTicketIndex]?.alteration_behavior === 'alteration_only'}
+                            className={`px-0.5 py-1 text-[8px] font-bold uppercase rounded border transition-all disabled:opacity-40 disabled:cursor-not-allowed`}
+                            style={isActive ? { backgroundColor: colors.secondaryColor, color: '#fff', borderColor: colors.secondaryColor } : undefined}
+                          >
+                            {key.toUpperCase()}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* 4. QUANTITY & CREASE */}
+                  <div className="bg-white p-2 rounded-lg shadow-sm border border-gray-200 text-sm">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex-1">
+                        <label className="text-[9px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Qty</label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={items[selectedTicketIndex]?.quantity || 1}
+                          onChange={(e) => updateItem(selectedTicketIndex!, { quantity: parseInt(e.target.value) || 1 })}
+                          className="w-full px-1.5 py-1 border border-gray-300 rounded text-xs font-bold"
+                        />
+                      </div>
+                      <label className="flex items-center gap-1 cursor-pointer flex-shrink-0">
+                        <input
+                          type="checkbox"
+                          disabled={items[selectedTicketIndex]?.alteration_behavior === 'alteration_only'}
+                          checked={items[selectedTicketIndex]?.crease === 'crease' && items[selectedTicketIndex]?.alteration_behavior !== 'alteration_only'}
+                          onChange={(e) => updateItem(selectedTicketIndex!, { crease: e.target.checked ? 'crease' : 'no_crease' })}
+                          className="rounded w-4 h-4 disabled:opacity-30"
+                          style={{ accentColor: colors.primaryColor }}
+                        />
+                        <span className="text-[9px] text-gray-600 whitespace-nowrap">Crease</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* 5. PRICE ADJUSTMENT */}
+                  <UpchargeSelector
+                    disabled={false}
+                    currentCharge={items[selectedTicketIndex]?.additional_charge || 0}
+                    onUpdate={(newAmount) => updateItem(selectedTicketIndex!, { additional_charge: newAmount })}
+                  />
+                </div>
+              ) : (
+                <div className="text-center py-6 text-gray-500 text-xs">Select an item to edit</div>
+              )}
+            </div>
+          </div>
+
+          {/* CENTER: CLOTHING GRID */}
+          <div className="lg:w-2/4">
             {/* SEARCH BAR */}
-            <div className="mb-4">
+            <div className="mb-2">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
                 <input
                   type="text"
                   placeholder="Search items..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                  className="w-full pl-8 pr-3 py-1.5 border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none text-xs"
                 />
                 {searchTerm && (
                   <button
                     onClick={() => setSearchTerm('')}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                   >
                     <X className="w-3 h-3" />
                   </button>
@@ -1143,10 +1324,10 @@ export default function DropOff() {
             </div>
 
             {/* CATEGORY TABS */}
-            <div className="flex flex-wrap gap-2 mb-4">
+            <div className="flex flex-wrap gap-1 mb-3">
               <button
                 onClick={() => setSelectedCategory('All')}
-                className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all border`}
+                className={`px-2 py-1 rounded-full text-xs font-bold transition-all border`}
                 style={
                   selectedCategory === 'All'
                     ? { backgroundColor: colors.primaryColor, color: '#fff', borderColor: colors.primaryColor }
@@ -1159,7 +1340,7 @@ export default function DropOff() {
                 <button
                   key={cat}
                   onClick={() => setSelectedCategory(cat)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all border`}
+                  className={`px-2 py-1 rounded-full text-xs font-bold transition-all border`}
                   style={
                     selectedCategory === cat
                       ? { backgroundColor: colors.primaryColor, color: '#fff', borderColor: colors.primaryColor }
@@ -1191,268 +1372,33 @@ export default function DropOff() {
             )}
           </div>
 
-          <div className="lg:w-1/3">
-            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 sticky top-4">
-              {/* ... Cart Header ... */}
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-semibold">Current Ticket</h3>
-                <span className="text-sm text-gray-500">{items.length} Items</span>
-              </div>
+          {/* RIGHT: ITEMS LIST */}
+          <div className="lg:w-1/4">
+            <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200 sticky top-4 max-h-[90vh] overflow-y-auto">
+              <h3 className="text-sm font-bold mb-3 text-gray-900">Items ({items.length})</h3>
 
-              {/* CONTROL PANEL CONTAINER */}
-              <div className="space-y-3 mb-4">
-
-                {/* 0. SERVICE MODE PANEL */}
-                <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200" style={selectedTicketIndex !== null && items[selectedTicketIndex]?.alteration_behavior === 'alteration_only' ? { borderColor: '#7c3aed', backgroundColor: '#f5f3ff' } : {}}>
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">
-                      Service Mode
-                    </h3>
-                    {selectedTicketIndex !== null && items[selectedTicketIndex]?.alteration_behavior === 'alteration_only' && (
-                      <span className="text-[9px] font-bold text-purple-700 uppercase">Alteration Only mode ACTIVE</span>
-                    )}
-                  </div>
-
-                  <button
-                    type="button"
-                    disabled={selectedTicketIndex === null}
-                    onClick={() => {
-                      if (selectedTicketIndex === null) return;
-                      const item = items[selectedTicketIndex];
-                      const isAltOnly = item.alteration_behavior === 'alteration_only';
-                      const newBehavior = isAltOnly ? 'none' : 'alteration_only';
-
-                      updateItem(selectedTicketIndex, {
-                        alteration_behavior: newBehavior,
-                        starch_level: newBehavior === 'alteration_only' ? 'no_starch' : item.starch_level,
-                        crease: newBehavior === 'alteration_only' ? 'no_crease' : item.crease
-                      });
-                    }}
-                    className={`w-full flex items-center justify-center gap-2 py-2 rounded-lg border-2 transition-all font-bold text-sm ${selectedTicketIndex !== null && items[selectedTicketIndex]?.alteration_behavior === 'alteration_only'
-                        ? 'bg-purple-600 border-purple-600 text-white shadow-md'
-                        : 'bg-white border-gray-200 text-gray-600 hover:border-purple-300 hover:text-purple-600'
-                      } disabled:opacity-40 disabled:cursor-not-allowed`}
-                  >
-                    <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${selectedTicketIndex !== null && items[selectedTicketIndex]?.alteration_behavior === 'alteration_only'
-                        ? 'bg-white border-white'
-                        : 'border-gray-300 bg-white'
-                      }`}>
-                      {selectedTicketIndex !== null && items[selectedTicketIndex]?.alteration_behavior === 'alteration_only' && (
-                        <div className="w-2.5 h-2.5 bg-purple-600 rounded-sm" />
-                      )}
+              {items.map((item, index) => (
+                <div
+                  key={index}
+                  onClick={() => setSelectedTicketIndex(index)}
+                  className={`p-2 border rounded-lg cursor-pointer transition-all duration-200`}
+                  style={selectedTicketIndex === index ? { borderColor: colors.primaryColor, boxShadow: `0 0 0 1px ${colors.primaryColor}`, backgroundColor: `${colors.primaryColor}12` } : undefined}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <h4 className="font-semibold text-xs text-gray-900 truncate">{item.clothing_name}</h4>
+                      <p className="text-[10px] text-gray-600 mt-0.5">Q:{item.quantity} | ${item.item_total.toFixed(2)}</p>
                     </div>
-                    <span>Alteration Only</span>
-                  </button>
-                  <p className="mt-1.5 text-[10px] text-gray-400 italic leading-tight">
-                    * Removes regular wash charges. Starch & Size options will be disabled.
-                  </p>
-                </div>
-
-                {/* 1. STARCH PANEL */}
-                <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200">
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">
-                      Starch Level
-                    </h3>
-                    {/* Show Price Hint */}
-                    {selectedTicketIndex !== null && items[selectedTicketIndex]?.starch_charge > 0 && (
-                      <span className="text-[10px] font-bold" style={{ color: colors.primaryColor }}>
-                        +${items[selectedTicketIndex].starch_charge.toFixed(2)}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className={`grid grid-cols-5 gap-1 ${selectedTicketIndex !== null && items[selectedTicketIndex]?.alteration_behavior === 'alteration_only' ? 'opacity-40 pointer-events-none' : ''}`}>
-                    {['no_starch', 'light', 'medium', 'heavy', 'extra_heavy'].map((key) => {
-                      const levelDisplay = key.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()).replace('No Starch', 'None').replace('Extra Heavy', 'Ex.Hv');
-                      const isActive = selectedTicketIndex !== null && items[selectedTicketIndex]?.starch_level === key;
-
-                      return (
-                        <button
-                          key={key}
-                          onClick={() => handleQuickStarchUpdate(key)}
-                          disabled={selectedTicketIndex === null || items[selectedTicketIndex]?.alteration_behavior === 'alteration_only'}
-                          className={`px-1 py-1.5 text-[9px] font-bold uppercase rounded border transition-all disabled:opacity-40 disabled:cursor-not-allowed`}
-                          style={isActive ? { backgroundColor: colors.primaryColor, color: '#fff', borderColor: colors.primaryColor } : undefined}
-                        >
-                          {levelDisplay}
-                        </button>
-                      );
-                    })}
+                    <button onClick={(e) => removeItem(index, e)} className="text-gray-400 hover:text-red-600 flex-shrink-0">
+                      <Trash2 className="h-3 w-3" />
+                    </button>
                   </div>
                 </div>
+              ))}
 
-                {/* 2. ALTERATIONS PANEL — Collapsible */}
-                {alterationTypes.length > 0 && (() => {
-                  const selIdx = selectedTicketIndex;
-                  const selItem = selIdx !== null ? items[selIdx] : null;
-                  const activeAlt = selItem?.alteration_id
-                    ? alterationTypes.find(a => a.id === selItem.alteration_id)
-                    : null;
-                  return (
-                    <AlterationPanel
-                      alterationTypes={alterationTypes}
-                      activeAlt={activeAlt || null}
-                      altPrice={selItem?.alteration_price || 0}
-                      disabled={selIdx === null}
-                      onSelect={(alt) => handleQuickAlterationUpdate(alt)}
-                      onClear={() => handleQuickAlterationUpdate(null)}
-                    />
-                  );
-                })()}
-
-                {/* 3. CLOTHING SIZE PANEL */}
-                <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200">
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">
-                      Clothing Size
-                    </h3>
-                    {/* Show Price Hint */}
-                    {selectedTicketIndex !== null && items[selectedTicketIndex]?.size_charge > 0 && (
-                      <span className="text-[10px] font-bold" style={{ color: colors.secondaryColor }}>
-                        +${items[selectedTicketIndex].size_charge.toFixed(2)}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className={`grid grid-cols-5 gap-1 ${selectedTicketIndex !== null && items[selectedTicketIndex]?.alteration_behavior === 'alteration_only' ? 'opacity-40 pointer-events-none' : ''}`}>
-                    {['s', 'm', 'l', 'xl', 'xxl'].map((key) => {
-                      const isActive = selectedTicketIndex !== null && (items[selectedTicketIndex]?.clothing_size || 'm') === key;
-
-                      return (
-                        <button
-                          key={key}
-                          onClick={() => handleQuickSizeUpdate(key)}
-                          disabled={selectedTicketIndex === null || items[selectedTicketIndex]?.alteration_behavior === 'alteration_only'}
-                          className={`px-1 py-1.5 text-[10px] font-bold uppercase rounded border transition-all disabled:opacity-40 disabled:cursor-not-allowed`}
-                          style={isActive ? { backgroundColor: colors.secondaryColor, color: '#fff', borderColor: colors.secondaryColor } : undefined}
-                        >
-                          {key.toUpperCase()}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-              </div>
-
-              {/* ITEMS LIST */}
-              <div className="space-y-2 mb-6 max-h-[400px] overflow-y-auto">
-                {items.map((item, index) => (
-                  <div
-                    key={index}
-                    // Click to Select
-                    onClick={() => setSelectedTicketIndex(index)}
-                    className={`p-2 border rounded-lg cursor-pointer transition-all duration-200`}
-                    style={selectedTicketIndex === index ? { borderColor: colors.primaryColor, boxShadow: `0 0 0 1px ${colors.primaryColor}`, backgroundColor: `${colors.primaryColor}12` } : undefined}
-                  >
-                    {/* Row 1: Name and Delete */}
-                    <div className="flex justify-between items-center mb-1">
-                      <h4 className="font-medium text-sm text-gray-900 truncate pr-2">
-                        {item.clothing_name}
-                        {item.is_custom && <span className="ml-1 text-[10px] font-bold px-1 rounded" style={{ color: colors.secondaryColor, backgroundColor: `${colors.secondaryColor}12` }}>C</span>}
-                      </h4>
-                      <button onClick={(e) => removeItem(index, e)} className="text-gray-400 hover:text-red-600"><Trash2 className="h-3 w-3" /></button>
-                    </div>
-
-                    {/* Row 2: Controls (Qty, Tags, Total) */}
-                    <div className="flex items-center justify-between text-xs" onClick={(e) => e.stopPropagation()}>
-
-                      <div className="flex items-center gap-2">
-                        {/* Compact Quantity */}
-                        <div className="flex items-center bg-gray-100 rounded px-1.5 py-0.5 border border-gray-200">
-                          <span className="text-gray-500 text-[10px] mr-1">Qty</span>
-                          <input
-                            type="number"
-                            min="1"
-                            value={item.quantity}
-                            onChange={(e) => updateItem(index, { quantity: parseInt(e.target.value) || 0 })}
-                            className="w-6 bg-transparent border-none p-0 text-center font-semibold focus:ring-0 text-xs"
-                            onClick={(e) => setSelectedTicketIndex(index)}
-                          />
-                        </div>
-
-                        {/* Size Badge */}
-                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase border`} style={item.clothing_size && item.clothing_size !== 'm' ? { backgroundColor: `${colors.secondaryColor}12`, color: colors.secondaryColor, borderColor: `${colors.secondaryColor}22` } : { backgroundColor: 'var(--tw-bg-opacity, #f9fafb)', color: '#9ca3af', borderColor: '#e5e7eb' }}>
-                          {(item.clothing_size || 'M').toUpperCase()}
-                        </span>
-
-                        {/* Starch Badge (Only show if not None) */}
-                        {item.starch_level !== 'no_starch' && (
-                          <span className="px-1.5 py-0.5 rounded text-[9px] border" style={{ backgroundColor: `${colors.primaryColor}08`, color: colors.primaryColor, borderColor: `${colors.primaryColor}14` }}>
-                            {item.starch_level.replace('_', ' ').substring(0, 3).toUpperCase()}
-                          </span>
-                        )}
-
-                        {/* Alteration Badge */}
-                        {item.alteration_id && (
-                          <span className="px-1.5 py-0.5 rounded text-[9px] border" style={{ backgroundColor: '#f5f3ff', color: '#7c3aed', borderColor: '#ddd6fe' }}>
-                            ALT
-                          </span>
-                        )}
-
-                        {/* Crease Checkbox */}
-                        <label className="flex items-center gap-1 cursor-pointer ml-1">
-                          <input
-                            type="checkbox"
-                            disabled={item.alteration_behavior === 'alteration_only'}
-                            checked={item.crease === 'crease' && item.alteration_behavior !== 'alteration_only'}
-                            onChange={(e) => updateItem(index, { crease: e.target.checked ? 'crease' : 'no_crease' })}
-                            className="rounded w-3 h-3 disabled:opacity-30"
-                            style={{ accentColor: colors.primaryColor }}
-                          />
-                          <span className="text-[9px] text-gray-500">Crease</span>
-                        </label>
-
-                      </div>
-
-                      {/* Total Price */}
-                      <span className="font-semibold text-gray-900">
-                        ${item.item_total.toFixed(2)}
-                      </span>
-                    </div>
-
-                    {/* ROW 3: ADJUSTMENT BUTTONS */}
-                    <UpchargeSelector
-                      disabled={false} // Always open for manual overrides
-                      currentCharge={item.additional_charge || 0}
-                      onUpdate={(newAmount) => {
-                        // 1. Remove ANY existing price tags like (+$0.10), (+$0.20)
-                        const cleanNote = (item.item_instructions || '').replace(/\s*\(\+\$\d+(\.\d{1,2})?\)/g, '').trim();
-
-                        // 2. Add the single new total tag only if > 0
-                        const newNote = newAmount > 0
-                          ? `${cleanNote} (+$${newAmount.toFixed(2)})`
-                          : cleanNote;
-
-                        updateItem(index, {
-                          additional_charge: newAmount,
-                          item_instructions: newNote
-                        });
-                      }}
-                    />
-
-                  </div>
-                ))}
-
-                {items.length === 0 && (
-                  <div className="text-center py-8 text-gray-500 text-sm">
-                    No items added yet
-                  </div>
-                )}
-              </div>
-
-              <div className="border-t pt-4 space-y-2">
-                <div className="flex justify-between"><span>Subtotal:</span><span>${totalAmount.toFixed(2)}</span></div>
-                <div className="flex justify-between text-gray-500 text-sm"><span>Env. Charge (4.7%):</span><span>${envCharge.toFixed(2)}</span></div>
-                <div className="flex justify-between text-gray-500 text-sm"><span>Tax (8.25%):</span><span>${tax.toFixed(2)}</span></div>
-                <div className="flex justify-between font-bold text-lg pt-2 border-t"><span>Total:</span><span>${finalTotal.toFixed(2)}</span></div>
-              </div>
-
-              <div className="mt-6 flex gap-3">
-                <button onClick={() => setStep('customer')} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Back</button>
-                <button onClick={() => setStep('review')} className="flex-1 px-4 py-2 text-white rounded-lg hover:opacity-95" style={{ backgroundColor: colors.primaryColor }} disabled={items.length === 0}>Review</button>
-              </div>
+              {items.length === 0 && (
+                <div className="text-center py-4 text-gray-500 text-xs">No items yet</div>
+              )}
             </div>
           </div>
         </div>

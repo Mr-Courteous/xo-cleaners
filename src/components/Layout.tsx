@@ -100,8 +100,8 @@ export default function Layout({ children, currentView, onViewChange, onLogout, 
                     key={item.id}
                     onClick={() => onViewChange(item.id)}
                     className={`flex items-center px-6 py-3 rounded-lg text-sm font-medium transition-all duration-200 ${currentView === item.id
-                        ? 'bg-blue-600 text-white shadow-lg'
-                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                      ? 'bg-blue-600 text-white shadow-lg'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
                       }`}
                   >
                     <Icon className="h-5 w-5 mr-2" />
@@ -162,8 +162,8 @@ export default function Layout({ children, currentView, onViewChange, onLogout, 
                   key={item.id}
                   onClick={() => onViewChange(item.id)}
                   className={`flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${currentView === item.id
-                      ? 'bg-gray-900 text-white'
-                      : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                    ? 'bg-gray-900 text-white'
+                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
                     }`}
                 >
                   <Icon className="h-4 w-4 mr-2" />
@@ -176,3 +176,25 @@ export default function Layout({ children, currentView, onViewChange, onLogout, 
       </nav>
 
       {/* MAIN CONTENT - unchanged */}
+      className="w-full h-10 mt-2 bg-slate-800/30 rounded-2xl flex items-center justify-center text-slate-500 hover:text-white hover:bg-slate-800/60 transition-all border border-slate-700/50"
+          >
+      {isCollapsed ? <ChevronRight size={18} /> : <div className="flex items-center gap-2 px-2"><ChevronLeft size={18} /><span className="text-[9px] font-black uppercase tracking-widest">Collapse View</span></div>}
+    </button>
+        </div >
+      </aside >
+
+    {/* 🖥️ MAIN VIEWPORT */ }
+    < main className = "flex-1 flex flex-col min-w-0 overflow-hidden relative" >
+      {/* Artistic Background Flourishes */ }
+      < div className = "absolute top-0 right-0 w-[600px] h-[600px] bg-blue-500/5 blur-[150px] rounded-full -translate-y-1/3 translate-x-1/3 -z-10 pointer-events-none" ></div >
+         <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-indigo-500/5 blur-[120px] rounded-full translate-y-1/3 -translate-x-1/3 -z-10 pointer-events-none"></div>
+         
+         <div className="flex-1 overflow-y-auto p-4 md:p-10 custom-scrollbar scroll-smooth">
+            <div className="max-w-[1700px] mx-auto min-h-full">
+              {children}
+            </div>
+         </div>
+      </main >
+    </div >
+  );
+}
