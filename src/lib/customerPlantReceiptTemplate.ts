@@ -78,7 +78,10 @@ export function renderCustomerPlantReceiptHtml(ticket: Ticket, organizationName:
          <div style="display:flex; justify-content:space-between; align-items:flex-start; font-size:11pt; font-weight:400; color: #000; line-height:1.1;">
             <div style="flex:1; display:flex; align-items:center; gap:6px; text-transform: uppercase;">
                <div style="font-weight:700; font-size:11pt; min-width:20px; text-align:left;">${quantity}</div>
-               <div style="flex:1;">${item.clothing_name}</div>
+               <div style="flex:1;">
+                 ${item.clothing_name}
+                 ${item.alteration_behavior === 'alteration_only' ? '<br/><b style="font-size:6pt;">ALT ONLY</b>' : ''}
+               </div>
             </div>
             <div style="text-align: right; min-width: 65px;">
                 <span>$${plantLineTotal.toFixed(2)}</span>

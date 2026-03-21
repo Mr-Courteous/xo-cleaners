@@ -40,6 +40,7 @@ export interface TicketItem {
   alteration_id?: number;
   alteration_name?: string;
   alteration_price?: number;
+  alteration_behavior?: 'none' | 'alteration_only' | 'wash_and_alteration';
 }
 
 export interface Ticket {

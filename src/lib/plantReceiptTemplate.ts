@@ -21,9 +21,6 @@ export function renderPlantReceiptHtml(ticket: Ticket, organizationName: string 
   const tax = plantSubtotal * 0.0825;
   const finalPlantTotal = plantSubtotal + envCharge + tax;
 
-  const paid = Number(ticket.paid_amount) || 0;
-  const balance = finalPlantTotal - paid;
-  const isPaid = balance <= 0.05;
 
   const totalPieces = items.reduce((sum, item) => sum + (Number(item.quantity) * (Number(item.pieces) || 1)), 0);
   let createdAt = ticket.created_at || Date.now();
@@ -55,7 +52,7 @@ export function renderPlantReceiptHtml(ticket: Ticket, organizationName: string 
     //   const cost = item.starch_charge ? `(+$${Number(item.starch_charge).toFixed(2)})` : '';
     //   details.push(`STARCH: ${item.starch_level.toUpperCase()} ${cost}`);
     // }
-    if (item.size_charge > 0 || (item.clothing_size && item.clothing_size !== 'm' && item.clothing_size !== 'standard')) {
+    if ((item.size_charge && item.size_charge > 0) || (item.clothing_size && item.clothing_size !== 'm' && item.clothing_size !== 'standard' && item.clothing_size !== 'none')) {
       const sizeName = (item.clothing_size || 'Std').toUpperCase();
       const cost = item.size_charge ? `(+$${Number(item.size_charge).toFixed(2)})` : '';
       details.push(`SIZE: ${sizeName} ${cost}`);
@@ -85,7 +82,10 @@ export function renderPlantReceiptHtml(ticket: Ticket, organizationName: string 
          <div style="display:flex; justify-content:space-between; align-items:flex-start; font-size:11pt; font-weight:400; color: #000; line-height:1.1;">
             <div style="flex:1; display:flex; align-items:center; gap:6px; text-transform: uppercase;">
                <div style="font-weight:700; font-size:11pt; min-width:20px; text-align:left;">${quantity}</div>
-               <div style="flex:1;">${item.clothing_name}</div>
+               <div style="flex:1;">
+                 ${item.clothing_name}
+                 ${item.alteration_behavior === 'alteration_only' ? '<br/><b style="font-size:6pt;">ALT ONLY</b>' : ''}
+               </div>
             </div>
             <div style="text-align: right; min-width: 65px;">
                 <span>$${plantLineTotal.toFixed(2)}</span>

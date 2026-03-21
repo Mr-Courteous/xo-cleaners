@@ -320,7 +320,6 @@ export default function DropOff() {
 
   const [items, setItems] = useState<ExtendedTicketItem[]>([]);
   const [alterationTypes, setAlterationTypes] = useState<AlterationType[]>([]);
-  const [showAlterationMenu, setShowAlterationMenu] = useState(false);
 
   // Track selected item for Quick Starch Panel
   const [selectedTicketIndex, setSelectedTicketIndex] = useState<number | null>(null);
@@ -329,8 +328,8 @@ export default function DropOff() {
   const [starchPrices, setStarchPrices] = useState({
     no_starch: 0.00, light: 0.00, medium: 0.00, heavy: 0.00, extra_heavy: 0.00
   });
-  const [sizePrices, setSizePrices] = useState({
-    s: 0.00, m: 0.00, l: 0.00, xl: 0.00, xxl: 0.00
+  const [sizePrices, setSizePrices] = useState<{ [key: string]: number }>({
+    s: 0.00, m: 0.00, l: 0.00, xl: 0.00, xxl: 0.00, none: 0.00
   });
 
   const [specialInstructions, setSpecialInstructions] = useState('');
@@ -583,7 +582,7 @@ export default function DropOff() {
       clothing_name: ct?.name || 'Select Item',
       quantity: 1,
       starch_level: 'no_starch', starch_charge: 0,
-      clothing_size: 'm', size_charge: 0,
+      clothing_size: 'none', size_charge: 0,
       crease: 'no_crease', additional_charge: 0, instruction_charge: 0,
       alterations: '', item_instructions: '',
       plant_price: ct?.plant_price || 0, margin: ct?.margin || 0,
@@ -610,7 +609,7 @@ export default function DropOff() {
       clothing_name: ct.name,
       quantity: 1,
       starch_level: 'no_starch', starch_charge: 0,
-      clothing_size: 'm', size_charge: 0,
+      clothing_size: 'none', size_charge: 0,
       crease: 'no_crease', additional_charge: 0, instruction_charge: 0,
       alterations: '', item_instructions: '',
       plant_price: ct.plant_price, margin: ct.margin,
@@ -636,7 +635,7 @@ export default function DropOff() {
       clothing_name: name,
       quantity: 1,
       starch_level: 'no_starch', starch_charge: 0,
-      clothing_size: 'm', size_charge: 0,
+      clothing_size: 'none', size_charge: 0,
       crease: 'no_crease', additional_charge: 0, instruction_charge: 0,
       alterations: '', item_instructions: '',
       plant_price: price, margin: margin,
@@ -680,8 +679,8 @@ export default function DropOff() {
     updatedItem.starch_charge = unitStarchPrice * qty;
 
     // 2. Size Calculation
-    const selectedSize = (updatedItem.clothing_size || 'm') as keyof typeof sizePrices;
-    const unitSizePrice = isAltOnly ? 0 : (sizePrices[selectedSize] || 0);
+    const selectedSize = (updatedItem.clothing_size || 'none');
+    const unitSizePrice = (isAltOnly || selectedSize === 'none') ? 0 : (sizePrices[selectedSize] || 0);
     updatedItem.size_charge = unitSizePrice * qty;
 
     // 3. Base Price
@@ -1175,6 +1174,7 @@ export default function DropOff() {
                         updateItem(selectedTicketIndex!, {
                           alteration_behavior: newBehavior,
                           starch_level: newBehavior === 'alteration_only' ? 'no_starch' : item.starch_level,
+                          clothing_size: newBehavior === 'alteration_only' ? 'none' : item.clothing_size,
                           crease: newBehavior === 'alteration_only' ? 'no_crease' : item.crease
                         });
                       }}
@@ -1241,9 +1241,10 @@ export default function DropOff() {
                       <h3 className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">Size</h3>
                       {items[selectedTicketIndex]?.size_charge > 0 && <span className="text-[9px] font-bold" style={{ color: colors.secondaryColor }}>+${items[selectedTicketIndex]?.size_charge.toFixed(2)}</span>}
                     </div>
-                    <div className={`grid grid-cols-5 gap-0.5 ${items[selectedTicketIndex]?.alteration_behavior === 'alteration_only' ? 'opacity-40 pointer-events-none' : ''}`}>
-                      {['s', 'm', 'l', 'xl', 'xxl'].map((key) => {
-                        const isActive = (items[selectedTicketIndex]?.clothing_size || 'm') === key;
+                    <div className={`grid grid-cols-6 gap-0.5 ${items[selectedTicketIndex]?.alteration_behavior === 'alteration_only' ? 'opacity-40 pointer-events-none' : ''}`}>
+                      {['none', 's', 'm', 'l', 'xl', 'xxl'].map((key) => {
+                        const isActive = (items[selectedTicketIndex]?.clothing_size || 'none') === key;
+                        const label = key === 'none' ? 'None' : key.toUpperCase();
                         return (
                           <button
                             key={key}
@@ -1252,7 +1253,7 @@ export default function DropOff() {
                             className={`px-0.5 py-1 text-[8px] font-bold uppercase rounded border transition-all disabled:opacity-40 disabled:cursor-not-allowed`}
                             style={isActive ? { backgroundColor: colors.secondaryColor, color: '#fff', borderColor: colors.secondaryColor } : undefined}
                           >
-                            {key.toUpperCase()}
+                            {label}
                           </button>
                         );
                       })}
@@ -1372,32 +1373,60 @@ export default function DropOff() {
             )}
           </div>
 
-          {/* RIGHT: ITEMS LIST */}
           <div className="lg:w-1/4">
-            <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200 sticky top-4 max-h-[90vh] overflow-y-auto">
-              <h3 className="text-sm font-bold mb-3 text-gray-900">Items ({items.length})</h3>
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 sticky top-4 max-h-[90vh] flex flex-col overflow-hidden">
+              <div className="p-3 border-b flex items-center justify-between bg-gray-50">
+                <h3 className="text-sm font-bold text-gray-900">Items ({items.length})</h3>
+                <div className="text-xs font-bold text-gray-700">${totalAmount.toFixed(2)}</div>
+              </div>
 
-              {items.map((item, index) => (
-                <div
-                  key={index}
-                  onClick={() => setSelectedTicketIndex(index)}
-                  className={`p-2 border rounded-lg cursor-pointer transition-all duration-200`}
-                  style={selectedTicketIndex === index ? { borderColor: colors.primaryColor, boxShadow: `0 0 0 1px ${colors.primaryColor}`, backgroundColor: `${colors.primaryColor}12` } : undefined}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <h4 className="font-semibold text-xs text-gray-900 truncate">{item.clothing_name}</h4>
-                      <p className="text-[10px] text-gray-600 mt-0.5">Q:{item.quantity} | ${item.item_total.toFixed(2)}</p>
+              <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                {items.map((item, index) => (
+                  <div
+                    key={index}
+                    onClick={() => setSelectedTicketIndex(index)}
+                    className={`p-2 border rounded-lg cursor-pointer transition-all duration-200 group relative`}
+                    style={selectedTicketIndex === index ? { borderColor: colors.primaryColor, boxShadow: `0 0 0 1px ${colors.primaryColor}`, backgroundColor: `${colors.primaryColor}12` } : undefined}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <h4 className="font-semibold text-[11px] text-gray-900 truncate flex items-center gap-1">
+                          {item.alteration_behavior === 'alteration_only' && (
+                            <span className="flex-shrink-0 text-[7px] font-black bg-black text-white px-1 py-0.5 rounded leading-none">ALT</span>
+                          )}
+                          <span className="truncate">{item.clothing_name}</span>
+                        </h4>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-[10px] font-bold text-gray-500 bg-gray-100 px-1 rounded">Q:{item.quantity}</span>
+                          <span className="text-[10px] font-bold text-blue-600">${item.item_total.toFixed(2)}</span>
+                        </div>
+                      </div>
+                      <button onClick={(e) => removeItem(index, e)} className="text-gray-400 hover:text-red-600 transition-colors">
+                        <Trash2 className="h-3 w-3" />
+                      </button>
                     </div>
-                    <button onClick={(e) => removeItem(index, e)} className="text-gray-400 hover:text-red-600 flex-shrink-0">
-                      <Trash2 className="h-3 w-3" />
-                    </button>
                   </div>
-                </div>
-              ))}
+                ))}
 
-              {items.length === 0 && (
-                <div className="text-center py-4 text-gray-500 text-xs">No items yet</div>
+                {items.length === 0 && (
+                  <div className="text-center py-8 text-gray-500">
+                    <div className="mb-2 flex justify-center opacity-20"><Shirt size={32} /></div>
+                    <p className="text-[10px] font-medium uppercase tracking-wider">No items added yet</p>
+                  </div>
+                )}
+              </div>
+
+              {items.length > 0 && (
+                <div className="p-3 border-t bg-gray-50">
+                  <button
+                    onClick={() => setStep('review')}
+                    className="w-full py-2.5 px-4 rounded-lg text-white font-bold flex items-center justify-center gap-2 transition-all hover:opacity-95 active:scale-[0.98] shadow-sm"
+                    style={{ backgroundColor: colors.secondaryColor }}
+                  >
+                    <List className="h-4 w-4" />
+                    Review Order
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -1409,10 +1438,68 @@ export default function DropOff() {
         <div className="max-w-2xl mx-auto bg-white p-8 rounded-lg shadow-sm border border-gray-200">
           <h3 className="text-xl font-bold mb-6">Review Ticket</h3>
 
-          <div className="mb-6 space-y-2">
-            <div className="flex justify-between"><span className="text-gray-600">Customer:</span><span className="font-medium">{selectedCustomer?.first_name} {selectedCustomer?.last_name}</span></div>
-            <div className="flex justify-between"><span className="text-gray-600">Phone:</span><span className="font-medium">{selectedCustomer?.phone}</span></div>
-            <div className="flex justify-between"><span className="text-gray-600">Pickup Date:</span><input type="datetime-local" value={pickupDate} onChange={(e) => setPickupDate(e.target.value)} className="border rounded px-2 py-1" /></div>
+          <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2 p-4 bg-gray-50 rounded-lg border">
+              <h4 className="font-bold text-xs uppercase text-gray-500 tracking-wider">Customer Details</h4>
+              <div className="flex justify-between items-center text-sm"><span className="text-gray-600">Name:</span><span className="font-bold">{selectedCustomer?.first_name} {selectedCustomer?.last_name}</span></div>
+              <div className="flex justify-between items-center text-sm"><span className="text-gray-600">Phone:</span><span className="font-bold">{selectedCustomer?.phone}</span></div>
+            </div>
+            <div className="space-y-2 p-4 bg-gray-50 rounded-lg border">
+              <h4 className="font-bold text-xs uppercase text-gray-500 tracking-wider">Schedule Pickup</h4>
+              <div className="flex flex-col gap-1">
+                <span className="text-gray-600 text-sm">Target Pickup Date:</span>
+                <input type="datetime-local" value={pickupDate} onChange={(e) => setPickupDate(e.target.value)} className="border rounded-lg px-3 py-2 text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none" />
+              </div>
+            </div>
+          </div>
+
+          <div className="mb-6 border rounded-lg overflow-hidden">
+            <div className="bg-gray-50 px-4 py-3 border-b flex justify-between items-center">
+              <h4 className="font-bold text-sm">Items Selection</h4>
+              <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold">{items.length} items</span>
+            </div>
+            <div className="max-h-60 overflow-y-auto">
+              <table className="w-full text-sm border-collapse">
+                <thead className="bg-white text-gray-400 uppercase text-[9px] font-bold border-b sticky top-0">
+                  <tr>
+                    <th className="px-4 py-2 text-left">Item Details</th>
+                    <th className="px-4 py-2 text-center">Qty</th>
+                    <th className="px-4 py-2 text-right">Total</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 bg-white">
+                  {items.map((item, idx) => (
+                    <tr key={idx} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-4 py-3">
+                        <div className="font-bold text-gray-900 flex items-center gap-2">
+                          {item.alteration_behavior === 'alteration_only' && (
+                            <span className="text-[8px] font-black bg-black text-white px-1.5 py-0.5 rounded leading-none shrink-0 border border-black">ALT ONLY</span>
+                          )}
+                          <span>{item.clothing_name}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {item.starch_level !== 'no_starch' && <span className="text-[9px] bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded font-medium uppercase">{item.starch_level} starch</span>}
+                          {item.crease === 'crease' && <span className="text-[9px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded font-medium uppercase">crease</span>}
+                          {item.clothing_size && item.clothing_size !== 'none' && <span className="text-[9px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded font-medium uppercase">Size {item.clothing_size.toUpperCase()}</span>}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className="font-bold text-gray-700">{item.quantity}</span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <span className="font-bold text-gray-900">${item.item_total.toFixed(2)}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="bg-yellow-50/50 px-4 py-3 border-t flex flex-col gap-1.5 items-end">
+              <div className="text-xs text-gray-500 flex justify-between w-48 italic"><span>Subtotal:</span> <span>${totalAmount.toFixed(2)}</span></div>
+              <div className="text-xs text-gray-500 flex justify-between w-48 italic"><span>Environmental (4.7%):</span> <span>${envCharge.toFixed(2)}</span></div>
+              <div className="text-xs text-gray-500 flex justify-between w-48 italic"><span>Tax (8.25%):</span> <span>${tax.toFixed(2)}</span></div>
+              <div className="text-lg font-black text-gray-900 flex justify-between w-48 pt-2 border-t mt-1 border-gray-200"><span>Grand Total:</span> <span style={{ color: colors.secondaryColor }}>${finalTotal.toFixed(2)}</span></div>
+            </div>
           </div>
 
           <div className="mb-6">
