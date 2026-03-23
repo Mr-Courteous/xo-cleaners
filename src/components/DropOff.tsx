@@ -545,6 +545,23 @@ export default function DropOff() {
     setPickupDate(new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().substring(0, 16));
   };
 
+  const handleProceedToReview = () => {
+    const missingAlterations = items.filter(
+      (item) => item.alteration_behavior === 'alteration_only' && !item.alteration_id
+    );
+
+    if (missingAlterations.length > 0) {
+      setModal({
+        isOpen: true,
+        title: 'Missing Alteration Type',
+        message: `Please select an alteration type for items: ${missingAlterations.map(i => i.clothing_name).join(', ')}`,
+        type: 'error'
+      });
+      return;
+    }
+    setStep('review');
+  };
+
   const handleQuickAlterationUpdate = (altType: AlterationType | null) => {
     if (selectedTicketIndex === null) return;
     if (!altType) {
@@ -763,6 +780,20 @@ export default function DropOff() {
         isOpen: true,
         title: 'No Items',
         message: 'The ticket must contain at least one item with a quantity greater than zero.',
+        type: 'error'
+      });
+      return;
+    }
+
+    const missingAlterations = items.filter(
+      (item) => item.alteration_behavior === 'alteration_only' && !item.alteration_id
+    );
+
+    if (missingAlterations.length > 0) {
+      setModal({
+        isOpen: true,
+        title: 'Missing Alteration Type',
+        message: `Please select an alteration type for items: ${missingAlterations.map(i => i.clothing_name).join(', ')}`,
         type: 'error'
       });
       return;
@@ -1400,6 +1431,34 @@ export default function DropOff() {
                           <span className="text-[10px] font-bold text-gray-500 bg-gray-100 px-1 rounded">Q:{item.quantity}</span>
                           <span className="text-[10px] font-bold text-blue-600">${item.item_total.toFixed(2)}</span>
                         </div>
+                        {/* ITEM DETAILS CHIPS */}
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {item.starch_level !== 'no_starch' && (
+                            <span className="text-[8px] font-black text-blue-700 bg-blue-50 px-1 rounded uppercase border border-blue-100">
+                              {item.starch_level.replace('_', ' ')}
+                            </span>
+                          )}
+                          {item.crease === 'crease' && (
+                            <span className="text-[8px] font-black text-emerald-700 bg-emerald-50 px-1 rounded uppercase border border-emerald-100">
+                              Crease
+                            </span>
+                          )}
+                          {item.alteration_name && (
+                            <span className="text-[8px] font-black text-purple-700 bg-purple-50 px-1 rounded uppercase border border-purple-100">
+                              {item.alteration_name}
+                            </span>
+                          )}
+                          {item.clothing_size && item.clothing_size !== 'none' && (
+                            <span className="text-[8px] font-black text-amber-700 bg-amber-50 px-1 rounded uppercase border border-amber-100">
+                              Size: {item.clothing_size}
+                            </span>
+                          )}
+                          {item.additional_charge !== 0 && (
+                            <span className={`text-[8px] font-black px-1 rounded uppercase border ${item.additional_charge > 0 ? 'text-rose-700 bg-rose-50 border-rose-100' : 'text-green-700 bg-green-50 border-green-100'}`}>
+                              Adj: {item.additional_charge > 0 ? '+' : ''}{item.additional_charge.toFixed(2)}
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <button onClick={(e) => removeItem(index, e)} className="text-gray-400 hover:text-red-600 transition-colors">
                         <Trash2 className="h-3 w-3" />
@@ -1419,7 +1478,7 @@ export default function DropOff() {
               {items.length > 0 && (
                 <div className="p-3 border-t bg-gray-50">
                   <button
-                    onClick={() => setStep('review')}
+                    onClick={handleProceedToReview}
                     className="w-full py-2.5 px-4 rounded-lg text-white font-bold flex items-center justify-center gap-2 transition-all hover:opacity-95 active:scale-[0.98] shadow-sm"
                     style={{ backgroundColor: colors.secondaryColor }}
                   >
@@ -1435,154 +1494,165 @@ export default function DropOff() {
 
       {/* STEP 3: REVIEW */}
       {step === 'review' && (
-        <div className="max-w-2xl mx-auto bg-white p-8 rounded-lg shadow-sm border border-gray-200">
-          <h3 className="text-xl font-bold mb-6">Review Ticket</h3>
+        <div className="max-w-[1360px] mx-auto bg-white p-5 rounded-lg shadow-sm border border-gray-200">
+          <h3 className="text-xl font-bold mb-6 text-gray-900">Review Ticket</h3>
 
-          <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2 p-4 bg-gray-50 rounded-lg border">
-              <h4 className="font-bold text-xs uppercase text-gray-500 tracking-wider">Customer Details</h4>
-              <div className="flex justify-between items-center text-sm"><span className="text-gray-600">Name:</span><span className="font-bold">{selectedCustomer?.first_name} {selectedCustomer?.last_name}</span></div>
-              <div className="flex justify-between items-center text-sm"><span className="text-gray-600">Phone:</span><span className="font-bold">{selectedCustomer?.phone}</span></div>
-            </div>
-            <div className="space-y-2 p-4 bg-gray-50 rounded-lg border">
-              <h4 className="font-bold text-xs uppercase text-gray-500 tracking-wider">Schedule Pickup</h4>
-              <div className="flex flex-col gap-1">
-                <span className="text-gray-600 text-sm">Target Pickup Date:</span>
-                <input type="datetime-local" value={pickupDate} onChange={(e) => setPickupDate(e.target.value)} className="border rounded-lg px-3 py-2 text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none" />
-              </div>
-            </div>
-          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            {/* Left side: Items & Logistics (Span 3) */}
+            <div className="lg:col-span-3 space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+                  {/* COLUMN 1: CUSTOMER & LOGISTICS */}
+                  <div className="space-y-4">
+                    <div className="space-y-2 p-4 bg-gray-50 rounded-lg border border-gray-200 shadow-sm">
+                      <h4 className="font-bold text-[10px] uppercase text-gray-500 tracking-widest">Customer Details</h4>
+                      <div className="flex justify-between items-center text-sm"><span className="text-gray-600 font-medium">Name:</span><span className="font-bold text-gray-900">{selectedCustomer?.first_name} {selectedCustomer?.last_name}</span></div>
+                      <div className="flex justify-between items-center text-sm"><span className="text-gray-600 font-medium">Phone:</span><span className="font-bold text-gray-900">{selectedCustomer?.phone}</span></div>
+                    </div>
+                    <div className="space-y-2 p-4 bg-gray-50 rounded-lg border border-gray-200 shadow-sm">
+                      <h4 className="font-bold text-[10px] uppercase text-gray-500 tracking-widest">Schedule Pickup</h4>
+                      <div className="flex flex-col gap-1.5">
+                        <span className="text-gray-600 text-[11px] font-bold">Target Pickup Date:</span>
+                        <input type="datetime-local" value={pickupDate} onChange={(e) => setPickupDate(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm font-bold focus:ring-1 focus:ring-blue-500 outline-none w-full shadow-inner" />
+                      </div>
+                    </div>
 
-          <div className="mb-6 border rounded-lg overflow-hidden">
-            <div className="bg-gray-50 px-4 py-3 border-b flex justify-between items-center">
-              <h4 className="font-bold text-sm">Items Selection</h4>
-              <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold">{items.length} items</span>
-            </div>
-            <div className="max-h-60 overflow-y-auto">
-              <table className="w-full text-sm border-collapse">
-                <thead className="bg-white text-gray-400 uppercase text-[9px] font-bold border-b sticky top-0">
-                  <tr>
-                    <th className="px-4 py-2 text-left">Item Details</th>
-                    <th className="px-4 py-2 text-center">Qty</th>
-                    <th className="px-4 py-2 text-right">Total</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 bg-white">
-                  {items.map((item, idx) => (
-                    <tr key={idx} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-4 py-3">
-                        <div className="font-bold text-gray-900 flex items-center gap-2">
-                          {item.alteration_behavior === 'alteration_only' && (
-                            <span className="text-[8px] font-black bg-black text-white px-1.5 py-0.5 rounded leading-none shrink-0 border border-black">ALT ONLY</span>
-                          )}
-                          <span>{item.clothing_name}</span>
+                  {/* PAYMENT CALCULATOR */}
+                  <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-3 shadow-sm">
+                    <div className="flex items-center gap-2 border-b border-gray-200 pb-2">
+                      <Calculator className="w-4 h-4 text-gray-600" />
+                      <h4 className="font-bold text-gray-800 text-[10px] uppercase tracking-widest">Payment Calculator</h4>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-[10px] font-bold text-gray-700 mb-1.5 uppercase tracking-wide">Amount Given</label>
+                        <div className="relative">
+                          <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={tenderedAmount}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setTenderedAmount(val);
+                              const numVal = parseFloat(val) || 0;
+                              const cappedPayment = Math.min(numVal, finalTotal);
+                              setPaidAmount(cappedPayment);
+                            }}
+                            className="w-full pl-9 pr-3 py-2 border-2 rounded-xl font-bold text-xl text-gray-900 focus:ring-0 shadow-inner"
+                            style={{ borderColor: `${colors.primaryColor}22` }}
+                            placeholder="0.00"
+                          />
                         </div>
-                        <div className="flex flex-wrap gap-1 mt-1">
-                          {item.starch_level !== 'no_starch' && <span className="text-[9px] bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded font-medium uppercase">{item.starch_level} starch</span>}
-                          {item.crease === 'crease' && <span className="text-[9px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded font-medium uppercase">crease</span>}
-                          {item.clothing_size && item.clothing_size !== 'none' && <span className="text-[9px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded font-medium uppercase">Size {item.clothing_size.toUpperCase()}</span>}
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="bg-white p-2.5 rounded border border-gray-200 shadow-sm">
+                          <span className="block text-[8px] text-gray-500 uppercase font-bold tracking-widest mb-0.5">Change</span>
+                          <span className="block text-base font-black" style={(parseFloat(tenderedAmount) || 0) > finalTotal ? { color: colors.secondaryColor } : { color: '#d1d5db' }}>
+                            ${Math.max(0, (parseFloat(tenderedAmount) || 0) - finalTotal).toFixed(2)}
+                          </span>
                         </div>
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <span className="font-bold text-gray-700">{item.quantity}</span>
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <span className="font-bold text-gray-900">${item.item_total.toFixed(2)}</span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="bg-yellow-50/50 px-4 py-3 border-t flex flex-col gap-1.5 items-end">
-              <div className="text-xs text-gray-500 flex justify-between w-48 italic"><span>Subtotal:</span> <span>${totalAmount.toFixed(2)}</span></div>
-              <div className="text-xs text-gray-500 flex justify-between w-48 italic"><span>Environmental (4.7%):</span> <span>${envCharge.toFixed(2)}</span></div>
-              <div className="text-xs text-gray-500 flex justify-between w-48 italic"><span>Tax (8.25%):</span> <span>${tax.toFixed(2)}</span></div>
-              <div className="text-lg font-black text-gray-900 flex justify-between w-48 pt-2 border-t mt-1 border-gray-200"><span>Grand Total:</span> <span style={{ color: colors.secondaryColor }}>${finalTotal.toFixed(2)}</span></div>
-            </div>
-          </div>
+                        <div className="bg-white p-2.5 rounded border border-gray-200 shadow-sm">
+                          <span className="block text-[8px] text-gray-500 uppercase font-bold tracking-widest mb-0.5">Due</span>
+                          <span className={`block text-base font-black ${(parseFloat(tenderedAmount) || 0) < finalTotal ? 'text-red-600' : 'text-gray-900'}`}>
+                            ${Math.max(0, finalTotal - (parseFloat(tenderedAmount) || 0)).toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
 
-          <div className="mb-6">
-            <label className="block text-gray-700 font-medium mb-2">Special Instructions (Ticket Level)</label>
-            <textarea
-              value={specialInstructions}
-              onChange={(e) => setSpecialInstructions(e.target.value)}
-              className="w-full px-3 py-2 border rounded-lg h-24"
-              placeholder="Any general notes for this order..."
-            />
-          </div>
-
-          {/* --- NEW PAYMENT & CHANGE CALCULATOR SECTION --- */}
-          <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mb-6">
-            <div className="flex items-center gap-2 mb-3 border-b pb-2 border-gray-200">
-              <Calculator className="w-5 h-5 text-gray-600" />
-              <h4 className="font-bold text-gray-800">Payment & Change Calculator</h4>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Total Due Display */}
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-1">Total Due</label>
-                <div className="text-3xl font-extrabold text-gray-900">${finalTotal.toFixed(2)}</div>
-              </div>
-
-              {/* Amount Tendered Input */}
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-1">Amount Tendered (Cash Given)</label>
-                <div className="relative">
-                  <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={tenderedAmount}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setTenderedAmount(val);
-
-                      // Logic: Update recorded paidAmount but Cap at Final Total
-                      const numVal = parseFloat(val) || 0;
-                      const cappedPayment = Math.min(numVal, finalTotal);
-                      setPaidAmount(cappedPayment);
-                    }}
-                    className="w-full pl-10 pr-3 py-3 border-2 rounded-lg focus:ring-0 font-mono text-xl font-bold text-gray-800"
-                    style={{ borderColor: `${colors.primaryColor}22` }}
-                    placeholder="0.00"
-                  />
+                {/* COLUMN 2: WIDER ITEMS TABLE */}
+                <div className="border border-gray-200 rounded-lg overflow-hidden flex flex-col bg-white shadow-sm h-full">
+                  <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 flex justify-between items-center text-[10px] font-black uppercase text-gray-600 tracking-wider">
+                    <span>Order Details ({items.length})</span>
+                  </div>
+                  <div className="max-h-[500px] overflow-y-auto custom-scrollbar">
+                    <table className="w-full text-xs border-collapse">
+                      <thead className="bg-white text-gray-400 uppercase text-[9px] font-black border-b sticky top-0 z-10">
+                        <tr>
+                          <th className="px-4 py-2.5 text-left">Specs</th>
+                          <th className="px-4 py-2.5 text-center">Qty</th>
+                          <th className="px-4 py-2.5 text-right">Price</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {items.map((item, idx) => (
+                          <tr key={idx} className="hover:bg-gray-50/80 transition-colors">
+                            <td className="px-4 py-3">
+                              <div className="font-bold text-gray-900 flex items-center gap-1.5">
+                                {item.alteration_behavior === 'alteration_only' && (
+                                  <span className="text-[8px] font-black bg-black text-white px-1 py-1 rounded shrink-0 uppercase text-[7px] leading-none">ALT</span>
+                                )}
+                                <span className="text-sm truncate max-w-[200px]">{item.clothing_name}</span>
+                              </div>
+                              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                {item.starch_level !== 'no_starch' && <span className="text-[9px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded font-black uppercase border border-blue-100">{item.starch_level.replace('_', ' ')}</span>}
+                                {item.crease === 'crease' && <span className="text-[9px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-black uppercase border border-emerald-100">Crease</span>}
+                                {item.clothing_size && item.clothing_size !== 'none' && <span className="text-[9px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded font-black uppercase border border-amber-100">Size {item.clothing_size}</span>}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <span className="font-bold text-gray-700 text-sm">{item.quantity}</span>
+                            </td>
+                            <td className="px-4 py-3 text-right font-black text-gray-900 text-sm">
+                              ${item.item_total.toFixed(2)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
             </div>
+            {/* Right Column: Summary & Finalize */}
+            <div className="space-y-6 lg:col-span-1">
+              <div className="bg-gray-50 p-5 rounded-lg border border-gray-200 shadow-sm h-full flex flex-col justify-between">
+                <div>
+                  <h4 className="font-black text-[10px] uppercase text-gray-500 tracking-widest mb-4 border-b border-gray-200 pb-2.5">Final Statement</h4>
+                  <div className="space-y-3">
+                    <div className="text-xs text-gray-600 flex justify-between"><span>Subtotal:</span> <span className="font-bold text-gray-900 text-sm">${totalAmount.toFixed(2)}</span></div>
+                    <div className="text-xs text-gray-600 flex justify-between"><span>Environmental (4.7%):</span> <span className="font-bold text-gray-900 text-xs">${envCharge.toFixed(2)}</span></div>
+                    <div className="text-xs text-gray-600 flex justify-between pb-4 border-b border-gray-200"><span>Tax (8.25%):</span> <span className="font-bold text-gray-900 text-xs">${tax.toFixed(2)}</span></div>
+                    <div className="text-2xl font-black flex justify-between items-center pt-4">
+                      <span className="text-gray-900">Total</span>
+                      <span style={{ color: colors.secondaryColor }}>${finalTotal.toFixed(2)}</span>
+                    </div>
+                  </div>
+                  
+                  <div className="mt-8">
+                    <label className="block text-gray-700 font-bold mb-2 text-[10px] uppercase tracking-widest">Order Instructions</label>
+                    <textarea
+                      value={specialInstructions}
+                      onChange={(e) => setSpecialInstructions(e.target.value)}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl h-36 text-sm focus:ring-1 focus:ring-blue-500 outline-none transition-all placeholder:text-gray-300 resize-none shadow-inner bg-white"
+                      placeholder="Add any general notes..."
+                    />
+                  </div>
+                </div>
 
-            {/* Change & Balance Display */}
-            <div className="grid grid-cols-2 gap-4 mt-4 pt-3 border-t border-gray-200">
-              {/* Change Display */}
-              <div className="bg-white p-3 rounded border border-gray-200 shadow-sm">
-                <span className="block text-xs text-gray-500 uppercase font-bold tracking-wider">Change To Return</span>
-                <span className="block text-xl font-bold" style={(parseFloat(tenderedAmount) || 0) > finalTotal ? { color: colors.secondaryColor } : { color: '#9ca3af' }}>
-                  ${Math.max(0, (parseFloat(tenderedAmount) || 0) - finalTotal).toFixed(2)}
-                </span>
-              </div>
-
-              {/* Remaining Balance Display */}
-              <div className="bg-white p-3 rounded border border-gray-200 shadow-sm">
-                <span className="block text-xs text-gray-500 uppercase font-bold tracking-wider">Balance Remaining</span>
-                <span className={`block text-xl font-bold ${(parseFloat(tenderedAmount) || 0) < finalTotal ? 'text-red-600' : 'text-gray-900'}`}>
-                  ${Math.max(0, finalTotal - (parseFloat(tenderedAmount) || 0)).toFixed(2)}
-                </span>
+                <div className="flex gap-3 mt-8">
+                  <button 
+                    onClick={() => setStep('items')} 
+                    className="px-5 py-3.5 border border-gray-300 rounded-xl font-bold text-gray-600 hover:bg-gray-100 transition-all uppercase text-[10px] tracking-widest"
+                  >
+                    Back
+                  </button>
+                  <button 
+                    onClick={createTicket} 
+                    disabled={loading} 
+                    className="flex-1 px-5 py-3.5 text-white rounded-xl font-black flex justify-center items-center hover:opacity-95 shadow-lg active:scale-[0.98] transition-all disabled:opacity-50 uppercase text-[10px] tracking-widest" 
+                    style={{ backgroundColor: colors.secondaryColor }}
+                  >
+                    {loading ? <Loader2 className="animate-spin mr-2 w-5 h-5" /> : 'Confirm Order'}
+                  </button>
+                </div>
               </div>
             </div>
-
-            <p className="text-xs text-center text-gray-500 mt-3 italic">
-              * Payment recorded in system: <span className="font-bold">${paidAmount.toFixed(2)}</span> (Cannot exceed total)
-            </p>
-          </div>
-          {/* ----------------------------------------------- */}
-
-          <div className="flex gap-4">
-            <button onClick={() => setStep('items')} className="flex-1 px-4 py-3 border border-gray-300 rounded-lg font-medium hover:bg-gray-50">Back to Items</button>
-            <button onClick={createTicket} disabled={loading} className="flex-1 px-4 py-3 text-white rounded-lg font-medium flex justify-center items-center hover:opacity-95" style={{ backgroundColor: colors.secondaryColor }}>
-              {loading ? <Loader2 className="animate-spin mr-2" /> : 'Create Ticket'}
-            </button>
           </div>
         </div>
       )}
