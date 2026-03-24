@@ -3,12 +3,14 @@ import { useColors } from '../state/ColorsContext';
 import {
   Search, Package, User, Calendar, MapPin,
   Eye, Printer, Edit3, Plus, Trash2,
-  Ban, RefreshCcw, RotateCcw, DollarSign, Loader2, Filter, X
+  Ban, RefreshCcw, RotateCcw, DollarSign, Loader2, Filter, X,
+  LayoutList, Table
 } from 'lucide-react';
 import axios from 'axios';
 import baseURL from '../lib/config';
 import { Ticket, TicketItem } from '../types';
 import PrintPreviewModal from './PrintPreviewModal';
+import TicketTable from './TicketTable';
 import renderReceiptHtml from '../lib/receiptTemplate';
 import renderPlantReceiptHtml from '../lib/plantReceiptTemplate';
 import renderCustomerPlantReceiptHtml from '../lib/customerPlantReceiptTemplate';
@@ -16,42 +18,13 @@ import { renderPickupReceiptHtml } from '../lib/pickupReceiptTemplate';
 import { generateTagHtml } from '../lib/tagTemplates';
 import { getOrgAddress } from '../lib/getOrgAddress';
 
-// Full-edit item shape (mirrors DropOff's item state)
-interface FEItem {
-  clothing_type_id: number | null;
-  clothing_name: string;
-  quantity: number;
-  plant_price: number;
-  margin: number;
-  item_total: number;
-  starch_level: string;
-  starch_charge: number;
-  clothing_size: string;
-  size_charge: number;
-  crease: string;
-  alterations: string;
-  item_instructions: string;
-  additional_charge: number;
-  instruction_charge: number;
-  alteration_behavior: string;
-  is_custom: boolean;
-}
-
-const BLANK_ITEM = (): FEItem => ({
-  clothing_type_id: null,
-  clothing_name: 'Custom Item',
-  quantity: 1,
-  plant_price: 0, margin: 0, item_total: 0,
-  starch_level: 'none', starch_charge: 0,
-  clothing_size: 'standard', size_charge: 0,
-  crease: 'no_crease', alterations: '', item_instructions: '',
-  additional_charge: 0, instruction_charge: 0,
-  alteration_behavior: 'none', is_custom: true,
-});
+// ... (FEItem interface and BLANK_ITEM remain unchanged)
 
 export default function TicketManagement() {
   const { colors } = useColors();
+  const [viewMode, setViewMode] = useState<'list' | 'table'>('list');
   const [searchQuery, setSearchQuery] = useState('');
+  // ... (rest of states)
   const [allTickets, setAllTickets] = useState<Ticket[]>([]);
   const [filteredTickets, setFilteredTickets] = useState<Ticket[]>([]);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
@@ -526,9 +499,28 @@ export default function TicketManagement() {
             disabled={loading}
             className="px-4 py-3 text-white rounded-lg disabled:bg-gray-400"
             style={{ backgroundColor: colors.secondaryColor }}
+            title="Refresh"
           >
             <RefreshCcw className="h-5 w-5" />
           </button>
+
+          {/* View Mode Toggle */}
+          <div className="flex bg-gray-100 p-1 rounded-lg border border-gray-200 shadow-sm ml-auto">
+            <button
+              onClick={() => setViewMode('list')}
+              className={`px-3 py-2 rounded-md flex items-center gap-2 transition-all ${viewMode === 'list' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+              title="Card View"
+            >
+              <LayoutList size={20} />
+            </button>
+            <button
+              onClick={() => setViewMode('table')}
+              className={`px-3 py-2 rounded-md flex items-center gap-2 transition-all ${viewMode === 'table' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+              title="Table View"
+            >
+              <Table size={20} />
+            </button>
+          </div>
         </div>
 
         {/* Filter Panel */}
@@ -632,114 +624,118 @@ export default function TicketManagement() {
         </div>
       )}
 
-      {/* Ticket List */}
+      {/* Ticket List / Table Render */}
       {!loading && filteredTickets.length > 0 && !selectedTicket && !showEditModal && (
-        <div className="space-y-4">
-          {filteredTickets.map((ticket) => {
-            const isVoid = ticket.is_void || false;
-            const isRefunded = ticket.is_refunded || false;
+        viewMode === 'list' ? (
+          <div className="space-y-4">
+            {filteredTickets.map((ticket) => {
+              const isVoid = ticket.is_void || false;
+              const isRefunded = ticket.is_refunded || false;
 
-            let cardClasses = 'bg-white border-gray-200';
-            if (isVoid) {
-              cardClasses = 'bg-red-50 border-red-200';
-            } else if (isRefunded) {
-              cardClasses = 'bg-purple-50 border-purple-200';
-            }
+              let cardClasses = 'bg-white border-gray-200';
+              if (isVoid) {
+                cardClasses = 'bg-red-50 border-red-200';
+              } else if (isRefunded) {
+                cardClasses = 'bg-purple-50 border-purple-200';
+              }
 
-            return (
-              <div
-                key={ticket.id}
-                className={`border rounded-lg shadow-sm p-5 relative overflow-hidden ${cardClasses}`}
-              >
+              return (
+                <div
+                  key={ticket.id}
+                  className={`border rounded-lg shadow-sm p-5 relative overflow-hidden ${cardClasses}`}
+                >
 
-                {/* Visual Watermark for Void */}
-                {isVoid && (
-                  <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
-                    <Ban size={100} className="text-red-500" />
-                  </div>
-                )}
-
-                {/* Visual Watermark for Refunded (if not void) */}
-                {!isVoid && isRefunded && (
-                  <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
-                    <DollarSign size={100} className="text-purple-500" />
-                  </div>
-                )}
-
-                <div className="flex flex-col md:flex-row justify-between relative z-10">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xl font-bold" style={{ color: isVoid ? '#dc2626' : colors.primaryColor, textDecoration: isVoid ? 'line-through' : undefined }}>
-                        #{ticket.ticket_number}
-                      </span>
-                      {isVoid && <span className="px-2 py-0.5 text-xs font-bold text-white" style={{ backgroundColor: '#dc2626', borderRadius: 6 }}>VOID</span>}
-                      {isRefunded && <span className="px-2 py-0.5 text-xs font-bold text-white" style={{ backgroundColor: colors.secondaryColor, borderRadius: 6 }}>REFUNDED</span>}
+                  {/* Visual Watermark for Void */}
+                  {isVoid && (
+                    <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
+                      <Ban size={100} className="text-red-500" />
                     </div>
-                    <div className="text-gray-700 mt-2 font-medium">
-                      <User className="inline h-4 w-4 mr-2" />{ticket.customer_name}
+                  )}
+
+                  {/* Visual Watermark for Refunded (if not void) */}
+                  {!isVoid && isRefunded && (
+                    <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
+                      <DollarSign size={100} className="text-purple-500" />
                     </div>
-                    <div className="flex items-center text-gray-600">
-                      <MapPin className="h-4 w-4 mr-2 text-gray-400" />
-                      <span>Rack: {ticket.rack_number || 'N/A'}</span>
-                    </div>
-                  </div>
-                  <div className="text-sm text-gray-500 mt-2 md:mt-0 md:text-right">
+                  )}
+
+                  <div className="flex flex-col md:flex-row justify-between relative z-10">
                     <div>
-                      <Calendar className="inline h-4 w-4 mr-2" />
-                      Due: {ticket.pickup_date ? new Date(ticket.pickup_date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : 'N/A'}
+                      <div className="flex items-center gap-2">
+                        <span className="text-xl font-bold" style={{ color: isVoid ? '#dc2626' : colors.primaryColor, textDecoration: isVoid ? 'line-through' : undefined }}>
+                          #{ticket.ticket_number}
+                        </span>
+                        {isVoid && <span className="px-2 py-0.5 text-xs font-bold text-white" style={{ backgroundColor: '#dc2626', borderRadius: 6 }}>VOID</span>}
+                        {isRefunded && <span className="px-2 py-0.5 text-xs font-bold text-white" style={{ backgroundColor: colors.secondaryColor, borderRadius: 6 }}>REFUNDED</span>}
+                      </div>
+                      <div className="text-gray-700 mt-2 font-medium">
+                        <User className="inline h-4 w-4 mr-2" />{ticket.customer_name}
+                      </div>
+                      <div className="flex items-center text-gray-600">
+                        <MapPin className="h-4 w-4 mr-2 text-gray-400" />
+                        <span>Rack: {ticket.rack_number || 'N/A'}</span>
+                      </div>
                     </div>
-                    <div className="mt-1">
-                      Created: {new Date(ticket.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                    </div>
-                    <div>
-                      Status: <span className="font-medium">{ticket.status.replace('_', ' ').toUpperCase()}</span>
+                    <div className="text-sm text-gray-500 mt-2 md:mt-0 md:text-right">
+                      <div>
+                        <Calendar className="inline h-4 w-4 mr-2" />
+                        Due: {ticket.pickup_date ? new Date(ticket.pickup_date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : 'N/A'}
+                      </div>
+                      <div className="mt-1">
+                        Created: {new Date(ticket.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                      <div>
+                        Status: <span className="font-medium">{ticket.status.replace('_', ' ').toUpperCase()}</span>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div className="flex justify-between items-end border-t border-gray-100 mt-4 pt-4 relative z-10">
-                  <div className="text-lg font-bold text-gray-800">Total: ${ticket.total_amount.toFixed(2)}</div>
-                  <div className="flex space-x-2">
-                    <button onClick={() => openViewModal(ticket.id)} className="p-2 text-gray-500" title="View Details">
-                      <Eye className="h-5 w-5" style={{ color: colors.primaryColor }} />
-                    </button>
-
-                    {!isVoid && (
-                      <>
-                        <button onClick={() => openPrintModal(ticket)} className="p-2 text-gray-500" title="Print">
-                          <Printer className="h-5 w-5" style={{ color: colors.primaryColor }} />
-                        </button>
-                        <button onClick={() => openEditModal(ticket)} className="p-2 text-gray-500" title="Edit">
-                          <Edit3 className="h-5 w-5" style={{ color: colors.secondaryColor }} />
-                        </button>
-                      </>
-                    )}
-
-                    <button
-                      onClick={() => toggleAction(ticket, 'void')}
-                      className={`p-2`}
-                      title={isVoid ? "Unvoid Ticket" : "Void Ticket"}
-                      style={isVoid ? { color: colors.secondaryColor, backgroundColor: `${colors.secondaryColor}12`, borderRadius: 6 } : { color: '#6b7280' }}
-                    >
-                      {isVoid ? <RotateCcw className="h-5 w-5" style={{ color: colors.secondaryColor }} /> : <Ban className="h-5 w-5" />}
-                    </button>
-
-                    {!isVoid && (
-                      <button
-                        onClick={() => toggleAction(ticket, 'refund')}
-                        className={`p-2`}
-                        title={isRefunded ? "Undo Refund" : "Mark as Refunded"}
-                        style={isRefunded ? { color: colors.secondaryColor, backgroundColor: `${colors.secondaryColor}12`, borderRadius: 6 } : { color: '#6b7280' }}
-                      >
-                        {isRefunded ? <DollarSign className="h-5 w-5" style={{ color: colors.secondaryColor }} /> : <RefreshCcw className="h-5 w-5" />}
+                  <div className="flex justify-between items-end border-t border-gray-100 mt-4 pt-4 relative z-10">
+                    <div className="text-lg font-bold text-gray-800">Total: ${ticket.total_amount.toFixed(2)}</div>
+                    <div className="flex space-x-2">
+                      <button onClick={() => openViewModal(ticket.id)} className="p-2 text-gray-500" title="View Details">
+                        <Eye className="h-5 w-5" style={{ color: colors.primaryColor }} />
                       </button>
-                    )}
+
+                      {!isVoid && (
+                        <>
+                          <button onClick={() => openPrintModal(ticket)} className="p-2 text-gray-500" title="Print">
+                            <Printer className="h-5 w-5" style={{ color: colors.primaryColor }} />
+                          </button>
+                          <button onClick={() => openEditModal(ticket)} className="p-2 text-gray-500" title="Edit">
+                            <Edit3 className="h-5 w-5" style={{ color: colors.secondaryColor }} />
+                          </button>
+                        </>
+                      )}
+
+                      <button
+                        onClick={() => toggleAction(ticket, 'void')}
+                        className={`p-2`}
+                        title={isVoid ? "Unvoid Ticket" : "Void Ticket"}
+                        style={isVoid ? { color: colors.secondaryColor, backgroundColor: `${colors.secondaryColor}12`, borderRadius: 6 } : { color: '#6b7280' }}
+                      >
+                        {isVoid ? <RotateCcw className="h-5 w-5" style={{ color: colors.secondaryColor }} /> : <Ban className="h-5 w-5" />}
+                      </button>
+
+                      {!isVoid && (
+                        <button
+                          onClick={() => toggleAction(ticket, 'refund')}
+                          className={`p-2`}
+                          title={isRefunded ? "Undo Refund" : "Mark as Refunded"}
+                          style={isRefunded ? { color: colors.secondaryColor, backgroundColor: `${colors.secondaryColor}12`, borderRadius: 6 } : { color: '#6b7280' }}
+                        >
+                          {isRefunded ? <DollarSign className="h-5 w-5" style={{ color: colors.secondaryColor }} /> : <RefreshCcw className="h-5 w-5" />}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        ) : (
+          <TicketTable tickets={filteredTickets} />
+        )
       )}
 
       {/* --- MODAL: View Details --- */}

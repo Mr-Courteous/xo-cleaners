@@ -4,7 +4,7 @@ import { jwtDecode } from "jwt-decode";
 import {
   LayoutDashboard, Package, Clock, Ticket as TicketIcon,
   Users, MapPin, Shirt, Activity, Tag, Settings, BarChart3, Truck,
-  Briefcase, Send, LogOut
+  Briefcase, Send, LogOut, Menu, ChevronLeft
 } from "lucide-react";
 import { ColorsScope, useColors } from "../state/ColorsContext";
 import { useSidebar } from "../state/SidebarContext";
@@ -27,7 +27,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
   const { colors } = useColors();
   const navigate = useNavigate();
   const location = useLocation();
-  const { isSidebarOpen } = useSidebar();
+  const { isSidebarOpen, toggleSidebar } = useSidebar();
 
   const [isMobile, setIsMobile] = React.useState(window.innerWidth < 768);
   const [decodedToken, setDecodedToken] = React.useState<TokenPayload | null>(null);
@@ -105,11 +105,31 @@ export default function MainLayout({ children }: MainLayoutProps) {
           className={`fixed inset-y-0 left-0 z-30 flex flex-col transition-all duration-300 border-r border-black/5 ${isSidebarOpen ? 'w-72' : 'w-20'}`}
           style={{ backgroundColor: `${colors.primaryColor}10` }}
         >
-          <div className="h-20 flex items-center px-6 border-b border-black/5">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-8 rounded-full" style={{ backgroundColor: colors.primaryColor }} />
-              {isSidebarOpen && <h2 className="text-2xl font-black tracking-tighter" style={{ color: colors.primaryColor }}>XOCleaners</h2>}
-            </div>
+          <div className={`h-20 flex items-center border-b border-black/5 ${isSidebarOpen ? 'px-6 justify-between' : 'justify-center'}`}>
+            {isSidebarOpen ? (
+              <>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-8 rounded-full" style={{ backgroundColor: colors.primaryColor }} />
+                  <h2 className="text-2xl font-black tracking-tighter" style={{ color: colors.primaryColor }}>XOCleaners</h2>
+                </div>
+                <button 
+                  onClick={toggleSidebar}
+                  className="p-1.5 hover:bg-black/10 rounded-lg transition-colors text-gray-500"
+                  title="Collapse Sidebar"
+                >
+                  <ChevronLeft size={20} />
+                </button>
+              </>
+            ) : (
+              <button 
+                onClick={toggleSidebar}
+                className="p-3 hover:bg-black/10 rounded-xl transition-colors"
+                style={{ color: colors.primaryColor }}
+                title="Expand Sidebar"
+              >
+                <Menu size={24} />
+              </button>
+            )}
           </div>
 
           <div className="flex-1 overflow-y-auto py-6 px-4 space-y-1">

@@ -31,7 +31,7 @@ export default function Tag(): JSX.Element {
 
   const searchTickets = async () => {
     if (!searchQuery.trim()) return;
-    
+
     setLoading(true);
     try {
       const token = localStorage.getItem('accessToken');
@@ -46,16 +46,16 @@ export default function Tag(): JSX.Element {
 
       // --- BATCHING REQUESTS ---
       const ticketsWithItems: Array<Ticket & { items?: Array<any> }> = [];
-      const BATCH_SIZE = 5; 
+      const BATCH_SIZE = 5;
 
       for (let i = 0; i < results.length; i += BATCH_SIZE) {
         const batch = results.slice(i, i + BATCH_SIZE);
-        
+
         const batchResults = await Promise.all(
           batch.map(async (ticket: Ticket) => {
             try {
               if ((ticket as any).items && (ticket as any).items.length > 0) {
-                 return ticket;
+                return ticket;
               }
 
               const td = await axios.get(`${baseURL}/api/organizations/tickets/${ticket.id}`, { headers });
@@ -67,7 +67,7 @@ export default function Tag(): JSX.Element {
             }
           })
         );
-        
+
         ticketsWithItems.push(...batchResults);
       }
       // -----------------------------
@@ -119,12 +119,12 @@ export default function Tag(): JSX.Element {
     printFrame.contentDocument?.close();
     printFrame.contentWindow?.focus();
     setTimeout(() => {
-        printFrame.contentWindow?.print();
-        setTimeout(() => {
-            if(document.body.contains(printFrame)) {
-                document.body.removeChild(printFrame);
-            }
-        }, 1000);
+      printFrame.contentWindow?.print();
+      setTimeout(() => {
+        if (document.body.contains(printFrame)) {
+          document.body.removeChild(printFrame);
+        }
+      }, 1000);
     }, 100);
   };
   // -------------------------------------
@@ -204,7 +204,7 @@ export default function Tag(): JSX.Element {
                     </div>
                     <div className="space-y-3">
                       {ticket.items?.map((item, index) => (
-                            <div key={index} className="group flex justify-between items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+                        <div key={index} className="group flex justify-between items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
                           <div>
                             <span className="text-gray-600 ml-2">×{item.quantity}</span>
                             <div className="text-sm text-gray-500 mt-1">
@@ -221,7 +221,7 @@ export default function Tag(): JSX.Element {
                               <Eye className="h-4 w-4 mr-2" />
                               View Tag
                             </button>
-                            
+
                             <button
                               onClick={() => handlePrintSingleTag(ticket, item)}
                               className="px-4 py-2 rounded-lg transition-colors flex items-center text-white"
@@ -230,7 +230,7 @@ export default function Tag(): JSX.Element {
                               <Printer className="h-4 w-4 mr-2" />
                               Print Tag
                             </button>
-                            
+
                             <button
                               onClick={() => handlePrintAllTags(ticket)}
                               className="px-4 py-2 rounded-lg transition-colors flex items-center text-white"
@@ -263,11 +263,11 @@ export default function Tag(): JSX.Element {
       <PrintPreviewModal
         isOpen={showPrintPreview}
         onClose={() => setShowPrintPreview(false)}
-        onPrint={() => {}} // Empty because we are hiding the default button
+        onPrint={() => { }} // Empty because we are hiding the default button
         content={printContent}
         hideDefaultButton={true} // Hides the double-firing button
         extraActions={(
-          <button 
+          <button
             onClick={() => handlePrintJob(printContent)}
             className="px-4 py-2 text-white rounded flex items-center gap-2 hover:opacity-95"
             style={{ backgroundColor: colors.primaryColor }}

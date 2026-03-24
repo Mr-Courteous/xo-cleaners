@@ -293,6 +293,7 @@ class TicketResponse(BaseModel):
     receipt_footer: Optional[str] = None 
     
     organization_name: Optional[str] = None
+    subtotal: float = 0.0
 
 
     # Fix for pickup_date
@@ -327,6 +328,7 @@ class TicketSummaryResponse(BaseModel):
     customer_id: int
     customer_name: str
     customer_phone: Optional[str]
+    subtotal: float = 0.0
     total_amount: float
     paid_amount: float
     status: str

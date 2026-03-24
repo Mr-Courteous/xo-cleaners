@@ -611,7 +611,11 @@ async def find_tickets(
                 "is_void": row.is_void,          # ✅ MAPPED
                 "is_refunded": row.is_refunded,  # ✅ MAPPED
                 "created_at": row.created_at,
+                
+                # Financial mapping (No tax/env as requested)
+                "subtotal": total,
                 "total_amount": total,
+                
                 "paid_amount": paid,
                 "rack_number": row.rack_number,
                 "special_instructions": row.special_instructions,

@@ -2363,7 +2363,10 @@ async def get_tickets_for_organization(
                     customer_id=row.customer_id,
                     customer_name=f"{row.first_name} {row.last_name}",
                     customer_phone=row.email,
-                    total_amount=float(row.total_amount),
+                    
+                    # Financial mapping (No tax/env as requested)
+                    subtotal=float(row.total_amount or 0.0),
+                    total_amount=float(row.total_amount or 0.0),
                     paid_amount=float(row.paid_amount),
                     status=row.status,
                     

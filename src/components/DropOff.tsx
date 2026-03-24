@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useColors } from '../state/ColorsContext';
-import { useSidebar } from '../state/SidebarContext';
 import {
   Plus, Search, Trash2, User, Phone, Calendar, Grid, List, Shirt,
   Image as LucideImage, Mail, Printer, PenTool, Loader2, Settings,
-  Calculator, DollarSign, X, Menu
+  Calculator, DollarSign, X
 } from 'lucide-react';
 import axios from "axios";
 import baseURL from "../lib/config";
@@ -66,22 +65,7 @@ const getAuthHeaders = () => {
 const RECEIPT_STORAGE_KEY = 'receiptConfig';
 const VIEW_MODE_STORAGE_KEY = 'dropOffViewMode';
 
-// Floating Sidebar Toggle Button
-const SidebarToggleButton: React.FC = () => {
-  const { isSidebarOpen, toggleSidebar } = useSidebar();
-  const { colors } = useColors();
 
-  return (
-    <button
-      onClick={toggleSidebar}
-      className="p-1.5 rounded-md hover:bg-gray-200 transition-colors duration-150"
-      style={{ color: colors.primaryColor }}
-      title={isSidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
-    >
-      {isSidebarOpen ? <X size={20} strokeWidth={2.5} /> : <Menu size={20} strokeWidth={2.5} />}
-    </button>
-  );
-};
 
 interface AlterationPanelProps {
   alterationTypes: AlterationType[];
@@ -972,7 +956,6 @@ export default function DropOff() {
       {/* HEADER & TITLE */}
       <div className="mb-1.5">
         <div className="flex items-center gap-2">
-          <SidebarToggleButton />
           <h2 className="text-lg font-bold text-gray-900">Drop Off Clothes</h2>
         </div>
 
@@ -1568,7 +1551,7 @@ export default function DropOff() {
                 {/* COLUMN 2: WIDER ITEMS TABLE */}
                 <div className="border border-gray-200 rounded-lg overflow-hidden flex flex-col bg-white shadow-sm h-full">
                   <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 flex justify-between items-center text-[10px] font-black uppercase text-gray-600 tracking-wider">
-                    <span>Order Details ({items.length})</span>
+                    <span>Ticket Items ({items.length} Items)</span>
                   </div>
                   <div className="max-h-[500px] overflow-y-auto custom-scrollbar">
                     <table className="w-full text-xs border-collapse">
