@@ -1410,37 +1410,41 @@ export default function DropOff() {
                           )}
                           <span className="truncate">{item.clothing_name}</span>
                         </h4>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <span className="text-[10px] font-bold text-gray-500 bg-gray-100 px-1 rounded">Q:{item.quantity}</span>
-                          <span className="text-[10px] font-bold text-blue-600">${item.item_total.toFixed(2)}</span>
-                        </div>
-                        {/* ITEM DETAILS CHIPS */}
-                        <div className="flex flex-wrap gap-1 mt-1">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1 text-[9px] font-black uppercase text-gray-500">
+                          <span className="bg-gray-100 px-1 rounded">Q:{item.quantity}</span>
+                          
                           {item.starch_level !== 'no_starch' && (
-                            <span className="text-[8px] font-black text-blue-700 bg-blue-50 px-1 rounded uppercase border border-blue-100">
-                              {item.starch_level.replace('_', ' ')}
+                            <span className="text-blue-700">
+                              ST:{item.starch_level === 'light' ? 'L' : 
+                                 item.starch_level === 'medium' ? 'M' : 
+                                 item.starch_level === 'heavy' ? 'H' : 
+                                 item.starch_level === 'extra_heavy' ? 'XH' : '?' }
                             </span>
                           )}
-                          {item.crease === 'crease' && (
-                            <span className="text-[8px] font-black text-emerald-700 bg-emerald-50 px-1 rounded uppercase border border-emerald-100">
-                              Crease
-                            </span>
-                          )}
-                          {item.alteration_name && (
-                            <span className="text-[8px] font-black text-purple-700 bg-purple-50 px-1 rounded uppercase border border-purple-100">
-                              {item.alteration_name}
-                            </span>
-                          )}
+
                           {item.clothing_size && item.clothing_size !== 'none' && (
-                            <span className="text-[8px] font-black text-amber-700 bg-amber-50 px-1 rounded uppercase border border-amber-100">
-                              Size: {item.clothing_size}
+                            <span className="text-amber-700">
+                              SZ:{item.clothing_size.toUpperCase()}
                             </span>
                           )}
+
+                          {item.crease === 'crease' && (
+                            <span className="text-emerald-700">CR</span>
+                          )}
+
+                          {item.alteration_name && (
+                            <span className="text-purple-700">ALT:{item.alteration_name.substring(0, 3).toUpperCase()}</span>
+                          )}
+
                           {item.additional_charge !== 0 && (
-                            <span className={`text-[8px] font-black px-1 rounded uppercase border ${item.additional_charge > 0 ? 'text-rose-700 bg-rose-50 border-rose-100' : 'text-green-700 bg-green-50 border-green-100'}`}>
-                              Adj: {item.additional_charge > 0 ? '+' : ''}{item.additional_charge.toFixed(2)}
+                            <span className={item.additional_charge > 0 ? 'text-rose-700' : 'text-green-700'}>
+                              {item.additional_charge > 0 ? '+' : ''}{item.additional_charge.toFixed(2)}
                             </span>
                           )}
+
+                          <span className="text-blue-600 ml-auto font-black text-[10px] tracking-tight">
+                            ${item.item_total.toFixed(2)}
+                          </span>
                         </div>
                       </div>
                       <button onClick={(e) => removeItem(index, e)} className="text-gray-400 hover:text-red-600 transition-colors">
