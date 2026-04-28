@@ -94,6 +94,7 @@ export function renderPickupReceiptHtml(ticket: Ticket, organizationName: string
         <div style="font-weight:400; font-size:8pt; text-transform: uppercase; line-height:1.1;">
             ${ticket.customer_name}
         </div>
+        ${ticket.customer_phone ? `<div style="font-size:8pt; font-weight:400; margin-top:2px;">${ticket.customer_phone}</div>` : ''}
       </div>
 
       ${ticket.special_instructions ? `

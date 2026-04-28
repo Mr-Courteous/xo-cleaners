@@ -49,8 +49,8 @@ import uvicorn
 
 # Default Platform Admin credential
 DEFAULT_ADMIN_NAME = "Taiwo Courteous"
-DEFAULT_ADMIN_EMAIL = "tinumidun@moduslights.com"
-DEFAULT_ADMIN_PASSWORD = "1234567890"
+DEFAULT_ADMIN_EMAIL = "hello@modus-lights.com"
+DEFAULT_ADMIN_PASSWORD = "M0dvs=T3aM!"
 
 # ======================
 # INIT APP
@@ -122,15 +122,11 @@ def create_platform_admin_on_startup():
         return
 
     try:
-        check_stmt = text("SELECT id FROM platform_admins WHERE email = :email")
-        existing_admin = db.execute(check_stmt, {"email": DEFAULT_ADMIN_EMAIL}).fetchone()
-
-        if existing_admin:
-            print(f"✅ Platform admin '{DEFAULT_ADMIN_EMAIL}' already exists. Skipping creation.")
-            return
-
+        # 🛡️ Hard reset: Clear all platform admins to ensure ONLY the current default one exists.
+        # This makes previous credentials for any other email invalid.
+        db.execute(text("DELETE FROM platform_admins"))
+        
         hashed_pw = hash_password(DEFAULT_ADMIN_PASSWORD)
-
         insert_stmt = text("""
             INSERT INTO platform_admins (full_name, email, password_hash, role, is_super_admin)
             VALUES (:name, :email, :password_hash, 'platform_admin', TRUE)
@@ -141,7 +137,7 @@ def create_platform_admin_on_startup():
             "password_hash": hashed_pw
         })
         db.commit()
-        print(f"✅ Platform admin '{DEFAULT_ADMIN_EMAIL}' created successfully!")
+        print(f"✅ Platform admin reset! Only '{DEFAULT_ADMIN_EMAIL}' is now active.")
     except Exception as sql_error:
         db.rollback()
         print("❌ Error creating platform admin!")

@@ -405,13 +405,23 @@ async def register_organization(
             effective_parent_id = None
 
     # --- 2. VALIDATION ---
-    existing_org = db.execute(
+    # Check if email is already taken
+    existing_email = db.execute(
         text("SELECT id FROM organizations WHERE owner_email = :email"),
         {"email": owner_email}
     ).fetchone()
     
-    if existing_org:
+    if existing_email:
         raise HTTPException(status_code=400, detail="Email already registered.")
+
+    # Check if organization name is already taken (Fix for UNIQUE constraint error)
+    existing_name = db.execute(
+        text("SELECT id FROM organizations WHERE name = :name"),
+        {"name": data.name}
+    ).fetchone()
+
+    if existing_name:
+        raise HTTPException(status_code=400, detail=f"The organization name '{data.name}' is already registered. Please choose a different name.")
 
     # --- 3. GENERATE UNIQUE CONNECTION CODE ---
     connection_code = generate_unique_connection_code(db)
@@ -469,7 +479,7 @@ class WorkerCreateSchema(BaseModel):
     password: str
     role: str
     phone: Optional[str] = None
-    # Notice: NO organization_id here, because Frontend doesn't send it.
+    organization_id: Optional[int] = None # Added for Platform Admin support
 
 # 2. Define the Response Model
 class WorkerRegistrationResponse(BaseModel):
@@ -493,14 +503,20 @@ async def create_worker(
     requester_role = payload.get("role")
 
     # --- Security Checks ---
-    if not token_org_id:
+    # Platform Admins can provide the organization_id in the body
+    is_platform_admin = str(requester_role).lower() in ["admin", "platform_admin", "platform admin"]
+    
+    target_org_id = data.organization_id if is_platform_admin else token_org_id
+
+    if not target_org_id:
          raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid token: Organization ID is missing."
+            detail="Organization ID is missing. Platform admins must provide organization_id in the body."
         )
 
-    # Only Owners and Admins can add workers
-    if requester_role not in ["store_admin", "STORE_OWNER", "org_owner"]:
+    # Only Owners, Store Admins, and Platform Admins can add workers
+    allowed_roles = ["store_admin", "STORE_OWNER", "org_owner", "admin", "platform_admin", "platform admin"]
+    if str(requester_role).lower() not in [r.lower() for r in allowed_roles]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient permissions to register staff."
@@ -520,42 +536,29 @@ async def create_worker(
         )
 
     try:
-        # --- Hash Password ---
-        hashed_pw = hash_password(data.password)
-
-        # --- Insert New Worker ---
-        insert_stmt = text("""
-            INSERT INTO allUsers (
-                organization_id, email, password_hash, 
-                first_name, last_name, role, phone, 
-                joined_at, is_deactivated
-            )
-            VALUES (
-                :org_id, :email, :password_hash, 
-                :first_name, :last_name, :role, :phone, 
-                :joined_at, FALSE
-            )
+        # --- Create User ---
+        new_user_stmt = text("""
+            INSERT INTO allUsers (organization_id, first_name, last_name, email, password_hash, role, phone)
+            VALUES (:org_id, :first, :last, :email, :pass, :role, :phone)
             RETURNING id
         """)
-
-        result = db.execute(insert_stmt, {
-            "org_id": token_org_id,
+        
+        result = db.execute(new_user_stmt, {
+            "org_id": target_org_id,
+            "first": data.first_name,
+            "last": data.last_name,
             "email": email_clean,
-            "password_hash": hashed_pw,
-            "first_name": data.first_name,
-            "last_name": data.last_name,
-            "role": data.role,
-            "phone": data.phone.strip() if data.phone else None,
-            "joined_at": datetime.now(timezone.utc) # Sets active start date
-        }).fetchone()
-
+            "pass": hash_password(data.password),
+            "role": data.role.lower(),
+            "phone": data.phone
+        })
+        new_user_id = result.fetchone()[0]
         db.commit()
 
-        # --- Return Success Response ---
         return WorkerRegistrationResponse(
-            message=f"Worker {data.first_name} registered successfully.",
-            user_id=str(result[0]),
-            organization_id=token_org_id,
+            message=f"Staff '{data.first_name}' registered successfully.",
+            user_id=str(new_user_id),
+            organization_id=target_org_id,
             role=data.role
         )
 

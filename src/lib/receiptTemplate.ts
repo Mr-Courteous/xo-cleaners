@@ -109,6 +109,7 @@ export function renderReceiptHtml(ticket: Ticket, organizationName: string = "Yo
         <div style=" font-size:8pt; text-transform: uppercase;">
             ${ticket.customer_name}
         </div>
+        ${ticket.customer_phone ? `<div style="font-size:8pt; font-weight:400; margin-top:2px;">${ticket.customer_phone}</div>` : ''}
       </div>
 
       ${ticket.special_instructions ? `

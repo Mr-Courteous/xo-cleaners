@@ -84,7 +84,7 @@ async def search_tickets(
         sql_query = text("""
             SELECT 
                 t.id, t.ticket_number, t.customer_id, 
-                u.first_name, u.last_name, u.email,
+                u.first_name, u.last_name, u.email, u.phone,
                 t.total_amount, t.paid_amount, t.status, t.rack_number, 
                 t.special_instructions, t.pickup_date, t.created_at, t.organization_id
             FROM tickets AS t
@@ -116,7 +116,7 @@ async def search_tickets(
                     ticket_number=row.ticket_number,
                     customer_id=row.customer_id,
                     customer_name=f"{row.first_name} {row.last_name}",
-                    customer_phone=row.email,
+                    customer_phone=row.phone,
                     total_amount=float(row.total_amount),
                     paid_amount=float(row.paid_amount),
                     status=row.status,

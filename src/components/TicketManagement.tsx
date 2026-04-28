@@ -217,6 +217,7 @@ export default function TicketManagement() {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const fullTicket: Ticket = response.data;
+      console.log('Full Ticket:', fullTicket);
 
       // Generate all versions
       const orgAddress = await getOrgAddress();

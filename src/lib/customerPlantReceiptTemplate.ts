@@ -109,6 +109,7 @@ export function renderCustomerPlantReceiptHtml(ticket: Ticket, organizationName:
         <div style=" font-size:8pt; text-transform: uppercase;">
             ${ticket.customer_name}
         </div>
+        ${ticket.customer_phone ? `<div style="font-size:8pt; font-weight:400; margin-top:2px;">${ticket.customer_phone}</div>` : ''}
         ${ticket.rack_number ? `<div style="font-size:12pt; font-weight:500; margin-top:4px;">RACK: ${ticket.rack_number}</div>` : ''}
       </div>
 

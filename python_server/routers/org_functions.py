@@ -1475,7 +1475,7 @@ def create_ticket(
             
         # 1. Check customer existence AND fetch status
         customer_query = text("""
-            SELECT id, first_name, last_name, email, joined_at, is_deactivated
+            SELECT id, first_name, last_name, email, phone, joined_at, is_deactivated
             FROM allUsers 
             WHERE id = :id AND organization_id = :org_id AND role = 'customer'
         """)
@@ -1881,7 +1881,7 @@ def create_ticket(
             ticket_number=ticket_number,
             customer_id=ticket_data.customer_id,
             customer_name=customer_name,
-            customer_phone=customer.email, 
+            customer_phone=customer.phone, 
             total_amount=float(total_amount),
             paid_amount=float(ticket_data.paid_amount), 
             status=status_val,
@@ -2312,7 +2312,8 @@ async def get_tickets_for_organization(
                 t.customer_id, 
                 u.first_name, 
                 u.last_name, 
-                u.email, -- Using as customer_phone
+                u.phone,
+                u.email,
                 t.total_amount, 
                 t.paid_amount, 
                 t.status, 
@@ -2362,7 +2363,7 @@ async def get_tickets_for_organization(
                     ticket_number=row.ticket_number,
                     customer_id=row.customer_id,
                     customer_name=f"{row.first_name} {row.last_name}",
-                    customer_phone=row.email,
+                    customer_phone=row.phone,
                     
                     # Financial mapping (No tax/env as requested)
                     subtotal=float(row.total_amount or 0.0),
@@ -2729,7 +2730,7 @@ async def update_ticket(
                 t.id, t.ticket_number, t.customer_id, t.total_amount, 
                 t.paid_amount, t.status, t.rack_number, t.special_instructions, 
                 t.pickup_date, t.created_at, t.organization_id,
-                u.first_name, u.last_name, u.email AS customer_phone
+                u.first_name, u.last_name, u.phone AS customer_phone
             FROM tickets AS t
             JOIN allUsers AS u ON t.customer_id = u.id
             WHERE t.id = :ticket_id AND t.organization_id = :org_id

@@ -462,7 +462,7 @@ async def get_ticket_details(
             ticket_number=ticket.ticket_number,
             customer_id=ticket.customer_id,
             customer_name=f"{ticket.first_name} {ticket.last_name or ''}".strip(),
-            customer_phone=ticket.email,
+            customer_phone=ticket.phone,
             total_amount=float(ticket.total_amount),
             paid_amount=float(ticket.paid_amount),
             status=ticket.status,
