@@ -121,13 +121,13 @@ function AppContent() {
       <Route path="/transfers" element={<MainLayout><TicketTransfersProcess /></MainLayout>} />
       <Route path="/staff" element={<MainLayout><WorkerManagement /></MainLayout>} />
       <Route path="/add-worker" element={<MainLayout><AddWorker /></MainLayout>} />
-      <Route path="/cashier" element={<MainLayout><Cashier /></MainLayout>} />
+      <Route path="/cashier" element={<Cashier />} />
       <Route path="/org-settings" element={<MainLayout><OrganizationSettings /></MainLayout>} />
 
       
       {/* Public/Login Routes (no sidebar) */}
       <Route path="/store-owner-login" element={<Login />} />
-      <Route path="/platform-admin-login" element={<PlatformAdmin />} />
+      <Route path="/platform-admin" element={<PlatformAdmin />} />
       <Route path="/store-admin" element={<StoreAdmin />} />
       <Route path="/org" element={<MainLayout><StoreOwner embedded /></MainLayout>} />
       <Route path="/about" element={<About />} />

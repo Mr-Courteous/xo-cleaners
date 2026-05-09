@@ -26,7 +26,8 @@ import {
     Lock,
     Home,
     Eye,
-    EyeOff
+    EyeOff,
+    RefreshCw
 } from 'lucide-react';
 import Header from './Header';
 import baseURL from '../lib/config';
@@ -203,6 +204,7 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [isSubmittingStore, setIsSubmittingStore] = useState(false);
     const [createStoreError, setCreateStoreError] = useState<string | null>(null);
+    const [isRefreshing, setIsRefreshing] = useState(false);
 
     const [isSubmittingUser, setIsSubmittingUser] = useState(false);
     const [createUserError, setCreateUserError] = useState<string | null>(null);
@@ -245,6 +247,7 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
     }, [activeView]);
 
     const fetchData = async () => {
+        setIsRefreshing(true);
         setIsLoading(true);
         setError(null);
         try {
@@ -273,6 +276,7 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
                 setError("Failed to load data.");
             }
         } finally {
+            setIsRefreshing(false);
             setIsLoading(false);
         }
     };
@@ -319,27 +323,50 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
                 organization_id: currentStoreForUsers.id // Include target org ID
             };
 
-            await axios.post(`${baseURL}/register/staff`, payload, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            // ⏱️ Add 30 second timeout to prevent server hanging
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+            try {
+                await axios.post(`${baseURL}/register/staff`, payload, {
+                    headers: { Authorization: `Bearer ${token}` },
+                    signal: controller.signal
+                });
+            } finally {
+                clearTimeout(timeoutId);
+            }
             
             showSuccess(`New ${newStoreUser.role} added successfully.`);
             setNewStoreUser({ first_name: '', last_name: '', email: '', password: '', role: 'cashier', phone: '' });
             setIsUserFormOpen(false);
+            setIsSubmittingUser(false);
             
-            // Refresh list
-            const res = await axios.get(`${baseURL}/platform-admin/stores/${currentStoreForUsers.id}/users`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-            setStoreUsers(res.data);
+            // ⚡ Refresh list in background WITHOUT awaiting (async, not blocking)
+            setTimeout(async () => {
+                try {
+                    const res = await axios.get(`${baseURL}/platform-admin/stores/${currentStoreForUsers.id}/users`, {
+                        headers: { Authorization: `Bearer ${token}` }
+                    });
+                    setStoreUsers(res.data);
+                } catch (err) {
+                    console.error("Failed to refresh users:", err);
+                }
+            }, 500);
 
         } catch (err: any) {
+            setIsSubmittingUser(false);
+            
+            // Handle timeout error
+            if (err.code === 'ECONNABORTED') {
+                setCreateUserError("Request timed out. The backend may be experiencing issues. Please try again or check the server logs.");
+                console.error("User creation timed out after 30 seconds");
+                return;
+            }
+            
             console.error("User creation error:", err.response?.data);
             const errorDetail = err.response?.data?.detail;
             const errorMessage = typeof errorDetail === 'string' ? errorDetail : "Failed to create user.";
             setCreateUserError(errorMessage);
-        } finally {
-            setIsSubmittingUser(false);
         }
     };
 
@@ -481,6 +508,9 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
         setIsSubmittingStore(true);
         setCreateStoreError(null);
         setError(null);
+        
+        // Track when creation started
+        (window as any).storeCreationStart = Date.now();
 
         try {
             const token = localStorage.getItem('platformAdminToken');
@@ -497,25 +527,44 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
                 parent_org_id: null 
             };
 
-            await axios.post(`${baseURL}/register/new-organization`, registrationPayload, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            // ⏱️ Add 30 second timeout for store creation
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-            showSuccess("Store created and initialized successfully!");
+            try {
+                const response = await axios.post(`${baseURL}/register/new-organization`, registrationPayload, {
+                    headers: { Authorization: `Bearer ${token}` },
+                    signal: controller.signal,
+                    timeout: 30000
+                });
+                console.log("Store creation response:", response.data);
+            } finally {
+                clearTimeout(timeoutId);
+            }
+
+            showSuccess("Store created successfully! Click 'Refresh List' to see the new store.");
             setIsCreateModalOpen(false);
             setNewStore({ 
                 name: '', industry: 'Dry Cleaning', org_type: 'full_store',
                 address: '', phone: '', 
                 owner_first_name: '', owner_last_name: '', owner_email: '', owner_password: '' 
             });
-            if (activeView === 'stores') fetchData();
+            setIsSubmittingStore(false);
+
         } catch (err: any) {
+            setIsSubmittingStore(false);
+            
+            // Handle timeout error
+            if (err.code === 'ECONNABORTED') {
+                setCreateStoreError("Request timed out after 30 seconds. The store creation may still be processing in the background. Please wait a moment and click 'Refresh List' to check if it was created successfully.");
+                console.error("Store creation timed out after 30 seconds");
+                return;
+            }
+
             console.error("Store creation error:", err.response?.data);
             const errorDetail = err.response?.data?.detail;
             const errorMessage = typeof errorDetail === 'string' ? errorDetail : "Failed to create store. Please check the details and try again.";
             setCreateStoreError(errorMessage);
-        } finally {
-            setIsSubmittingStore(false);
         }
     };
     
@@ -573,9 +622,23 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
         <div className="space-y-6 animate-in fade-in duration-500 h-full flex flex-col">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 flex-shrink-0">
                 <h2 className="text-2xl font-bold text-gray-800">Store Financials & Management</h2>
-                <button onClick={() => setIsCreateModalOpen(true)} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition flex items-center gap-2 shadow-md">
-                    <Plus size={18} /> New Store
-                </button>
+                <div className="flex items-center gap-3">
+                    <button 
+                        type="button"
+                        onClick={() => fetchData()}
+                        disabled={isRefreshing}
+                        className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition flex items-center gap-2 shadow-md disabled:opacity-70 disabled:cursor-not-allowed"
+                    >
+                        {isRefreshing ? (
+                            <><Loader2 className="animate-spin" size={18} /> Refreshing...</>
+                        ) : (
+                            <><RefreshCw size={18} /> Refresh List</>
+                        )}
+                    </button>
+                    <button type="button" onClick={() => setIsCreateModalOpen(true)} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition flex items-center gap-2 shadow-md">
+                        <Plus size={18} /> New Store
+                    </button>
+                </div>
             </div>
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col flex-1 min-h-0">
                 <div className="overflow-auto flex-1">
@@ -761,7 +824,13 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
                                     <button type="button" disabled={isSubmittingStore} onClick={() => { setIsCreateModalOpen(false); setCreateStoreError(null); }} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg disabled:opacity-50">Cancel</button>
                                     <button type="submit" disabled={isSubmittingStore} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 shadow-md flex items-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed transition-all">
                                         {isSubmittingStore ? (
-                                            <><Loader2 className="animate-spin" size={18} /> Initializing...</>
+                                            <>
+                                                <Loader2 className="animate-spin" size={18} />
+                                                {isSubmittingStore && Date.now() - (window as any).storeCreationStart > 10000 ? 
+                                                    'Creating store... (This may take up to 30 seconds)' : 
+                                                    'Initializing Store...'
+                                                }
+                                            </>
                                         ) : (
                                             'Initialize Store'
                                         )}

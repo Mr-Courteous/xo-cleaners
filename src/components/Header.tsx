@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Shirt, Shield, User, Briefcase, Users, Home, Info, Phone, Compass, LogOut, LayoutDashboard } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useColors } from '../state/ColorsContext'; //
 
 /**
@@ -15,6 +15,7 @@ const Header = () => {
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [userInfo, setUserInfo] = useState<{ email: string; role: string; org: string } | null>(null);
     const navigate = useNavigate();
+    const location = useLocation();
 
     useEffect(() => {
         const regularToken = localStorage.getItem("accessToken") || localStorage.getItem("token");
@@ -56,16 +57,19 @@ const Header = () => {
     };
 
     const getRouteByRole = (role: string) => {
-        switch (role?.toLowerCase()) {
+        const normalizedRole = role?.toLowerCase().replace(/[-\s]/g, '_');
+
+        if (!normalizedRole) return "/";
+        if (normalizedRole === "admin" || normalizedRole.includes("platform")) return "/platform-admin";
+
+        switch (normalizedRole) {
             case "store_owner": return "/org";
             case "store_manager": return "/store/manager/dashboard";
             case "driver": return "/driver/dashboard";
             case "assistant": return "/assistant/dashboard";
             case "cashier": return "/cashier";
-            case "platform_admin":
-            case "platform admin": return "/platform-admin";
             case "customer": return "/customer";
-            default: return "/"; 
+            default: return "/";
         }
     };
 
@@ -99,34 +103,39 @@ const Header = () => {
                     </Link>
                     
                     <nav className="flex items-center space-x-8">
-                        {/* Desktop Links */}
-                        <div className="hidden md:flex space-x-2">
-                            {['Home', 'About', 'Services', 'Contact'].map((name) => (
-                                <Link
-                                    key={name}
-                                    to={name === 'Home' ? '/' : `/${name.toLowerCase()}`}
-                                    className="text-gray-500 hover:bg-gray-50 font-bold py-2 px-4 rounded-xl transition-all flex items-center"
-                                    style={{ '--hover-color': colors.primaryColor } as any}
-                                    onMouseEnter={(e) => e.currentTarget.style.color = colors.primaryColor}
-                                    onMouseLeave={(e) => e.currentTarget.style.color = ''}
-                                >
-                                    {name}
-                                </Link>
-                            ))}
-                        </div>
+                        {/* Desktop Links - Show when not authenticated OR on homepage */}
+                        {!isAuthenticated || location.pathname === '/' ? (
+                            <div className="hidden md:flex space-x-2">
+                                {['Home', 'About', 'Services', 'Contact'].map((name) => (
+                                    <Link
+                                        key={name}
+                                        to={name === 'Home' ? '/' : `/${name.toLowerCase()}`}
+                                        className="text-gray-500 hover:bg-gray-50 font-bold py-2 px-4 rounded-xl transition-all flex items-center"
+                                        style={{ '--hover-color': colors.primaryColor } as any}
+                                        onMouseEnter={(e) => e.currentTarget.style.color = colors.primaryColor}
+                                        onMouseLeave={(e) => e.currentTarget.style.color = ''}
+                                    >
+                                        {name}
+                                    </Link>
+                                ))}
+                            </div>
+                        ) : null}
 
                         {/* Auth Buttons */}
                         <div className="relative">
                             {isAuthenticated ? (
                                 <div className="flex items-center space-x-3">
-                                    <button
-                                        onClick={handleDashboardClick}
-                                        style={{ backgroundColor: colors.primaryColor }} //
-                                        className="flex items-center text-white font-bold px-6 py-2.5 rounded-xl shadow-md hover:opacity-90 transition-all active:scale-95"
-                                    >
-                                        <LayoutDashboard className="h-5 w-5 mr-2" />
-                                        Dashboard
-                                    </button>
+                                    {/* Show Dashboard button if not on dashboard OR on home page */}
+                                    {(location.pathname !== getRouteByRole(localStorage.getItem("platformAdminRole") || localStorage.getItem("userRole") || localStorage.getItem("role") || '') || location.pathname === '/') && (
+                                        <button
+                                            onClick={handleDashboardClick}
+                                            style={{ backgroundColor: colors.primaryColor }} //
+                                            className="flex items-center text-white font-bold px-6 py-2.5 rounded-xl shadow-md hover:opacity-90 transition-all active:scale-95"
+                                        >
+                                            <LayoutDashboard className="h-5 w-5 mr-2" />
+                                            Dashboard
+                                        </button>
+                                    )}
 
                                     <button
                                         onClick={handleLogout}
@@ -155,17 +164,20 @@ const Header = () => {
                                     
                                     <div className={`absolute right-0 mt-2 w-56 bg-white rounded-2xl shadow-2xl border border-gray-100 transition-all ${isDropdownOpen ? 'opacity-100 visible translate-y-0' : 'opacity-0 invisible -translate-y-2'}`}>
                                         <div className="py-2 p-2">
-                                            {['Platform Admin', 'Store Owner', 'Store Worker', 'Customer'].map((opt) => (
-                                                <Link
-                                                    key={opt}
-                                                    to={`/${opt.toLowerCase().replace(' ', '-')}-login`}
-                                                    className="flex items-center px-4 py-3 text-sm font-bold text-gray-600 hover:bg-gray-50 rounded-xl transition-colors"
-                                                    onMouseEnter={(e) => e.currentTarget.style.color = colors.primaryColor}
-                                                    onMouseLeave={(e) => e.currentTarget.style.color = ''}
-                                                >
-                                                    {opt}
-                                                </Link>
-                                            ))}
+                                            {['Platform Admin', 'Store Owner', 'Store Worker', 'Customer'].map((opt) => {
+                                                const path = opt === 'Platform Admin' ? '/platform-admin' : `/${opt.toLowerCase().replace(' ', '-')}-login`;
+                                                return (
+                                                    <Link
+                                                        key={opt}
+                                                        to={path}
+                                                        className="flex items-center px-4 py-3 text-sm font-bold text-gray-600 hover:bg-gray-50 rounded-xl transition-colors"
+                                                        onMouseEnter={(e) => e.currentTarget.style.color = colors.primaryColor}
+                                                        onMouseLeave={(e) => e.currentTarget.style.color = ''}
+                                                    >
+                                                        {opt}
+                                                    </Link>
+                                                );
+                                            })}
                                         </div>
                                     </div>
                                 </div>
