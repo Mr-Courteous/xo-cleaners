@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import timedelta, date
 from typing import Dict, Any, List, Optional, Literal
 from enum import Enum
 from fastapi import APIRouter, HTTPException, Depends, status
@@ -13,6 +13,7 @@ from utils.common import (
     get_current_user_payload, 
     create_access_token,
     hash_password,
+    verify_password,
     ACCESS_TOKEN_EXPIRE_MINUTES
 )
 
@@ -26,10 +27,13 @@ def verify_super_admin(payload: Dict[str, Any] = Depends(get_current_user_payloa
     """
     1. Validates the Token (via get_current_user_payload).
     2. Checks if the role is explicitly a Platform Admin.
+    3. Checks if the source is 'platform_admins' to prevent impersonation.
     """
     role = payload.get("role")
-    # Verify the user is actually a platform admin
-    if role not in ["platform_admin", "Platform Admin", "super_admin"]:
+    source = payload.get("source")
+
+    # Verify the user is actually a platform admin and comes from the right table
+    if role not in ["platform_admin", "Platform Admin", "super_admin"] or source != "platform_admins":
          raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access restricted to Platform Administrators only."
@@ -37,6 +41,10 @@ def verify_super_admin(payload: Dict[str, Any] = Depends(get_current_user_payloa
     return payload
 
 # --- PYDANTIC MODELS ---
+
+class PlatformAdminLoginRequest(BaseModel):
+    email: EmailStr
+    password: str
 
 class StoreCreateRequest(BaseModel):
     name: str
@@ -88,6 +96,66 @@ class UserUpdate(BaseModel):
 
 
 # ================================
+# 0. AUTHENTICATION
+# ================================
+
+@router.post("/auth/login")
+def platform_admin_login(
+    data: PlatformAdminLoginRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Dedicated login for Platform Admins.
+    Queries the 'platform_admins' table.
+    """
+    # 1. Fetch admin
+    admin = db.execute(
+        text("SELECT id, email, password_hash, role, is_super_admin FROM platform_admins WHERE email = :email"),
+        {"email": data.email}
+    ).fetchone()
+
+    if not admin:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials"
+        )
+
+    # 2. Verify password
+    if not verify_password(data.password, admin.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials"
+        )
+
+    # 3. Update last_login
+    db.execute(
+        text("UPDATE platform_admins SET last_login = NOW() WHERE id = :id"),
+        {"id": admin.id}
+    )
+    db.commit()
+
+    # 4. Create Token
+    token_data = {
+        "sub": admin.email,
+        "sub_id": admin.id,
+        "role": admin.role,
+        "is_super_admin": admin.is_super_admin,
+        "source": "platform_admins"
+    }
+    
+    access_token = create_access_token(
+        data=token_data, 
+        expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    )
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "role": admin.role
+    }
+
+
+# ================================
 # 1. PLATFORM ANALYTICS
 # ================================
 @router.get("/analytics")
@@ -101,9 +169,14 @@ def get_platform_analytics(
     stats = {
         "total_stores": db.execute(text("SELECT COUNT(*) FROM organizations")).scalar(),
         "active_stores": db.execute(text("SELECT COUNT(*) FROM organizations WHERE is_active = TRUE")).scalar(),
+        "inactive_stores": db.execute(text("SELECT COUNT(*) FROM organizations WHERE is_active = FALSE")).scalar(),
         "total_users": db.execute(text("SELECT COUNT(*) FROM allUsers")).scalar(),
+        "total_customers": db.execute(text("SELECT COUNT(*) FROM allUsers WHERE role = 'customer'")).scalar(),
+        "total_staff": db.execute(text("SELECT COUNT(*) FROM allUsers WHERE role != 'customer'")).scalar(),
         "total_tickets": db.execute(text("SELECT COUNT(*) FROM tickets")).scalar(),
-        "total_revenue": db.execute(text("SELECT COALESCE(SUM(paid_amount), 0) FROM tickets")).scalar()
+        "total_revenue": db.execute(text("SELECT COALESCE(SUM(paid_amount), 0) FROM tickets")).scalar(),
+        "tickets_this_month": db.execute(text("SELECT COUNT(*) FROM tickets WHERE created_at >= date_trunc('month', NOW())")).scalar(),
+        "revenue_this_month": db.execute(text("SELECT COALESCE(SUM(paid_amount), 0) FROM tickets WHERE created_at >= date_trunc('month', NOW())")).scalar()
     }
     return stats
 
@@ -133,6 +206,80 @@ def get_store_revenue_analytics(
     results = db.execute(query).fetchall()
     return [dict(row._mapping) for row in results]
 
+@router.get("/analytics/trends/monthly")
+def get_platform_monthly_trends(
+    db: Session = Depends(get_db),
+    admin: Dict = Depends(verify_super_admin)
+):
+    """
+    Returns last 12 months of platform-wide data (new stores, users, tickets, revenue).
+    """
+    query = text("""
+        WITH months AS (
+            SELECT TO_CHAR(generate_series(
+                date_trunc('month', NOW()) - interval '11 months', 
+                date_trunc('month', NOW()), 
+                '1 month'
+            ), 'YYYY-MM') AS month
+        ),
+        store_stats AS (
+            SELECT TO_CHAR(created_at, 'YYYY-MM') as month, COUNT(*) as new_stores
+            FROM organizations
+            WHERE created_at >= date_trunc('month', NOW()) - interval '11 months'
+            GROUP BY 1
+        ),
+        user_stats AS (
+            SELECT TO_CHAR(joined_at, 'YYYY-MM') as month, COUNT(*) as new_users
+            FROM allUsers
+            WHERE joined_at >= date_trunc('month', NOW()) - interval '11 months'
+            GROUP BY 1
+        ),
+        ticket_stats AS (
+            SELECT 
+                TO_CHAR(created_at, 'YYYY-MM') as month, 
+                COUNT(*) as ticket_count,
+                COALESCE(SUM(paid_amount), 0) as revenue
+            FROM tickets
+            WHERE created_at >= date_trunc('month', NOW()) - interval '11 months'
+            GROUP BY 1
+        )
+        SELECT 
+            m.month,
+            COALESCE(s.new_stores, 0) as new_stores,
+            COALESCE(u.new_users, 0) as new_users,
+            COALESCE(t.ticket_count, 0) as ticket_count,
+            COALESCE(t.revenue, 0) as revenue
+        FROM months m
+        LEFT JOIN store_stats s ON m.month = s.month
+        LEFT JOIN user_stats u ON m.month = u.month
+        LEFT JOIN ticket_stats t ON m.month = t.month
+        ORDER BY m.month ASC
+    """)
+    
+    results = db.execute(query).fetchall()
+    return [dict(row._mapping) for row in results]
+
+@router.get("/analytics/trends/stores")
+def get_store_performance_trends(
+    db: Session = Depends(get_db),
+    admin: Dict = Depends(verify_super_admin)
+):
+    """
+    Returns 30-day activity trends for every store.
+    """
+    query = text("""
+        SELECT 
+            o.name,
+            o.is_active,
+            (SELECT COUNT(*) FROM tickets t WHERE t.organization_id = o.id AND t.created_at >= NOW() - interval '30 days') as ticket_count_last_30_days,
+            (SELECT COALESCE(SUM(paid_amount), 0) FROM tickets t WHERE t.organization_id = o.id AND t.created_at >= NOW() - interval '30 days') as revenue_last_30_days
+        FROM organizations o
+        ORDER BY ticket_count_last_30_days DESC
+    """)
+    
+    results = db.execute(query).fetchall()
+    return [dict(row._mapping) for row in results]
+
 
 # ================================
 # 2. STORE MANAGEMENT (CRUD)
@@ -148,7 +295,8 @@ def get_all_stores(
     query = text("""
         SELECT o.id, o.name, o.phone, o.address, o.created_at, o.is_active,
                (SELECT email FROM allUsers WHERE organization_id = o.id AND role = 'org_owner' LIMIT 1) as owner_email,
-               (SELECT COUNT(*) FROM tickets WHERE organization_id = o.id) as ticket_count
+               (SELECT COUNT(*) FROM tickets WHERE organization_id = o.id) as ticket_count,
+               (SELECT COALESCE(SUM(paid_amount), 0) FROM tickets WHERE organization_id = o.id) as total_revenue
         FROM organizations o
         ORDER BY o.created_at DESC
     """)
@@ -245,6 +393,71 @@ def update_store_details(
     db.commit()
 
     return {"message": "Store details updated successfully"}
+
+@router.delete("/stores/{store_id}")
+def delete_store(
+    store_id: int,
+    force: bool = False,
+    db: Session = Depends(get_db),
+    admin: Dict = Depends(verify_super_admin)
+):
+    """
+    Delete a store. 
+    If force=False, checks for ticket history first.
+    If force=True, deletes all associated data including users, tickets, and logs.
+    """
+    try:
+        # 1. Verify existence
+        store = db.execute(text("SELECT id FROM organizations WHERE id = :id"), {"id": store_id}).fetchone()
+        if not store:
+            raise HTTPException(status_code=404, detail="Store not found")
+
+        # 2. Check for ticket history if not forcing
+        if not force:
+            has_tickets = db.execute(
+                text("SELECT 1 FROM tickets WHERE organization_id = :id LIMIT 1"), 
+                {"id": store_id}
+            ).fetchone()
+            
+            if has_tickets:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Store has ticket history. Use force=true to delete or deactivate instead."
+                )
+
+        # 3. Perform Deletion
+        params = {"id": store_id}
+        
+        # Cascaded delete in order to respect FK constraints
+        # 3.1 Logs
+        db.execute(text("DELETE FROM audit_logs WHERE organization_id = :id"), params)
+        # 3.2 Racks
+        db.execute(text("DELETE FROM racks WHERE organization_id = :id"), params)
+        # 3.3 Clothing Types
+        db.execute(text("DELETE FROM clothing_types WHERE organization_id = :id"), params)
+        # 3.4 Ticket Items (must be before tickets)
+        db.execute(text("""
+            DELETE FROM ticket_items 
+            WHERE ticket_id IN (SELECT id FROM tickets WHERE organization_id = :id)
+        """), params)
+        # 3.5 Tickets
+        db.execute(text("DELETE FROM tickets WHERE organization_id = :id"), params)
+        # 3.6 Settings
+        db.execute(text("DELETE FROM organization_settings WHERE organization_id = :id"), params)
+        # 3.7 Users
+        db.execute(text("DELETE FROM allusers WHERE organization_id = :id"), params)
+        # 3.8 Finally, the Organization itself
+        db.execute(text("DELETE FROM organizations WHERE id = :id"), params)
+
+        db.commit()
+        return {"message": "Store and all associated data deleted", "store_id": store_id}
+
+    except HTTPException:
+        # Re-raise HTTP exceptions (like 404 or 400 from check)
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to delete store: {str(e)}")
 
 # ================================
 # 3. IMPERSONATION (God Mode)
@@ -544,3 +757,136 @@ def delete_customer_permanently(
         db.rollback()
         print(f"Error deleting customer: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete customer.")
+
+
+# ================================
+# 6. AUDIT LOG MANAGEMENT
+# ================================
+
+@router.get("/audit-logs")
+def get_all_audit_logs(
+    org_id: Optional[int] = None,
+    action: Optional[str] = None,
+    actor_role: Optional[str] = None,
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
+    limit: int = 100,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    admin: Dict = Depends(verify_super_admin)
+):
+    """
+    Returns all audit logs across all organizations.
+    """
+    query_str = """
+        SELECT 
+            al.id, 
+            al.organization_id, 
+            o.name as organization_name, 
+            al.actor_id, 
+            al.actor_name, 
+            al.actor_role, 
+            al.action, 
+            al.details, 
+            al.created_at, 
+            al.ticket_id, 
+            al.customer_id
+        FROM audit_logs al
+        LEFT JOIN organizations o ON al.organization_id = o.id
+        WHERE 1=1
+    """
+    params = {"limit": limit, "offset": offset}
+
+    if org_id:
+        query_str += " AND al.organization_id = :org_id"
+        params["org_id"] = org_id
+    if action:
+        query_str += " AND al.action = :action"
+        params["action"] = action
+    if actor_role:
+        query_str += " AND al.actor_role = :actor_role"
+        params["actor_role"] = actor_role
+    if date_from:
+        query_str += " AND al.created_at >= :date_from"
+        params["date_from"] = date_from
+    if date_to:
+        query_str += " AND al.created_at <= :date_to"
+        params["date_to"] = date_to
+
+    query_str += " ORDER BY al.created_at DESC LIMIT :limit OFFSET :offset"
+    
+    logs = db.execute(text(query_str), params).fetchall()
+    return [dict(row._mapping) for row in logs]
+
+@router.get("/audit-logs/summary")
+def get_audit_log_summary(
+    db: Session = Depends(get_db),
+    admin: Dict = Depends(verify_super_admin)
+):
+    """
+    Returns aggregate counts grouped by action type and organization.
+    """
+    query = text("""
+        SELECT 
+            o.name as org_name, 
+            al.action, 
+            COUNT(*) as count 
+        FROM audit_logs al 
+        JOIN organizations o ON al.organization_id = o.id 
+        GROUP BY o.name, al.action 
+        ORDER BY count DESC
+    """)
+    results = db.execute(query).fetchall()
+    return [dict(row._mapping) for row in results]
+
+@router.get("/stores/{store_id}/audit-logs")
+def get_store_audit_logs(
+    store_id: int,
+    action: Optional[str] = None,
+    actor_role: Optional[str] = None,
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
+    limit: int = 100,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    admin: Dict = Depends(verify_super_admin)
+):
+    """
+    Get audit logs for a specific store.
+    """
+    query_str = """
+        SELECT 
+            al.id, 
+            al.organization_id, 
+            o.name as organization_name, 
+            al.actor_id, 
+            al.actor_name, 
+            al.actor_role, 
+            al.action, 
+            al.details, 
+            al.created_at, 
+            al.ticket_id, 
+            al.customer_id
+        FROM audit_logs al
+        JOIN organizations o ON al.organization_id = o.id
+        WHERE al.organization_id = :store_id
+    """
+    params = {"store_id": store_id, "limit": limit, "offset": offset}
+
+    if action:
+        query_str += " AND al.action = :action"
+        params["action"] = action
+    if actor_role:
+        query_str += " AND al.actor_role = :actor_role"
+        params["actor_role"] = actor_role
+    if date_from:
+        query_str += " AND al.created_at >= :date_from"
+        params["date_from"] = date_from
+    if date_to:
+        query_str += " AND al.created_at <= :date_to"
+        params["date_to"] = date_to
+
+    query_str += " ORDER BY al.created_at DESC LIMIT :limit OFFSET :offset"
+    
+    logs = db.execute(text(query_str), params).fetchall()
+    return [dict(row._mapping) for row in logs]

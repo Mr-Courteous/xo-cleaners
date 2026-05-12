@@ -27,7 +27,12 @@ import {
     Home,
     Eye,
     EyeOff,
-    RefreshCw
+    RefreshCw,
+    History,
+    Activity,
+    Calendar,
+    ArrowUpRight,
+    ArrowDownRight
 } from 'lucide-react';
 import Header from './Header';
 import baseURL from '../lib/config';
@@ -52,13 +57,13 @@ function AdminLogin({ onLoginSuccess }: AdminLoginProps) {
         setLoading(true);
 
         try {
-            const res = await axios.post(`${baseURL}/token/admin-login`, { email, password });
+            const res = await axios.post(`${baseURL}/platform-admin/auth/login`, { email, password });
             
-            const { access_token, admin_role, email: adminEmail } = res.data;
+            const { access_token, role } = res.data;
 
             localStorage.setItem('platformAdminToken', access_token);
-            localStorage.setItem('platformAdminRole', admin_role);
-            localStorage.setItem('platformAdminEmail', adminEmail);
+            localStorage.setItem('platformAdminRole', role);
+            localStorage.setItem('platformAdminEmail', email);
 
             onLoginSuccess();
         } catch (err: any) {
@@ -143,9 +148,49 @@ function AdminLogin({ onLoginSuccess }: AdminLoginProps) {
 interface PlatformStats {
     total_stores: number;
     active_stores: number;
+    inactive_stores: number;
     total_users: number;
+    total_customers: number;
+    total_staff: number;
     total_tickets: number;
     total_revenue: number;
+    tickets_this_month: number;
+    revenue_this_month: number;
+}
+
+interface TrendData {
+    month: string;
+    new_stores: number;
+    new_users: number;
+    ticket_count: number;
+    revenue: number;
+}
+
+interface StorePerformance {
+    name: string;
+    is_active: boolean;
+    ticket_count_last_30_days: number;
+    revenue_last_30_days: number;
+}
+
+interface AuditLog {
+    id: number;
+    organization_id: number;
+    organization_name: string;
+    actor_id: number;
+    actor_name: string;
+    actor_role: string;
+    action: string;
+    details: any;
+    created_at: string;
+    ticket_id?: number;
+    customer_id?: number;
+}
+
+interface AuditSummary {
+    org_name: string;
+    action: string;
+    count: number;
 }
 
 interface StoreAnalyticsData {
@@ -188,7 +233,7 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
     const navigate = useNavigate();
 
     // --- STATE ---
-    const [activeView, setActiveView] = useState<'dashboard' | 'stores' | 'users'>('dashboard');
+    const [activeView, setActiveView] = useState<'dashboard' | 'stores' | 'users' | 'audit-logs'>('dashboard');
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     
@@ -196,8 +241,21 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
     const [stats, setStats] = useState<PlatformStats | null>(null);
     const [stores, setStores] = useState<StoreAnalyticsData[]>([]);
     const [users, setUsers] = useState<UserData[]>([]);
+    const [trends, setTrends] = useState<TrendData[]>([]);
+    const [storePerformance, setStorePerformance] = useState<StorePerformance[]>([]);
+    const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+    const [auditSummary, setAuditSummary] = useState<AuditSummary[]>([]);
     
-    // --- MODAL STATES ---
+    // Filters for Audit Logs
+    const [auditFilters, setAuditFilters] = useState({
+        org_id: '',
+        action: '',
+        actor_role: '',
+        date_from: '',
+        date_to: '',
+        limit: 100,
+        offset: 0
+    });
     const [isAnalyticsModalOpen, setIsAnalyticsModalOpen] = useState(false);
     const [selectedStoreAnalytics, setSelectedStoreAnalytics] = useState<{name: string, data: MonthlyMetric[]} | null>(null);
 
@@ -224,15 +282,18 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
         owner_email: '', 
         owner_password: ''
     });
+    const [showOwnerPassword, setShowOwnerPassword] = useState(false);
 
     const [isStoreUsersModalOpen, setIsStoreUsersModalOpen] = useState(false);
+    const [isGlobalUserModalOpen, setIsGlobalUserModalOpen] = useState(false);
     const [currentStoreForUsers, setCurrentStoreForUsers] = useState<StoreAnalyticsData | null>(null);
     const [storeUsers, setStoreUsers] = useState<UserData[]>([]);
     const [isUserFormOpen, setIsUserFormOpen] = useState(false);
     
     const [newStoreUser, setNewStoreUser] = useState({
-        first_name: '', last_name: '', email: '', password: '', role: 'cashier', phone: ''
+        first_name: '', last_name: '', email: '', password: '', role: 'cashier', phone: '', selected_org_id: ''
     });
+    const [showNewUserPassword, setShowNewUserPassword] = useState(false);
     
     const [isEditUserModalOpen, setIsEditUserModalOpen] = useState(false);
     const [editingUser, setEditingUser] = useState<UserData | null>(null);
@@ -255,18 +316,35 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
             const config = { headers: { Authorization: `Bearer ${token}` } };
 
             if (activeView === 'dashboard') {
-                const res = await axios.get(`${baseURL}/platform-admin/analytics`, config);
-                setStats(res.data);
+                const [statsRes, trendsRes, performanceRes] = await Promise.all([
+                    axios.get(`${baseURL}/platform-admin/analytics`, config),
+                    axios.get(`${baseURL}/platform-admin/analytics/trends/monthly`, config),
+                    axios.get(`${baseURL}/platform-admin/analytics/trends/stores`, config)
+                ]);
+                setStats(statsRes.data);
+                setTrends(trendsRes.data);
+                setStorePerformance(performanceRes.data);
             } 
             else if (activeView === 'stores') {
-                const res = await axios.get(`${baseURL}/platform-admin/analytics/revenue-by-store`, config);
+                const res = await axios.get(`${baseURL}/platform-admin/stores`, config);
                 setStores(res.data);
             } 
             else if (activeView === 'users') {
-                const res = await axios.get(`${baseURL}/platform-admin/users`, config).catch(() => {
-                    return axios.get(`${baseURL}/all-users`, config);
-                });
-                setUsers(res.data.users || res.data);
+                const [usersRes, storesRes] = await Promise.all([
+                    axios.get(`${baseURL}/platform-admin/users`, config),
+                    axios.get(`${baseURL}/platform-admin/stores`, config)
+                ]);
+                setUsers(usersRes.data.users || usersRes.data);
+                setStores(storesRes.data);
+            }
+            else if (activeView === 'audit-logs') {
+                const queryParams = new URLSearchParams(Object.entries(auditFilters).filter(([_, v]) => v !== '')).toString();
+                const [logsRes, summaryRes] = await Promise.all([
+                    axios.get(`${baseURL}/platform-admin/audit-logs?${queryParams}`, config),
+                    axios.get(`${baseURL}/platform-admin/audit-logs/summary`, config)
+                ]);
+                setAuditLogs(logsRes.data);
+                setAuditSummary(summaryRes.data);
             }
         } catch (err: any) {
             console.error(err);
@@ -304,7 +382,15 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
 
     const handleCreateStoreUser = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!currentStoreForUsers) return;
+        
+        // Determine the target org ID
+        const targetOrgId = currentStoreForUsers ? currentStoreForUsers.id : newStoreUser.selected_org_id;
+        
+        if (!targetOrgId) {
+            setCreateUserError("Please select a store.");
+            return;
+        }
+
         setIsSubmittingUser(true);
         setCreateUserError(null);
         setError(null);
@@ -312,7 +398,6 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
         try {
             const token = localStorage.getItem('platformAdminToken');
             
-            // Map to the WorkerCreateSchema
             const payload = {
                 first_name: newStoreUser.first_name,
                 last_name: newStoreUser.last_name,
@@ -320,10 +405,9 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
                 password: newStoreUser.password,
                 role: newStoreUser.role,
                 phone: newStoreUser.phone,
-                organization_id: currentStoreForUsers.id // Include target org ID
+                organization_id: targetOrgId
             };
 
-            // ⏱️ Add 30 second timeout to prevent server hanging
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 30000);
 
@@ -337,22 +421,28 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
             }
             
             showSuccess(`New ${newStoreUser.role} added successfully.`);
-            setNewStoreUser({ first_name: '', last_name: '', email: '', password: '', role: 'cashier', phone: '' });
+            setNewStoreUser({ first_name: '', last_name: '', email: '', password: '', role: 'cashier', phone: '', selected_org_id: '' });
             setIsUserFormOpen(false);
+            setIsGlobalUserModalOpen(false);
             setIsSubmittingUser(false);
             
-            // ⚡ Refresh list in background WITHOUT awaiting (async, not blocking)
-            setTimeout(async () => {
-                try {
-                    const res = await axios.get(`${baseURL}/platform-admin/stores/${currentStoreForUsers.id}/users`, {
-                        headers: { Authorization: `Bearer ${token}` }
-                    });
-                    setStoreUsers(res.data);
-                } catch (err) {
-                    console.error("Failed to refresh users:", err);
-                }
-            }, 500);
-
+            // ⚡ Refresh contextually
+            if (currentStoreForUsers) {
+                // Refresh specific store users list
+                setTimeout(async () => {
+                    try {
+                        const res = await axios.get(`${baseURL}/platform-admin/stores/${currentStoreForUsers.id}/users`, {
+                            headers: { Authorization: `Bearer ${token}` }
+                        });
+                        setStoreUsers(res.data);
+                    } catch (err) {
+                        console.error("Failed to refresh users:", err);
+                    }
+                }, 500);
+            } else if (activeView === 'users') {
+                // Refresh global users list
+                fetchData();
+            }
         } catch (err: any) {
             setIsSubmittingUser(false);
             
@@ -503,6 +593,43 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
         }
     };
 
+    const handleDeleteStore = async (storeId: number) => {
+        const confirmDelete = window.confirm("Are you sure you want to delete this store? This action is permanent.");
+        if (!confirmDelete) return;
+
+        try {
+            const token = localStorage.getItem('platformAdminToken');
+            const config = { headers: { Authorization: `Bearer ${token}` } };
+
+            // 1. Try safe delete first
+            try {
+                await axios.delete(`${baseURL}/platform-admin/stores/${storeId}`, config);
+                showSuccess("Store deleted successfully.");
+                fetchData();
+            } catch (err: any) {
+                if (err.response?.status === 400 && err.response?.data?.detail?.includes("ticket history")) {
+                    // 2. If it has history, ask for forced delete
+                    const forceDelete = window.confirm(
+                        "This store has ticket history and cannot be safely deleted. " +
+                        "DANGER: Do you want to FORCIBLY delete this store and ALL associated data (tickets, users, logs)? " +
+                        "This CANNOT be undone."
+                    );
+                    
+                    if (forceDelete) {
+                        await axios.delete(`${baseURL}/platform-admin/stores/${storeId}?force=true`, config);
+                        showSuccess("Store and all associated data purged.");
+                        fetchData();
+                    }
+                } else {
+                    throw err;
+                }
+            }
+        } catch (err: any) {
+            console.error(err);
+            setError(err.response?.data?.detail || "Failed to delete store.");
+        }
+    };
+
     const handleCreateStore = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsSubmittingStore(true);
@@ -574,44 +701,218 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
     };
 
     // --- RENDER HELPERS ---
+
+    const renderUserCreationForm = () => (
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-indigo-100 mb-6 animate-in slide-in-from-top-2">
+            <h5 className="font-bold text-gray-800 mb-4 text-sm uppercase tracking-wide">Add New User</h5>
+            
+            {createUserError && (
+                <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-100 text-red-700 text-xs flex items-center gap-2">
+                    <AlertCircle size={16} /> {createUserError}
+                </div>
+            )}
+
+            <form onSubmit={handleCreateStoreUser} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <input required placeholder="First Name" className="border p-2 rounded-lg" value={newStoreUser.first_name} onChange={e => setNewStoreUser({...newStoreUser, first_name: e.target.value})} />
+                <input required placeholder="Last Name" className="border p-2 rounded-lg" value={newStoreUser.last_name} onChange={e => setNewStoreUser({...newStoreUser, last_name: e.target.value})} />
+                <input required type="email" placeholder="Email" className="border p-2 rounded-lg" value={newStoreUser.email} onChange={e => setNewStoreUser({...newStoreUser, email: e.target.value})} />
+                <div className="relative">
+                    <input 
+                        required 
+                        type={showNewUserPassword ? "text" : "password"} 
+                        placeholder="Password" 
+                        className="border p-2 rounded-lg w-full pr-10" 
+                        value={newStoreUser.password} 
+                        onChange={e => setNewStoreUser({...newStoreUser, password: e.target.value})} 
+                    />
+                    <button 
+                        type="button"
+                        onClick={() => setShowNewUserPassword(!showNewUserPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-indigo-600 transition"
+                    >
+                        {showNewUserPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                </div>
+                <input type="tel" placeholder="Phone (Optional)" className="border p-2 rounded-lg" value={newStoreUser.phone} onChange={e => setNewStoreUser({...newStoreUser, phone: e.target.value})} />
+                
+                <select className="border p-2 rounded-lg bg-white" value={newStoreUser.role} onChange={e => setNewStoreUser({...newStoreUser, role: e.target.value})}>
+                    {/* <option value="store_admin">Store Admin</option>
+                    <option value="store_manager">Store Manager</option>
+                    <option value="operator">Operator</option> */}
+                    <option value="cashier">Cashier</option>
+                    {/* <option value="driver">Driver</option> */}
+                    <option value="customer">Customer</option>
+                </select>
+
+                {!currentStoreForUsers && (
+                    <select 
+                        required
+                        className="border p-2 rounded-lg bg-white md:col-span-2"
+                        value={newStoreUser.selected_org_id}
+                        onChange={e => setNewStoreUser({...newStoreUser, selected_org_id: e.target.value})}
+                    >
+                        <option value="">-- Select Store --</option>
+                        {stores.map(s => (
+                            <option key={s.id} value={s.id}>{s.name}</option>
+                        ))}
+                    </select>
+                )}
+                
+                <div className="md:col-span-2 flex justify-end mt-2">
+                    <button type="submit" disabled={isSubmittingUser} className="bg-indigo-600 text-white px-5 py-2 rounded-lg hover:bg-indigo-700 shadow-md flex items-center gap-2 disabled:opacity-70">
+                        {isSubmittingUser ? <><Loader2 size={16} className="animate-spin" /> Creating...</> : 'Create User'}
+                    </button>
+                </div>
+            </form>
+        </div>
+    );
+
     const renderDashboard = () => (
-        <div className="space-y-6 animate-in fade-in duration-500">
-            <h2 className="text-2xl font-bold text-gray-800">Platform Overview</h2>
+        <div className="space-y-8 animate-in fade-in duration-500 pb-10">
+            <div className="flex justify-between items-center">
+                <h2 className="text-2xl font-bold text-gray-800">Platform Overview</h2>
+                <div className="text-xs font-medium text-gray-500 bg-white px-3 py-1.5 rounded-full border shadow-sm flex items-center gap-2">
+                    <Activity size={14} className="text-blue-500" /> Live Platform Metrics
+                </div>
+            </div>
+
+            {/* Main Stats Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <div className="bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl p-6 text-white shadow-lg">
-                    <div className="flex justify-between items-start">
-                        <div>
-                            <p className="text-green-100 font-medium text-sm">Total Revenue</p>
-                            <h3 className="text-3xl font-bold mt-1">${stats?.total_revenue?.toLocaleString() || '0.00'}</h3>
+                <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden group">
+                    <div className="absolute -right-4 -bottom-4 opacity-10 group-hover:scale-110 transition-transform duration-500">
+                        <DollarSign size={120} />
+                    </div>
+                    <div className="relative z-10">
+                        <p className="text-blue-100 font-medium text-sm">Total Revenue</p>
+                        <h3 className="text-3xl font-bold mt-1">${stats?.total_revenue?.toLocaleString() || '0.00'}</h3>
+                        <div className="mt-4 flex items-center gap-1.5 text-xs bg-white/20 w-fit px-2 py-1 rounded-full">
+                            <Calendar size={12} /> This Month: ${stats?.revenue_this_month?.toLocaleString() || '0.00'}
                         </div>
-                        <div className="bg-white/20 p-2 rounded-lg"><DollarSign size={24} /></div>
                     </div>
                 </div>
+
                 <div onClick={() => setActiveView('stores')} className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 cursor-pointer hover:border-blue-300 hover:shadow-md transition-all group">
                     <div className="flex justify-between items-start">
                         <div>
-                            <p className="text-gray-500 font-medium text-sm group-hover:text-blue-600 transition-colors">Active Stores</p>
-                            <h3 className="text-3xl font-bold text-gray-900 mt-1">{stats?.active_stores || 0}</h3>
+                            <p className="text-gray-500 font-medium text-sm group-hover:text-blue-600 transition-colors">Stores</p>
+                            <h3 className="text-3xl font-bold text-gray-900 mt-1">{stats?.total_stores || 0}</h3>
+                            <div className="mt-3 flex items-center gap-3">
+                                <span className="text-xs font-medium text-green-600 flex items-center gap-1">
+                                    <CheckCircle size={12} /> {stats?.active_stores || 0} Active
+                                </span>
+                                <span className="text-xs font-medium text-red-400 flex items-center gap-1">
+                                    <AlertCircle size={12} /> {stats?.inactive_stores || 0} Inactive
+                                </span>
+                            </div>
                         </div>
                         <div className="bg-blue-50 text-blue-600 p-2 rounded-lg group-hover:bg-blue-100 transition-colors"><Store size={24} /></div>
                     </div>
                 </div>
+
                 <div onClick={() => setActiveView('users')} className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 cursor-pointer hover:border-orange-300 hover:shadow-md transition-all group">
                     <div className="flex justify-between items-start">
                         <div>
-                            <p className="text-gray-500 font-medium text-sm group-hover:text-orange-600 transition-colors">Total Users</p>
+                            <p className="text-gray-500 font-medium text-sm group-hover:text-orange-600 transition-colors">Users</p>
                             <h3 className="text-3xl font-bold text-gray-900 mt-1">{stats?.total_users || 0}</h3>
+                            <div className="mt-3 flex items-center gap-3">
+                                <span className="text-xs font-medium text-indigo-600">
+                                    {stats?.total_staff || 0} Staff
+                                </span>
+                                <span className="text-xs font-medium text-orange-500">
+                                    {stats?.total_customers || 0} Customers
+                                </span>
+                            </div>
                         </div>
                         <div className="bg-orange-50 text-orange-600 p-2 rounded-lg group-hover:bg-orange-100 transition-colors"><Users size={24} /></div>
                     </div>
                 </div>
-                <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+
+                <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 group">
                     <div className="flex justify-between items-start">
                         <div>
-                            <p className="text-gray-500 font-medium text-sm">Total Tickets</p>
+                            <p className="text-gray-500 font-medium text-sm">Tickets</p>
                             <h3 className="text-3xl font-bold text-gray-900 mt-1">{stats?.total_tickets || 0}</h3>
+                            <div className="mt-3 text-xs font-medium text-purple-600 bg-purple-50 px-2 py-1 rounded-full w-fit">
+                                {stats?.tickets_this_month || 0} New This Month
+                            </div>
                         </div>
                         <div className="bg-purple-50 text-purple-600 p-2 rounded-lg"><TrendingUp size={24} /></div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Trends Section */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Platform Growth Trends */}
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                    <div className="px-6 py-4 border-b border-gray-50 flex justify-between items-center">
+                        <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                            <TrendingUp size={18} className="text-green-500" /> Platform Growth (12m)
+                        </h3>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left text-sm">
+                            <thead className="bg-gray-50 text-gray-500 uppercase text-[10px] tracking-wider">
+                                <tr>
+                                    <th className="px-6 py-3">Month</th>
+                                    <th className="px-6 py-3 text-center">New Stores</th>
+                                    <th className="px-6 py-3 text-center">New Users</th>
+                                    <th className="px-6 py-3 text-right">Revenue</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-50">
+                                {trends.map((t, i) => (
+                                    <tr key={i} className="hover:bg-gray-50/50">
+                                        <td className="px-6 py-3 font-medium text-gray-700">{t.month}</td>
+                                        <td className="px-6 py-3 text-center text-blue-600 font-bold">{t.new_stores > 0 ? `+${t.new_stores}` : '-'}</td>
+                                        <td className="px-6 py-3 text-center text-orange-600 font-bold">{t.new_users > 0 ? `+${t.new_users}` : '-'}</td>
+                                        <td className="px-6 py-3 text-right font-mono text-emerald-600 font-bold">${t.revenue.toLocaleString()}</td>
+                                    </tr>
+                                ))}
+                                {trends.length === 0 && (
+                                    <tr><td colSpan={4} className="p-10 text-center text-gray-400 italic">No trend data available.</td></tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                {/* Store Performance 30d */}
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                    <div className="px-6 py-4 border-b border-gray-50 flex justify-between items-center">
+                        <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                            <Activity size={18} className="text-blue-500" /> Store Activity (30d)
+                        </h3>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left text-sm">
+                            <thead className="bg-gray-50 text-gray-500 uppercase text-[10px] tracking-wider">
+                                <tr>
+                                    <th className="px-6 py-3">Store Name</th>
+                                    <th className="px-6 py-3 text-center">Tickets</th>
+                                    <th className="px-6 py-3 text-right">Revenue</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-50">
+                                {storePerformance.slice(0, 10).map((s, i) => (
+                                    <tr key={i} className="hover:bg-gray-50/50">
+                                        <td className="px-6 py-3">
+                                            <div className="font-medium text-gray-800">{s.name}</div>
+                                            {!s.is_active && <span className="text-[10px] text-red-400 font-bold uppercase">Inactive</span>}
+                                        </td>
+                                        <td className="px-6 py-3 text-center">
+                                            <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${s.ticket_count_last_30_days > 0 ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-400'}`}>
+                                                {s.ticket_count_last_30_days}
+                                            </span>
+                                        </td>
+                                        <td className="px-6 py-3 text-right font-mono font-bold text-gray-900">${s.revenue_last_30_days.toLocaleString()}</td>
+                                    </tr>
+                                ))}
+                                {storePerformance.length === 0 && (
+                                    <tr><td colSpan={3} className="p-10 text-center text-gray-400 italic">No activity recorded.</td></tr>
+                                )}
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
@@ -664,7 +965,8 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
                                             <button onClick={() => handleViewAnalytics(store)} className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition" title="View Analytics"><BarChart3 size={18} /></button>
                                             <button onClick={() => openEditModal(store)} className="p-2 text-orange-600 bg-orange-50 hover:bg-orange-100 rounded-lg transition" title="Edit Store"><Edit3 size={18} /></button>
                                             <button onClick={() => handleImpersonate(store.id)} disabled={!store.owner_email} className="p-2 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition" title="Impersonate"><Shield size={18} /></button>
-                                            <button onClick={() => handleToggleStatus(store)} className={`p-2 rounded-lg transition ${store.is_active ? 'text-red-600 bg-red-50 hover:bg-red-100' : 'text-green-600 bg-green-50 hover:bg-green-100'}`} title="Toggle Status"><Power size={18} /></button>
+                                            <button onClick={() => handleToggleStatus(store)} className={`p-2 rounded-lg transition ${store.is_active ? 'text-gray-600 bg-gray-50 hover:bg-gray-100' : 'text-green-600 bg-green-50 hover:bg-green-100'}`} title={store.is_active ? 'Deactivate' : 'Activate'}><Power size={18} /></button>
+                                            <button onClick={() => handleDeleteStore(store.id)} className="p-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition" title="Delete Store"><Trash2 size={18} /></button>
                                         </div>
                                     </td>
                                 </tr>
@@ -677,8 +979,47 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
     );
 
     const renderUsers = () => (
-        <div className="space-y-6 animate-in fade-in duration-500 h-full flex flex-col">
-            <div className="flex justify-between items-center flex-shrink-0"><h2 className="text-2xl font-bold text-gray-800">All Platform Users</h2><div className="bg-white border rounded-lg flex items-center px-3 py-2"><div className="text-xs text-gray-500 mr-2">Total:</div><div className="font-bold text-gray-800">{users.length}</div></div></div>
+        <div className="space-y-6 animate-in fade-in duration-500 h-full flex flex-col pb-10">
+            <div className="flex justify-between items-center flex-shrink-0">
+                <h2 className="text-2xl font-bold text-gray-800">All Platform Users</h2>
+                <div className="flex items-center gap-3">
+                    <div className="bg-white border rounded-lg flex items-center px-3 py-2">
+                        <div className="text-xs text-gray-500 mr-2">Total:</div>
+                        <div className="font-bold text-gray-800">{users.length}</div>
+                    </div>
+                    <button 
+                        onClick={() => {
+                            setCurrentStoreForUsers(null);
+                            setIsUserFormOpen(true);
+                            setCreateUserError(null);
+                            // If we're not in the modal, we need another way to show the form
+                            // I'll repurpose the same modal or add a global one.
+                            // For now, let's assume we can open a dedicated modal.
+                            setIsGlobalUserModalOpen(true);
+                        }}
+                        className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition flex items-center gap-2 shadow-md"
+                    >
+                        <UserPlus size={18} /> Add User
+                    </button>
+                </div>
+            </div>
+
+            {isGlobalUserModalOpen && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                        <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50 flex-shrink-0">
+                            <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                                <UserPlus size={20} className="text-indigo-600" /> Create Platform Worker
+                            </h3>
+                            <button onClick={() => setIsGlobalUserModalOpen(false)}><X size={20} className="text-gray-400" /></button>
+                        </div>
+                        <div className="overflow-y-auto p-6">
+                            {renderUserCreationForm()}
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col flex-1 min-h-0">
                 <div className="overflow-auto flex-1">
                     <table className="w-full text-left text-sm text-gray-600 relative">
@@ -723,6 +1064,124 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
         </div>
     );
 
+    const renderAuditLogs = () => (
+        <div className="space-y-6 animate-in fade-in duration-500 h-full flex flex-col pb-10">
+            <div className="flex justify-between items-center flex-shrink-0">
+                <div>
+                    <h2 className="text-2xl font-bold text-gray-800">Platform Audit Logs</h2>
+                    <p className="text-sm text-gray-500 mt-1">Track all administrative and system actions across the platform.</p>
+                </div>
+                <div className="flex items-center gap-3">
+                    <button onClick={() => fetchData()} className="p-2 text-gray-500 hover:bg-white rounded-lg border transition shadow-sm bg-gray-50">
+                        <RefreshCw size={18} className={isLoading ? 'animate-spin' : ''} />
+                    </button>
+                </div>
+            </div>
+
+            {/* Audit Summary Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 flex-shrink-0">
+                <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+                    <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Total Logs</h4>
+                    <div className="text-2xl font-bold text-gray-900">{auditLogs.length}</div>
+                </div>
+                {auditSummary.slice(0, 2).map((s, i) => (
+                    <div key={i} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+                        <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Top Activity: {s.action}</h4>
+                        <div className="text-2xl font-bold text-indigo-600">{s.count} <span className="text-xs text-gray-400 font-normal">at {s.org_name}</span></div>
+                    </div>
+                ))}
+            </div>
+
+            {/* Filters */}
+            <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-wrap gap-4 items-end flex-shrink-0">
+                <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Role</label>
+                    <select 
+                        className="block w-full border rounded-lg p-2 text-sm bg-gray-50"
+                        value={auditFilters.actor_role}
+                        onChange={e => setAuditFilters({...auditFilters, actor_role: e.target.value})}
+                    >
+                        <option value="">All Roles</option>
+                        <option value="org_owner">Org Owner</option>
+                        <option value="store_admin">Store Admin</option>
+                        <option value="cashier">Cashier</option>
+                    </select>
+                </div>
+                <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Action</label>
+                    <input 
+                        placeholder="e.g. login"
+                        className="block w-full border rounded-lg p-2 text-sm bg-gray-50"
+                        value={auditFilters.action}
+                        onChange={e => setAuditFilters({...auditFilters, action: e.target.value})}
+                    />
+                </div>
+                <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">From Date</label>
+                    <input 
+                        type="date"
+                        className="block w-full border rounded-lg p-2 text-sm bg-gray-50"
+                        value={auditFilters.date_from}
+                        onChange={e => setAuditFilters({...auditFilters, date_from: e.target.value})}
+                    />
+                </div>
+                <button 
+                    onClick={() => fetchData()}
+                    className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-indigo-700 transition shadow-md"
+                >
+                    Apply Filters
+                </button>
+            </div>
+
+            {/* Logs Table */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col flex-1 min-h-0">
+                <div className="overflow-auto flex-1">
+                    <table className="w-full text-left text-sm text-gray-600 relative">
+                        <thead className="bg-gray-50 text-gray-900 font-medium border-b border-gray-200 sticky top-0 z-10">
+                            <tr>
+                                <th className="p-4 bg-gray-50">Timestamp</th>
+                                <th className="p-4 bg-gray-50">Actor</th>
+                                <th className="p-4 bg-gray-50">Action</th>
+                                <th className="p-4 bg-gray-50">Organization</th>
+                                <th className="p-4 bg-gray-50">Details</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                            {auditLogs.map((log) => (
+                                <tr key={log.id} className="hover:bg-gray-50/50 transition-colors">
+                                    <td className="p-4 text-xs whitespace-nowrap">
+                                        <div className="font-medium text-gray-900">{new Date(log.created_at).toLocaleDateString()}</div>
+                                        <div className="text-gray-400">{new Date(log.created_at).toLocaleTimeString()}</div>
+                                    </td>
+                                    <td className="p-4">
+                                        <div className="font-semibold text-gray-900">{log.actor_name}</div>
+                                        <div className="text-[10px] uppercase font-bold text-indigo-500">{log.actor_role}</div>
+                                    </td>
+                                    <td className="p-4">
+                                        <span className="px-2 py-0.5 bg-blue-50 text-blue-600 rounded text-xs font-bold border border-blue-100">
+                                            {log.action}
+                                        </span>
+                                    </td>
+                                    <td className="p-4">
+                                        <div className="font-medium text-gray-700">{log.organization_name}</div>
+                                    </td>
+                                    <td className="p-4">
+                                        <div className="max-w-xs truncate text-xs text-gray-500" title={JSON.stringify(log.details)}>
+                                            {JSON.stringify(log.details)}
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                            {auditLogs.length === 0 && (
+                                <tr><td colSpan={5} className="p-20 text-center text-gray-400 italic">No audit logs found for the selected filters.</td></tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    );
+
     return (
         <div className="flex flex-1 overflow-hidden">
             <aside className={`fixed inset-y-0 left-0 z-40 w-64 bg-slate-900 text-slate-300 transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-auto mt-20 lg:mt-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
@@ -732,6 +1191,7 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
                         <button onClick={() => { setActiveView('dashboard'); setSidebarOpen(false); }} className={`w-full flex items-center px-4 py-3 text-sm font-medium rounded-xl transition-all ${activeView === 'dashboard' ? 'bg-indigo-600 text-white shadow-lg' : 'hover:bg-slate-800 hover:text-white'}`}><LayoutDashboard size={20} className="mr-3" /> Dashboard</button>
                         <button onClick={() => { setActiveView('stores'); setSidebarOpen(false); }} className={`w-full flex items-center px-4 py-3 text-sm font-medium rounded-xl transition-all ${activeView === 'stores' ? 'bg-indigo-600 text-white shadow-lg' : 'hover:bg-slate-800 hover:text-white'}`}><Store size={20} className="mr-3" /> All Stores</button>
                         <button onClick={() => { setActiveView('users'); setSidebarOpen(false); }} className={`w-full flex items-center px-4 py-3 text-sm font-medium rounded-xl transition-all ${activeView === 'users' ? 'bg-indigo-600 text-white shadow-lg' : 'hover:bg-slate-800 hover:text-white'}`}><Users size={20} className="mr-3" /> All Users</button>
+                        <button onClick={() => { setActiveView('audit-logs'); setSidebarOpen(false); }} className={`w-full flex items-center px-4 py-3 text-sm font-medium rounded-xl transition-all ${activeView === 'audit-logs' ? 'bg-indigo-600 text-white shadow-lg' : 'hover:bg-slate-800 hover:text-white'}`}><History size={20} className="mr-3" /> Audit Logs</button>
                     </nav>
                     
                     {/* Fixed Sidebar Footer with Logout AND Back to Home */}
@@ -755,10 +1215,13 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
                         {error && <div className="mb-6 p-4 rounded-xl bg-red-50 border border-red-100 text-red-700 flex items-center gap-3 flex-shrink-0"><AlertCircle size={20} /> {error} <button onClick={() => setError(null)} className="ml-auto"><X size={18}/></button></div>}
                         {successMsg && <div className="mb-6 p-4 rounded-xl bg-green-50 border border-green-100 text-green-700 flex items-center gap-3 flex-shrink-0"><CheckCircle size={20} /> {successMsg}</div>}
                         
-                        {isLoading && !stats ? (
+                        {isLoading && !stats && activeView === 'dashboard' ? (
                             <div className="flex justify-center items-center h-64"><Loader2 className="animate-spin text-indigo-600" size={48} /></div>
                         ) : (
-                            activeView === 'dashboard' ? renderDashboard() : activeView === 'stores' ? renderStores() : renderUsers()
+                            activeView === 'dashboard' ? renderDashboard() : 
+                            activeView === 'stores' ? renderStores() : 
+                            activeView === 'users' ? renderUsers() : 
+                            renderAuditLogs()
                         )}
                     </div>
                 </div>
@@ -817,7 +1280,25 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
                                             <input required type="text" className="w-full border rounded-lg p-2" value={newStore.owner_last_name} onChange={e => setNewStore({...newStore, owner_last_name: e.target.value})} placeholder="Last Name" />
                                         </div>
                                         <input required type="email" className="w-full border rounded-lg p-2" value={newStore.owner_email} onChange={e => setNewStore({...newStore, owner_email: e.target.value})} placeholder="Email" />
-                                        <input required type="password" title="Password must be at least 8 characters" minLength={8} className="w-full border rounded-lg p-2" value={newStore.owner_password} onChange={e => setNewStore({...newStore, owner_password: e.target.value})} placeholder="Password (min 8 chars)" />
+                                        <div className="relative">
+                                            <input 
+                                                required 
+                                                type={showOwnerPassword ? "text" : "password"} 
+                                                title="Password must be at least 8 characters" 
+                                                minLength={8} 
+                                                className="w-full border rounded-lg p-2 pr-10" 
+                                                value={newStore.owner_password} 
+                                                onChange={e => setNewStore({...newStore, owner_password: e.target.value})} 
+                                                placeholder="Password (min 8 chars)" 
+                                            />
+                                            <button 
+                                                type="button"
+                                                onClick={() => setShowOwnerPassword(!showOwnerPassword)}
+                                                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-indigo-600 transition"
+                                            >
+                                                {showOwnerPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                                 <div className="pt-4 border-t flex justify-end gap-3">
@@ -865,41 +1346,7 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
                                     {isUserFormOpen ? <><X size={16}/> Cancel</> : <><UserPlus size={16}/> Add User</>}
                                 </button>
                             </div>
-                            
-                            {isUserFormOpen && (
-                                <div className="bg-white p-5 rounded-xl shadow-sm border border-indigo-100 mb-6 animate-in slide-in-from-top-2">
-                                    <h5 className="font-bold text-gray-800 mb-4 text-sm uppercase tracking-wide">Add New User</h5>
-                                    
-                                    {createUserError && (
-                                        <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-100 text-red-700 text-xs flex items-center gap-2">
-                                            <AlertCircle size={16} /> {createUserError}
-                                        </div>
-                                    )}
-
-                                    <form onSubmit={handleCreateStoreUser} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <input required placeholder="First Name" className="border p-2 rounded-lg" value={newStoreUser.first_name} onChange={e => setNewStoreUser({...newStoreUser, first_name: e.target.value})} />
-                                        <input required placeholder="Last Name" className="border p-2 rounded-lg" value={newStoreUser.last_name} onChange={e => setNewStoreUser({...newStoreUser, last_name: e.target.value})} />
-                                        <input required type="email" placeholder="Email" className="border p-2 rounded-lg" value={newStoreUser.email} onChange={e => setNewStoreUser({...newStoreUser, email: e.target.value})} />
-                                        <input required type="password" placeholder="Password" className="border p-2 rounded-lg" value={newStoreUser.password} onChange={e => setNewStoreUser({...newStoreUser, password: e.target.value})} />
-                                        <input type="tel" placeholder="Phone (Optional)" className="border p-2 rounded-lg" value={newStoreUser.phone} onChange={e => setNewStoreUser({...newStoreUser, phone: e.target.value})} />
-                                        
-                                        <select className="border p-2 rounded-lg bg-white" value={newStoreUser.role} onChange={e => setNewStoreUser({...newStoreUser, role: e.target.value})}>
-                                            <option value="store_admin">Store Admin</option>
-                                            <option value="store_manager">Store Manager</option>
-                                            <option value="operator">Operator</option>
-                                            <option value="cashier">Cashier</option>
-                                            <option value="driver">Driver</option>
-                                            <option value="customer">Customer</option>
-                                        </select>
-                                        
-                                        <div className="md:col-span-2 flex justify-end mt-2">
-                                            <button type="submit" disabled={isSubmittingUser} className="bg-indigo-600 text-white px-5 py-2 rounded-lg hover:bg-indigo-700 shadow-md flex items-center gap-2 disabled:opacity-70">
-                                                {isSubmittingUser ? <><Loader2 size={16} className="animate-spin" /> Creating...</> : 'Create User'}
-                                            </button>
-                                        </div>
-                                    </form>
-                                </div>
-                            )}
+                            {isUserFormOpen && renderUserCreationForm()}
 
                             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                                 {isFetchingStoreUsers ? (
@@ -957,11 +1404,11 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
                                     </div>
                                 ) : (
                                     <select className="w-full border p-2 rounded-lg bg-white" value={editUserForm.role} onChange={e => setEditUserForm({...editUserForm, role: e.target.value})}>
-                                        <option value="store_admin">Store Admin</option>
+                                        {/* <option value="store_admin">Store Admin</option>
                                         <option value="store_manager">Store Manager</option>
-                                        <option value="operator">Operator</option>
+                                        <option value="operator">Operator</option> */}
                                         <option value="cashier">Cashier</option>
-                                        <option value="driver">Driver</option>
+                                        {/* <option value="driver">Driver</option> */}
                                         <option value="customer">Customer</option>
                                     </select>
                                 )}
