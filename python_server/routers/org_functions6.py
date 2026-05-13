@@ -288,7 +288,7 @@ class PlantReceiveRequest(BaseModel):
     ticket_ids: List[int]
 # 1. GET INCOMING TRANSFERS
 @router.get("/incoming", summary="List tickets sent from branches to this plant")
-async def get_incoming_to_plant(
+async def get_incoming_transfers(
     db: Session = Depends(get_db),
     payload: Dict[str, Any] = Depends(get_current_user_payload)
 ):
@@ -336,7 +336,7 @@ async def get_incoming_to_plant(
 
 #
 @router.post("/batch-receive")
-async def plant_batch_receive(
+async def batch_receive_tickets(
     data: Dict[str, Any],
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),

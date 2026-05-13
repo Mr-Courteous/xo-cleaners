@@ -257,7 +257,7 @@ class TicketItemResponse(BaseModel):
 class TicketCreate(BaseModel):
     customer_id: int
     items: List[TicketItemCreate]
-    rack_number: Optional[str] = None
+    number: Optional[str] = None
     special_instructions: Optional[str] = None
     paid_amount: float = 0.0
     pickup_date: Optional[datetime] = None
@@ -275,7 +275,7 @@ class TicketResponse(BaseModel):
     total_amount: float
     paid_amount: float
     status: str
-    rack_number: Optional[str] = None
+    number: Optional[str] = None
     special_instructions: Optional[str] = None
     
     
@@ -332,7 +332,7 @@ class TicketSummaryResponse(BaseModel):
     total_amount: float
     paid_amount: float
     status: str
-    rack_number: Optional[str]
+    number: Optional[str]
     special_instructions: Optional[str]
     pickup_date: Optional[datetime]
     created_at: datetime
@@ -349,7 +349,7 @@ class RackAssignmentRequest(BaseModel):
     Specific model for the rack assignment UI.
     Matches the body: JSON.stringify({ rack_number: parseInt(assignRackNumber) })
     """
-    rack_number: int
+    number: int
 
 class GeneralTicketUpdateRequest(BaseModel):
     """

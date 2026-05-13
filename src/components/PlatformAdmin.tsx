@@ -6,8 +6,8 @@ import {
     Store,
     Users,
     DollarSign,
-    Shield,       
-    Power,       
+    Shield,
+    Power,
     Menu,
     X,
     Plus,
@@ -35,6 +35,7 @@ import {
     ArrowDownRight
 } from 'lucide-react';
 import Header from './Header';
+import PlatformAdminStoreProxy from './PlatformAdminStoreProxy';
 import baseURL from '../lib/config';
 
 // ==========================================
@@ -58,7 +59,7 @@ function AdminLogin({ onLoginSuccess }: AdminLoginProps) {
 
         try {
             const res = await axios.post(`${baseURL}/platform-admin/auth/login`, { email, password });
-            
+
             const { access_token, role } = res.data;
 
             localStorage.setItem('platformAdminToken', access_token);
@@ -198,6 +199,7 @@ interface StoreAnalyticsData {
     name: string;
     phone: string | null;
     address: string | null;
+    org_type: string;
     owner_email: string | null;
     is_active: boolean;
     ticket_count: number;
@@ -236,7 +238,8 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
     const [activeView, setActiveView] = useState<'dashboard' | 'stores' | 'users' | 'audit-logs'>('dashboard');
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
-    
+    const [operatingAsStore, setOperatingAsStore] = useState<StoreAnalyticsData | null>(null);
+
     // Data State
     const [stats, setStats] = useState<PlatformStats | null>(null);
     const [stores, setStores] = useState<StoreAnalyticsData[]>([]);
@@ -245,7 +248,7 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
     const [storePerformance, setStorePerformance] = useState<StorePerformance[]>([]);
     const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
     const [auditSummary, setAuditSummary] = useState<AuditSummary[]>([]);
-    
+
     // Filters for Audit Logs
     const [auditFilters, setAuditFilters] = useState({
         org_id: '',
@@ -257,7 +260,7 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
         offset: 0
     });
     const [isAnalyticsModalOpen, setIsAnalyticsModalOpen] = useState(false);
-    const [selectedStoreAnalytics, setSelectedStoreAnalytics] = useState<{name: string, data: MonthlyMetric[]} | null>(null);
+    const [selectedStoreAnalytics, setSelectedStoreAnalytics] = useState<{ name: string, data: MonthlyMetric[] } | null>(null);
 
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [isSubmittingStore, setIsSubmittingStore] = useState(false);
@@ -270,16 +273,16 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
     const [isImpersonating, setIsImpersonating] = useState(false);
 
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-    const [editingStore, setEditingStore] = useState<{id: number, name: string, address: string, phone: string} | null>(null);
+    const [editingStore, setEditingStore] = useState<{ id: number, name: string, address: string, phone: string } | null>(null);
     const [newStore, setNewStore] = useState({
-        name: '', 
-        industry: 'Dry Cleaning', 
+        name: '',
+        industry: 'Dry Cleaning',
         org_type: 'full_store',
-        address: '', 
+        address: '',
         phone: '',
-        owner_first_name: '', 
-        owner_last_name: '', 
-        owner_email: '', 
+        owner_first_name: '',
+        owner_last_name: '',
+        owner_email: '',
         owner_password: ''
     });
     const [showOwnerPassword, setShowOwnerPassword] = useState(false);
@@ -289,12 +292,12 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
     const [currentStoreForUsers, setCurrentStoreForUsers] = useState<StoreAnalyticsData | null>(null);
     const [storeUsers, setStoreUsers] = useState<UserData[]>([]);
     const [isUserFormOpen, setIsUserFormOpen] = useState(false);
-    
+
     const [newStoreUser, setNewStoreUser] = useState({
         first_name: '', last_name: '', email: '', password: '', role: 'cashier', phone: '', selected_org_id: ''
     });
     const [showNewUserPassword, setShowNewUserPassword] = useState(false);
-    
+
     const [isEditUserModalOpen, setIsEditUserModalOpen] = useState(false);
     const [editingUser, setEditingUser] = useState<UserData | null>(null);
     const [editUserForm, setEditUserForm] = useState({ first_name: '', last_name: '', email: '', role: '', phone: '' });
@@ -324,11 +327,11 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
                 setStats(statsRes.data);
                 setTrends(trendsRes.data);
                 setStorePerformance(performanceRes.data);
-            } 
+            }
             else if (activeView === 'stores') {
                 const res = await axios.get(`${baseURL}/platform-admin/stores`, config);
                 setStores(res.data);
-            } 
+            }
             else if (activeView === 'users') {
                 const [usersRes, storesRes] = await Promise.all([
                     axios.get(`${baseURL}/platform-admin/users`, config),
@@ -349,7 +352,7 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
         } catch (err: any) {
             console.error(err);
             if (err.response?.status === 401 || err.response?.status === 403) {
-                onLogout(); 
+                onLogout();
             } else {
                 setError("Failed to load data.");
             }
@@ -359,14 +362,18 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
         }
     };
 
+    const handleOperateAsStore = (store: StoreAnalyticsData) => {
+        setOperatingAsStore(store);
+    };
+
     // --- ACTIONS ---
-    
+
     const openStoreUsersModal = async (store: StoreAnalyticsData) => {
         setCurrentStoreForUsers(store);
         setIsStoreUsersModalOpen(true);
         setIsUserFormOpen(false);
         setIsFetchingStoreUsers(true);
-        setStoreUsers([]); 
+        setStoreUsers([]);
         try {
             const token = localStorage.getItem('platformAdminToken');
             const res = await axios.get(`${baseURL}/platform-admin/stores/${store.id}/users`, {
@@ -382,10 +389,10 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
 
     const handleCreateStoreUser = async (e: React.FormEvent) => {
         e.preventDefault();
-        
+
         // Determine the target org ID
         const targetOrgId = currentStoreForUsers ? currentStoreForUsers.id : newStoreUser.selected_org_id;
-        
+
         if (!targetOrgId) {
             setCreateUserError("Please select a store.");
             return;
@@ -397,7 +404,7 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
 
         try {
             const token = localStorage.getItem('platformAdminToken');
-            
+
             const payload = {
                 first_name: newStoreUser.first_name,
                 last_name: newStoreUser.last_name,
@@ -419,13 +426,13 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
             } finally {
                 clearTimeout(timeoutId);
             }
-            
+
             showSuccess(`New ${newStoreUser.role} added successfully.`);
             setNewStoreUser({ first_name: '', last_name: '', email: '', password: '', role: 'cashier', phone: '', selected_org_id: '' });
             setIsUserFormOpen(false);
             setIsGlobalUserModalOpen(false);
             setIsSubmittingUser(false);
-            
+
             // ⚡ Refresh contextually
             if (currentStoreForUsers) {
                 // Refresh specific store users list
@@ -445,14 +452,14 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
             }
         } catch (err: any) {
             setIsSubmittingUser(false);
-            
+
             // Handle timeout error
             if (err.code === 'ECONNABORTED') {
                 setCreateUserError("Request timed out. The backend may be experiencing issues. Please try again or check the server logs.");
                 console.error("User creation timed out after 30 seconds");
                 return;
             }
-            
+
             console.error("User creation error:", err.response?.data);
             const errorDetail = err.response?.data?.detail;
             const errorMessage = typeof errorDetail === 'string' ? errorDetail : "Failed to create user.";
@@ -480,7 +487,7 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
             first_name: user.first_name,
             last_name: user.last_name,
             email: user.email,
-            role: user.role, 
+            role: user.role,
             phone: user.phone || ''
         });
         setIsEditUserModalOpen(true);
@@ -491,7 +498,7 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
         if (!editingUser) return;
         try {
             const token = localStorage.getItem('platformAdminToken');
-            
+
             const payload: any = { ...editUserForm };
 
             // IMPORTANT: Remove 'org_owner' role from payload to avoid 422 error from strict backend enum
@@ -502,10 +509,10 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
             await axios.put(`${baseURL}/platform-admin/users/${editingUser.id}`, payload, {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            
+
             showSuccess("User details updated.");
             setIsEditUserModalOpen(false);
-            
+
             if (isStoreUsersModalOpen && currentStoreForUsers) {
                 const res = await axios.get(`${baseURL}/platform-admin/stores/${currentStoreForUsers.id}/users`, {
                     headers: { Authorization: `Bearer ${token}` }
@@ -548,8 +555,8 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
         if (!editingStore) return;
         try {
             const token = localStorage.getItem('platformAdminToken');
-            await axios.put(`${baseURL}/platform-admin/stores/${editingStore.id}`, 
-                { name: editingStore.name, address: editingStore.address, phone: editingStore.phone }, 
+            await axios.put(`${baseURL}/platform-admin/stores/${editingStore.id}`,
+                { name: editingStore.name, address: editingStore.address, phone: editingStore.phone },
                 { headers: { Authorization: `Bearer ${token}` } }
             );
             showSuccess("Store details updated.");
@@ -571,7 +578,7 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
             });
             localStorage.setItem('accessToken', res.data.access_token);
             localStorage.setItem('userRole', res.data.redirect_role);
-            navigate('/org'); 
+            navigate('/org');
         } catch (err: any) {
             setError("Impersonation failed");
             setIsImpersonating(false);
@@ -582,8 +589,8 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
         const newStatus = !store.is_active;
         try {
             const token = localStorage.getItem('platformAdminToken');
-            await axios.patch(`${baseURL}/platform-admin/stores/${store.id}/status`, 
-                { is_active: newStatus }, 
+            await axios.patch(`${baseURL}/platform-admin/stores/${store.id}/status`,
+                { is_active: newStatus },
                 { headers: { Authorization: `Bearer ${token}` } }
             );
             setStores(prev => prev.map(s => s.id === store.id ? { ...s, is_active: newStatus } : s));
@@ -614,7 +621,7 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
                         "DANGER: Do you want to FORCIBLY delete this store and ALL associated data (tickets, users, logs)? " +
                         "This CANNOT be undone."
                     );
-                    
+
                     if (forceDelete) {
                         await axios.delete(`${baseURL}/platform-admin/stores/${storeId}?force=true`, config);
                         showSuccess("Store and all associated data purged.");
@@ -635,13 +642,13 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
         setIsSubmittingStore(true);
         setCreateStoreError(null);
         setError(null);
-        
+
         // Track when creation started
         (window as any).storeCreationStart = Date.now();
 
         try {
             const token = localStorage.getItem('platformAdminToken');
-            
+
             // Map the frontend state to the Backend's OrganizationWithAdminCreate schema
             const registrationPayload = {
                 name: newStore.name,
@@ -651,7 +658,7 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
                 admin_last_name: newStore.owner_last_name,
                 admin_email: newStore.owner_email,
                 admin_password: newStore.owner_password,
-                parent_org_id: null 
+                parent_org_id: null
             };
 
             // ⏱️ Add 30 second timeout for store creation
@@ -671,16 +678,16 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
 
             showSuccess("Store created successfully! Click 'Refresh List' to see the new store.");
             setIsCreateModalOpen(false);
-            setNewStore({ 
+            setNewStore({
                 name: '', industry: 'Dry Cleaning', org_type: 'full_store',
-                address: '', phone: '', 
-                owner_first_name: '', owner_last_name: '', owner_email: '', owner_password: '' 
+                address: '', phone: '',
+                owner_first_name: '', owner_last_name: '', owner_email: '', owner_password: ''
             });
             setIsSubmittingStore(false);
 
         } catch (err: any) {
             setIsSubmittingStore(false);
-            
+
             // Handle timeout error
             if (err.code === 'ECONNABORTED') {
                 setCreateStoreError("Request timed out after 30 seconds. The store creation may still be processing in the background. Please wait a moment and click 'Refresh List' to check if it was created successfully.");
@@ -694,7 +701,7 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
             setCreateStoreError(errorMessage);
         }
     };
-    
+
     const showSuccess = (msg: string) => {
         setSuccessMsg(msg);
         setTimeout(() => setSuccessMsg(null), 3000);
@@ -705,7 +712,7 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
     const renderUserCreationForm = () => (
         <div className="bg-white p-5 rounded-xl shadow-sm border border-indigo-100 mb-6 animate-in slide-in-from-top-2">
             <h5 className="font-bold text-gray-800 mb-4 text-sm uppercase tracking-wide">Add New User</h5>
-            
+
             {createUserError && (
                 <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-100 text-red-700 text-xs flex items-center gap-2">
                     <AlertCircle size={16} /> {createUserError}
@@ -713,19 +720,19 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
             )}
 
             <form onSubmit={handleCreateStoreUser} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <input required placeholder="First Name" className="border p-2 rounded-lg" value={newStoreUser.first_name} onChange={e => setNewStoreUser({...newStoreUser, first_name: e.target.value})} />
-                <input required placeholder="Last Name" className="border p-2 rounded-lg" value={newStoreUser.last_name} onChange={e => setNewStoreUser({...newStoreUser, last_name: e.target.value})} />
-                <input required type="email" placeholder="Email" className="border p-2 rounded-lg" value={newStoreUser.email} onChange={e => setNewStoreUser({...newStoreUser, email: e.target.value})} />
+                <input required placeholder="First Name" className="border p-2 rounded-lg" value={newStoreUser.first_name} onChange={e => setNewStoreUser({ ...newStoreUser, first_name: e.target.value })} />
+                <input required placeholder="Last Name" className="border p-2 rounded-lg" value={newStoreUser.last_name} onChange={e => setNewStoreUser({ ...newStoreUser, last_name: e.target.value })} />
+                <input required type="email" placeholder="Email" className="border p-2 rounded-lg" value={newStoreUser.email} onChange={e => setNewStoreUser({ ...newStoreUser, email: e.target.value })} />
                 <div className="relative">
-                    <input 
-                        required 
-                        type={showNewUserPassword ? "text" : "password"} 
-                        placeholder="Password" 
-                        className="border p-2 rounded-lg w-full pr-10" 
-                        value={newStoreUser.password} 
-                        onChange={e => setNewStoreUser({...newStoreUser, password: e.target.value})} 
+                    <input
+                        required
+                        type={showNewUserPassword ? "text" : "password"}
+                        placeholder="Password"
+                        className="border p-2 rounded-lg w-full pr-10"
+                        value={newStoreUser.password}
+                        onChange={e => setNewStoreUser({ ...newStoreUser, password: e.target.value })}
                     />
-                    <button 
+                    <button
                         type="button"
                         onClick={() => setShowNewUserPassword(!showNewUserPassword)}
                         className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-indigo-600 transition"
@@ -733,9 +740,9 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
                         {showNewUserPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                     </button>
                 </div>
-                <input type="tel" placeholder="Phone (Optional)" className="border p-2 rounded-lg" value={newStoreUser.phone} onChange={e => setNewStoreUser({...newStoreUser, phone: e.target.value})} />
-                
-                <select className="border p-2 rounded-lg bg-white" value={newStoreUser.role} onChange={e => setNewStoreUser({...newStoreUser, role: e.target.value})}>
+                <input type="tel" placeholder="Phone (Optional)" className="border p-2 rounded-lg" value={newStoreUser.phone} onChange={e => setNewStoreUser({ ...newStoreUser, phone: e.target.value })} />
+
+                <select className="border p-2 rounded-lg bg-white" value={newStoreUser.role} onChange={e => setNewStoreUser({ ...newStoreUser, role: e.target.value })}>
                     {/* <option value="store_admin">Store Admin</option>
                     <option value="store_manager">Store Manager</option>
                     <option value="operator">Operator</option> */}
@@ -745,11 +752,11 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
                 </select>
 
                 {!currentStoreForUsers && (
-                    <select 
+                    <select
                         required
                         className="border p-2 rounded-lg bg-white md:col-span-2"
                         value={newStoreUser.selected_org_id}
-                        onChange={e => setNewStoreUser({...newStoreUser, selected_org_id: e.target.value})}
+                        onChange={e => setNewStoreUser({ ...newStoreUser, selected_org_id: e.target.value })}
                     >
                         <option value="">-- Select Store --</option>
                         {stores.map(s => (
@@ -757,7 +764,7 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
                         ))}
                     </select>
                 )}
-                
+
                 <div className="md:col-span-2 flex justify-end mt-2">
                     <button type="submit" disabled={isSubmittingUser} className="bg-indigo-600 text-white px-5 py-2 rounded-lg hover:bg-indigo-700 shadow-md flex items-center gap-2 disabled:opacity-70">
                         {isSubmittingUser ? <><Loader2 size={16} className="animate-spin" /> Creating...</> : 'Create User'}
@@ -847,7 +854,7 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                     <div className="px-6 py-4 border-b border-gray-50 flex justify-between items-center">
                         <h3 className="font-bold text-gray-800 flex items-center gap-2">
-                            <TrendingUp size={18} className="text-green-500" /> Platform Growth (12m)
+                            <TrendingUp size={18} className="text-green-500" /> Platform Growth
                         </h3>
                     </div>
                     <div className="overflow-x-auto">
@@ -924,7 +931,7 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 flex-shrink-0">
                 <h2 className="text-2xl font-bold text-gray-800">Store Financials & Management</h2>
                 <div className="flex items-center gap-3">
-                    <button 
+                    <button
                         type="button"
                         onClick={() => fetchData()}
                         disabled={isRefreshing}
@@ -964,6 +971,7 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
                                             <button onClick={() => openStoreUsersModal(store)} className="p-2 text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-lg transition" title="Manage Users"><Users size={18} /></button>
                                             <button onClick={() => handleViewAnalytics(store)} className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition" title="View Analytics"><BarChart3 size={18} /></button>
                                             <button onClick={() => openEditModal(store)} className="p-2 text-orange-600 bg-orange-50 hover:bg-orange-100 rounded-lg transition" title="Edit Store"><Edit3 size={18} /></button>
+                                            <button onClick={() => handleOperateAsStore(store)} className="p-2 text-emerald-600 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition" title="Operate As Store"><Activity size={18} /></button>
                                             <button onClick={() => handleImpersonate(store.id)} disabled={!store.owner_email} className="p-2 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition" title="Impersonate"><Shield size={18} /></button>
                                             <button onClick={() => handleToggleStatus(store)} className={`p-2 rounded-lg transition ${store.is_active ? 'text-gray-600 bg-gray-50 hover:bg-gray-100' : 'text-green-600 bg-green-50 hover:bg-green-100'}`} title={store.is_active ? 'Deactivate' : 'Activate'}><Power size={18} /></button>
                                             <button onClick={() => handleDeleteStore(store.id)} className="p-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition" title="Delete Store"><Trash2 size={18} /></button>
@@ -987,7 +995,7 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
                         <div className="text-xs text-gray-500 mr-2">Total:</div>
                         <div className="font-bold text-gray-800">{users.length}</div>
                     </div>
-                    <button 
+                    <button
                         onClick={() => {
                             setCurrentStoreForUsers(null);
                             setIsUserFormOpen(true);
@@ -1037,7 +1045,7 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
                                 <tr key={user.id} className="hover:bg-gray-50 transition-colors">
                                     <td className="p-4"><div className="font-semibold text-gray-900">{user.first_name} {user.last_name}</div><div className="flex items-center gap-1 text-xs text-gray-500"><Mail size={12} /> {user.email}</div></td>
                                     <td className="p-4"><span className="inline-flex px-2 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-700 capitalize border border-gray-200">{user.role}</span></td>
-                                    
+
                                     {/* UPDATED COLUMN: SHOW ORGANIZATION NAME */}
                                     <td className="p-4 text-gray-500">
                                         {user.organization_name ? (
@@ -1046,13 +1054,13 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
                                                 <span className="text-xs text-gray-400">ID: {user.organization_id}</span>
                                             </div>
                                         ) : (
-                                            user.organization_id ? 
-                                            <span className="font-mono bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded">#{user.organization_id}</span> 
-                                            : 
-                                            <span className="text-xs italic text-gray-400">N/A</span>
+                                            user.organization_id ?
+                                                <span className="font-mono bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded">#{user.organization_id}</span>
+                                                :
+                                                <span className="text-xs italic text-gray-400">N/A</span>
                                         )}
                                     </td>
-                                    
+
                                     <td className="p-4 text-gray-500">{user.joined_at ? new Date(user.joined_at).toLocaleDateString() : 'N/A'}</td>
                                     <td className="p-4 text-right flex justify-end gap-2"><button onClick={() => openEditUserModal(user)} className="text-blue-500 hover:text-blue-700 hover:bg-blue-50 p-2 rounded-lg transition"><Edit3 size={16} /></button><button onClick={() => handleDeleteStoreUser(user.id)} className="text-red-500 hover:text-red-700 hover:bg-red-50 p-2 rounded-lg transition"><Trash2 size={16} /></button></td>
                                 </tr>
@@ -1096,10 +1104,10 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
             <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-wrap gap-4 items-end flex-shrink-0">
                 <div className="space-y-1">
                     <label className="text-[10px] font-bold text-gray-400 uppercase">Role</label>
-                    <select 
+                    <select
                         className="block w-full border rounded-lg p-2 text-sm bg-gray-50"
                         value={auditFilters.actor_role}
-                        onChange={e => setAuditFilters({...auditFilters, actor_role: e.target.value})}
+                        onChange={e => setAuditFilters({ ...auditFilters, actor_role: e.target.value })}
                     >
                         <option value="">All Roles</option>
                         <option value="org_owner">Org Owner</option>
@@ -1109,23 +1117,23 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
                 </div>
                 <div className="space-y-1">
                     <label className="text-[10px] font-bold text-gray-400 uppercase">Action</label>
-                    <input 
+                    <input
                         placeholder="e.g. login"
                         className="block w-full border rounded-lg p-2 text-sm bg-gray-50"
                         value={auditFilters.action}
-                        onChange={e => setAuditFilters({...auditFilters, action: e.target.value})}
+                        onChange={e => setAuditFilters({ ...auditFilters, action: e.target.value })}
                     />
                 </div>
                 <div className="space-y-1">
                     <label className="text-[10px] font-bold text-gray-400 uppercase">From Date</label>
-                    <input 
+                    <input
                         type="date"
                         className="block w-full border rounded-lg p-2 text-sm bg-gray-50"
                         value={auditFilters.date_from}
-                        onChange={e => setAuditFilters({...auditFilters, date_from: e.target.value})}
+                        onChange={e => setAuditFilters({ ...auditFilters, date_from: e.target.value })}
                     />
                 </div>
-                <button 
+                <button
                     onClick={() => fetchData()}
                     className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-indigo-700 transition shadow-md"
                 >
@@ -1182,6 +1190,19 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
         </div>
     );
 
+    if (operatingAsStore) {
+        return (
+            <PlatformAdminStoreProxy 
+                store={{
+                    id: operatingAsStore.id,
+                    name: operatingAsStore.name,
+                    org_type: operatingAsStore.org_type || 'full_store'
+                }}
+                onExit={() => setOperatingAsStore(null)}
+            />
+        );
+    }
+
     return (
         <div className="flex flex-1 overflow-hidden">
             <aside className={`fixed inset-y-0 left-0 z-40 w-64 bg-slate-900 text-slate-300 transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-auto mt-20 lg:mt-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
@@ -1193,10 +1214,10 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
                         <button onClick={() => { setActiveView('users'); setSidebarOpen(false); }} className={`w-full flex items-center px-4 py-3 text-sm font-medium rounded-xl transition-all ${activeView === 'users' ? 'bg-indigo-600 text-white shadow-lg' : 'hover:bg-slate-800 hover:text-white'}`}><Users size={20} className="mr-3" /> All Users</button>
                         <button onClick={() => { setActiveView('audit-logs'); setSidebarOpen(false); }} className={`w-full flex items-center px-4 py-3 text-sm font-medium rounded-xl transition-all ${activeView === 'audit-logs' ? 'bg-indigo-600 text-white shadow-lg' : 'hover:bg-slate-800 hover:text-white'}`}><History size={20} className="mr-3" /> Audit Logs</button>
                     </nav>
-                    
+
                     {/* Fixed Sidebar Footer with Logout AND Back to Home */}
                     <div className="p-4 border-t border-slate-800 space-y-2">
-                         <button onClick={onBackToHome} className="w-full flex items-center text-slate-400 hover:text-white hover:bg-slate-800 px-4 py-3 rounded-lg transition text-sm">
+                        <button onClick={onBackToHome} className="w-full flex items-center text-slate-400 hover:text-white hover:bg-slate-800 px-4 py-3 rounded-lg transition text-sm">
                             <Home size={18} className="mr-3" /> Website
                         </button>
                         <button onClick={onLogout} className="w-full flex items-center text-red-400 hover:bg-red-900/20 px-4 py-3 rounded-lg transition text-sm">
@@ -1206,22 +1227,22 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
                 </div>
             </aside>
             {sidebarOpen && <div className="fixed inset-0 bg-slate-900/50 z-30 lg:hidden backdrop-blur-sm" onClick={() => setSidebarOpen(false)} />}
-            
+
             <main className="flex-1 flex flex-col min-w-0 bg-gray-50 relative h-full">
                 <div className="lg:hidden bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between"><span className="font-bold text-gray-800 capitalize">{activeView}</span><button onClick={() => setSidebarOpen(true)} className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg"><Menu size={24} /></button></div>
-                
+
                 <div className="flex-1 overflow-y-auto p-4 md:p-8 h-full">
                     <div className="max-w-7xl mx-auto h-full flex flex-col">
-                        {error && <div className="mb-6 p-4 rounded-xl bg-red-50 border border-red-100 text-red-700 flex items-center gap-3 flex-shrink-0"><AlertCircle size={20} /> {error} <button onClick={() => setError(null)} className="ml-auto"><X size={18}/></button></div>}
+                        {error && <div className="mb-6 p-4 rounded-xl bg-red-50 border border-red-100 text-red-700 flex items-center gap-3 flex-shrink-0"><AlertCircle size={20} /> {error} <button onClick={() => setError(null)} className="ml-auto"><X size={18} /></button></div>}
                         {successMsg && <div className="mb-6 p-4 rounded-xl bg-green-50 border border-green-100 text-green-700 flex items-center gap-3 flex-shrink-0"><CheckCircle size={20} /> {successMsg}</div>}
-                        
+
                         {isLoading && !stats && activeView === 'dashboard' ? (
                             <div className="flex justify-center items-center h-64"><Loader2 className="animate-spin text-indigo-600" size={48} /></div>
                         ) : (
-                            activeView === 'dashboard' ? renderDashboard() : 
-                            activeView === 'stores' ? renderStores() : 
-                            activeView === 'users' ? renderUsers() : 
-                            renderAuditLogs()
+                            activeView === 'dashboard' ? renderDashboard() :
+                                activeView === 'stores' ? renderStores() :
+                                    activeView === 'users' ? renderUsers() :
+                                        renderAuditLogs()
                         )}
                     </div>
                 </div>
@@ -1237,7 +1258,7 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
             )}
 
             {/* --- MODALS --- */}
-            
+
             {/* 1. Create Store Modal */}
             {isCreateModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
@@ -1248,7 +1269,7 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
                                 <div className="mb-6 p-4 rounded-xl bg-red-50 border border-red-100 text-red-700 flex items-start gap-3 animate-in fade-in duration-300">
                                     <AlertCircle size={20} className="shrink-0 mt-0.5" />
                                     <div className="text-sm font-medium">{createStoreError}</div>
-                                    <button onClick={() => setCreateStoreError(null)} className="ml-auto text-red-400 hover:text-red-600"><X size={16}/></button>
+                                    <button onClick={() => setCreateStoreError(null)} className="ml-auto text-red-400 hover:text-red-600"><X size={16} /></button>
                                 </div>
                             )}
                             <form onSubmit={handleCreateStore} className="space-y-6">
@@ -1257,15 +1278,15 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
                                         <h4 className="text-xs font-bold text-gray-500 uppercase">Organization Details</h4>
                                         <div>
                                             <label className="block text-xs text-gray-500 mb-1">Store Name</label>
-                                            <input required type="text" className="w-full border rounded-lg p-2" value={newStore.name} onChange={e => setNewStore({...newStore, name: e.target.value})} placeholder="Store Name" />
+                                            <input required type="text" className="w-full border rounded-lg p-2" value={newStore.name} onChange={e => setNewStore({ ...newStore, name: e.target.value })} placeholder="Store Name" />
                                         </div>
                                         <div>
                                             <label className="block text-xs text-gray-500 mb-1">Industry</label>
-                                            <input required type="text" className="w-full border rounded-lg p-2" value={newStore.industry} onChange={e => setNewStore({...newStore, industry: e.target.value})} placeholder="e.g. Dry Cleaning" />
+                                            <input required type="text" className="w-full border rounded-lg p-2" value={newStore.industry} onChange={e => setNewStore({ ...newStore, industry: e.target.value })} placeholder="e.g. Dry Cleaning" />
                                         </div>
                                         <div>
                                             <label className="block text-xs text-gray-500 mb-1">Store Type</label>
-                                            <select className="w-full border rounded-lg p-2" value={newStore.org_type} onChange={e => setNewStore({...newStore, org_type: e.target.value})}>
+                                            <select className="w-full border rounded-lg p-2" value={newStore.org_type} onChange={e => setNewStore({ ...newStore, org_type: e.target.value })}>
                                                 <option value="full_store">Full Store</option>
                                                 <option value="smart_locker">Smart Locker</option>
                                                 <option value="agent_point">Agent Point</option>
@@ -1276,22 +1297,22 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
                                     <div className="space-y-4">
                                         <h4 className="text-xs font-bold text-gray-500 uppercase">Owner Credentials</h4>
                                         <div className="grid grid-cols-2 gap-2">
-                                            <input required type="text" className="w-full border rounded-lg p-2" value={newStore.owner_first_name} onChange={e => setNewStore({...newStore, owner_first_name: e.target.value})} placeholder="First Name" />
-                                            <input required type="text" className="w-full border rounded-lg p-2" value={newStore.owner_last_name} onChange={e => setNewStore({...newStore, owner_last_name: e.target.value})} placeholder="Last Name" />
+                                            <input required type="text" className="w-full border rounded-lg p-2" value={newStore.owner_first_name} onChange={e => setNewStore({ ...newStore, owner_first_name: e.target.value })} placeholder="First Name" />
+                                            <input required type="text" className="w-full border rounded-lg p-2" value={newStore.owner_last_name} onChange={e => setNewStore({ ...newStore, owner_last_name: e.target.value })} placeholder="Last Name" />
                                         </div>
-                                        <input required type="email" className="w-full border rounded-lg p-2" value={newStore.owner_email} onChange={e => setNewStore({...newStore, owner_email: e.target.value})} placeholder="Email" />
+                                        <input required type="email" className="w-full border rounded-lg p-2" value={newStore.owner_email} onChange={e => setNewStore({ ...newStore, owner_email: e.target.value })} placeholder="Email" />
                                         <div className="relative">
-                                            <input 
-                                                required 
-                                                type={showOwnerPassword ? "text" : "password"} 
-                                                title="Password must be at least 8 characters" 
-                                                minLength={8} 
-                                                className="w-full border rounded-lg p-2 pr-10" 
-                                                value={newStore.owner_password} 
-                                                onChange={e => setNewStore({...newStore, owner_password: e.target.value})} 
-                                                placeholder="Password (min 8 chars)" 
+                                            <input
+                                                required
+                                                type={showOwnerPassword ? "text" : "password"}
+                                                title="Password must be at least 8 characters"
+                                                minLength={8}
+                                                className="w-full border rounded-lg p-2 pr-10"
+                                                value={newStore.owner_password}
+                                                onChange={e => setNewStore({ ...newStore, owner_password: e.target.value })}
+                                                placeholder="Password (min 8 chars)"
                                             />
-                                            <button 
+                                            <button
                                                 type="button"
                                                 onClick={() => setShowOwnerPassword(!showOwnerPassword)}
                                                 className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-indigo-600 transition"
@@ -1307,8 +1328,8 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
                                         {isSubmittingStore ? (
                                             <>
                                                 <Loader2 className="animate-spin" size={18} />
-                                                {isSubmittingStore && Date.now() - (window as any).storeCreationStart > 10000 ? 
-                                                    'Creating store... (This may take up to 30 seconds)' : 
+                                                {isSubmittingStore && Date.now() - (window as any).storeCreationStart > 10000 ?
+                                                    'Creating store... (This may take up to 30 seconds)' :
                                                     'Initializing Store...'
                                                 }
                                             </>
@@ -1324,11 +1345,11 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
             )}
 
             {/* 2. Edit Store Modal */}
-            {isEditModalOpen && editingStore && (<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"><div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]"><div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50 flex-shrink-0"><h3 className="text-lg font-bold text-gray-800">Edit Store</h3><button onClick={() => setIsEditModalOpen(false)}><X size={20} className="text-gray-400" /></button></div><div className="overflow-y-auto p-6"><form onSubmit={handleUpdateStore} className="space-y-4"><div><label className="block text-sm font-medium text-gray-700 mb-1">Store Name</label><input required type="text" className="w-full border rounded-lg p-2" value={editingStore.name} onChange={e => setEditingStore({...editingStore, name: e.target.value})} /></div><div><label className="block text-sm font-medium text-gray-700 mb-1">Address</label><input type="text" className="w-full border rounded-lg p-2" value={editingStore.address} onChange={e => setEditingStore({...editingStore, address: e.target.value})} /></div><div><label className="block text-sm font-medium text-gray-700 mb-1">Phone</label><input type="tel" className="w-full border rounded-lg p-2" value={editingStore.phone} onChange={e => setEditingStore({...editingStore, phone: e.target.value})} /></div><div className="pt-4 border-t flex justify-end gap-3"><button type="button" onClick={() => setIsEditModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button><button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save Changes</button></div></form></div></div></div>)}
-            
+            {isEditModalOpen && editingStore && (<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"><div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]"><div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50 flex-shrink-0"><h3 className="text-lg font-bold text-gray-800">Edit Store</h3><button onClick={() => setIsEditModalOpen(false)}><X size={20} className="text-gray-400" /></button></div><div className="overflow-y-auto p-6"><form onSubmit={handleUpdateStore} className="space-y-4"><div><label className="block text-sm font-medium text-gray-700 mb-1">Store Name</label><input required type="text" className="w-full border rounded-lg p-2" value={editingStore.name} onChange={e => setEditingStore({ ...editingStore, name: e.target.value })} /></div><div><label className="block text-sm font-medium text-gray-700 mb-1">Address</label><input type="text" className="w-full border rounded-lg p-2" value={editingStore.address} onChange={e => setEditingStore({ ...editingStore, address: e.target.value })} /></div><div><label className="block text-sm font-medium text-gray-700 mb-1">Phone</label><input type="tel" className="w-full border rounded-lg p-2" value={editingStore.phone} onChange={e => setEditingStore({ ...editingStore, phone: e.target.value })} /></div><div className="pt-4 border-t flex justify-end gap-3"><button type="button" onClick={() => setIsEditModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button><button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save Changes</button></div></form></div></div></div>)}
+
             {/* 3. Analytics Modal */}
-            {isAnalyticsModalOpen && selectedStoreAnalytics && (<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"><div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden max-h-[80vh] flex flex-col"><div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50 flex-shrink-0"><h3 className="text-lg font-bold text-gray-800">Analytics: {selectedStoreAnalytics.name}</h3><button onClick={() => setIsAnalyticsModalOpen(false)}><X size={20} className="text-gray-400" /></button></div><div className="p-6 overflow-y-auto flex-1"><table className="w-full text-left text-sm text-gray-600"><thead className="bg-gray-50 text-gray-900 font-medium sticky top-0 z-10"><tr><th className="p-3 bg-gray-50">Month</th><th className="p-3 bg-gray-50 text-center">Ticket Volume</th><th className="p-3 bg-gray-50 text-right">Revenue</th></tr></thead><tbody className="divide-y divide-gray-100">{selectedStoreAnalytics.data.map((item, i) => (<tr key={i} className="hover:bg-gray-50"><td className="p-3 font-medium">{item.month}</td><td className="p-3 text-center">{item.tickets}</td><td className="p-3 text-right font-mono font-bold text-green-700">${item.revenue.toLocaleString(undefined, {minimumFractionDigits: 2})}</td></tr>))}{selectedStoreAnalytics.data.length === 0 && <tr><td colSpan={3} className="p-6 text-center text-gray-400">No data available yet.</td></tr>}</tbody></table></div></div></div>)}
-            
+            {isAnalyticsModalOpen && selectedStoreAnalytics && (<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"><div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden max-h-[80vh] flex flex-col"><div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50 flex-shrink-0"><h3 className="text-lg font-bold text-gray-800">Analytics: {selectedStoreAnalytics.name}</h3><button onClick={() => setIsAnalyticsModalOpen(false)}><X size={20} className="text-gray-400" /></button></div><div className="p-6 overflow-y-auto flex-1"><table className="w-full text-left text-sm text-gray-600"><thead className="bg-gray-50 text-gray-900 font-medium sticky top-0 z-10"><tr><th className="p-3 bg-gray-50">Month</th><th className="p-3 bg-gray-50 text-center">Ticket Volume</th><th className="p-3 bg-gray-50 text-right">Revenue</th></tr></thead><tbody className="divide-y divide-gray-100">{selectedStoreAnalytics.data.map((item, i) => (<tr key={i} className="hover:bg-gray-50"><td className="p-3 font-medium">{item.month}</td><td className="p-3 text-center">{item.tickets}</td><td className="p-3 text-right font-mono font-bold text-green-700">${item.revenue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td></tr>))}{selectedStoreAnalytics.data.length === 0 && <tr><td colSpan={3} className="p-6 text-center text-gray-400">No data available yet.</td></tr>}</tbody></table></div></div></div>)}
+
             {/* 4. Store Users & Add User Modal */}
             {isStoreUsersModalOpen && currentStoreForUsers && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
@@ -1343,7 +1364,7 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
                             <div className="mb-6 flex justify-between items-center">
                                 <h4 className="text-gray-600 font-medium">Active Staff & Customers</h4>
                                 <button onClick={() => { setIsUserFormOpen(!isUserFormOpen); setCreateUserError(null); }} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${isUserFormOpen ? 'bg-gray-200 text-gray-700' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}>
-                                    {isUserFormOpen ? <><X size={16}/> Cancel</> : <><UserPlus size={16}/> Add User</>}
+                                    {isUserFormOpen ? <><X size={16} /> Cancel</> : <><UserPlus size={16} /> Add User</>}
                                 </button>
                             </div>
                             {isUserFormOpen && renderUserCreationForm()}
@@ -1364,10 +1385,10 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
                                                 <tr key={u.id} className={`${u.is_deactivated ? 'bg-gray-50 opacity-60' : 'hover:bg-gray-50'} transition`}>
                                                     <td className="p-3 font-medium text-gray-900">{u.first_name} {u.last_name}</td>
                                                     <td className="p-3"><span className="inline-flex px-2 py-0.5 rounded text-xs font-medium bg-gray-100 border border-gray-200 capitalize">{u.role}</span></td>
-                                                    <td className="p-3 text-xs">{u.email}<br/><span className="text-gray-400">{u.phone}</span></td>
+                                                    <td className="p-3 text-xs">{u.email}<br /><span className="text-gray-400">{u.phone}</span></td>
                                                     <td className="p-3 text-right flex justify-end gap-2">
-                                                        <button onClick={() => openEditUserModal(u)} className="text-blue-600 bg-blue-50 p-1.5 rounded hover:bg-blue-100"><Edit3 size={14}/></button>
-                                                        {!u.is_deactivated && <button onClick={() => handleDeleteStoreUser(u.id)} className="text-red-600 bg-red-50 p-1.5 rounded hover:bg-red-100"><Trash2 size={14}/></button>}
+                                                        <button onClick={() => openEditUserModal(u)} className="text-blue-600 bg-blue-50 p-1.5 rounded hover:bg-blue-100"><Edit3 size={14} /></button>
+                                                        {!u.is_deactivated && <button onClick={() => handleDeleteStoreUser(u.id)} className="text-red-600 bg-red-50 p-1.5 rounded hover:bg-red-100"><Trash2 size={14} /></button>}
                                                     </td>
                                                 </tr>
                                             ))}
@@ -1390,11 +1411,11 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
                             <button onClick={() => setIsEditUserModalOpen(false)}><X size={20} className="text-gray-400" /></button>
                         </div>
                         <form onSubmit={handleUpdateUser} className="p-6 space-y-4">
-                            <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">First Name</label><input className="w-full border p-2 rounded-lg" value={editUserForm.first_name} onChange={e => setEditUserForm({...editUserForm, first_name: e.target.value})} /></div>
-                            <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Last Name</label><input className="w-full border p-2 rounded-lg" value={editUserForm.last_name} onChange={e => setEditUserForm({...editUserForm, last_name: e.target.value})} /></div>
-                            <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Email</label><input className="w-full border p-2 rounded-lg" value={editUserForm.email} onChange={e => setEditUserForm({...editUserForm, email: e.target.value})} /></div>
-                            <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Phone</label><input className="w-full border p-2 rounded-lg" value={editUserForm.phone} onChange={e => setEditUserForm({...editUserForm, phone: e.target.value})} /></div>
-                            
+                            <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">First Name</label><input className="w-full border p-2 rounded-lg" value={editUserForm.first_name} onChange={e => setEditUserForm({ ...editUserForm, first_name: e.target.value })} /></div>
+                            <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Last Name</label><input className="w-full border p-2 rounded-lg" value={editUserForm.last_name} onChange={e => setEditUserForm({ ...editUserForm, last_name: e.target.value })} /></div>
+                            <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Email</label><input className="w-full border p-2 rounded-lg" value={editUserForm.email} onChange={e => setEditUserForm({ ...editUserForm, email: e.target.value })} /></div>
+                            <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Phone</label><input className="w-full border p-2 rounded-lg" value={editUserForm.phone} onChange={e => setEditUserForm({ ...editUserForm, phone: e.target.value })} /></div>
+
                             <div>
                                 <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Role</label>
                                 {editUserForm.role === 'org_owner' ? (
@@ -1403,7 +1424,7 @@ function AdminDashboard({ onLogout, onBackToHome }: AdminDashboardProps) {
                                         <Shield size={14} />
                                     </div>
                                 ) : (
-                                    <select className="w-full border p-2 rounded-lg bg-white" value={editUserForm.role} onChange={e => setEditUserForm({...editUserForm, role: e.target.value})}>
+                                    <select className="w-full border p-2 rounded-lg bg-white" value={editUserForm.role} onChange={e => setEditUserForm({ ...editUserForm, role: e.target.value })}>
                                         {/* <option value="store_admin">Store Admin</option>
                                         <option value="store_manager">Store Manager</option>
                                         <option value="operator">Operator</option> */}

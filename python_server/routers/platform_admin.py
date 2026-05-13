@@ -1,44 +1,121 @@
 from datetime import timedelta, date
 from typing import Dict, Any, List, Optional, Literal
 from enum import Enum
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, status, Query, BackgroundTasks, Request, Form, File, UploadFile
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from pydantic import BaseModel, EmailStr, Field
 
 # Import your existing utilities
-# 'get_current_user_payload' is the key here: it decodes the JWT and validates the signature.
 from utils.common import (
     get_db, 
     get_current_user_payload, 
     create_access_token,
     hash_password,
     verify_password,
-    ACCESS_TOKEN_EXPIRE_MINUTES
+    ACCESS_TOKEN_EXPIRE_MINUTES,
+    TicketCreate,
+    RackAssignmentRequest,
+    TicketPickupRequest,
+    CustomerUpdate,
+    AlterationTypeCreate
 )
+
+from .org_functions import (
+    get_racks_for_organization, 
+    get_alteration_types, 
+    create_alteration_type, 
+    update_alteration_type, 
+    delete_alteration_type,
+    register_customer,
+    get_tickets_for_organization,
+    create_ticket,
+    validate_ticket_number as validate_ticket_org
+)
+from .clothing_types import get_clothing_types_for_organization
+from .org_functions2 import (
+    search_tickets, 
+    validate_ticket_number, 
+    assign_rack_to_ticket, 
+    process_ticket_pickup
+)
+from .org_functions3 import (
+    get_customers, 
+    get_customer_details, 
+    update_customer, 
+    search_customers,
+    get_ticket_details, 
+    find_tickets, 
+    edit_ticket_items, 
+    full_edit_ticket
+)
+from .org_functions4 import (
+    toggle_void_ticket, 
+    toggle_refund_ticket,
+    get_dashboard_analytics, 
+    get_chart_analytics, 
+    get_analytics_stats, 
+    get_analytics_ledger,
+    get_customer_financials
+)
+from .org_functions5 import (
+    get_customer_checkout_profile,
+    get_dropoff_transactions, 
+    get_rack_assignments,
+    get_pickup_transactions, 
+    get_clothing_transactions, 
+    get_customer_transactions
+)
+from .org_functions6 import (
+    get_my_branches, 
+    batch_transfer_tickets,
+    get_incoming_transfers, 
+    batch_receive_tickets,
+    get_plant_inventory, 
+    get_transfer_tracker
+)
+from .org_settings import (
+    get_organization_settings as get_org_settings, 
+    update_branding, 
+    get_branches,
+    create_branch, 
+    update_payment_methods as update_payment_config, 
+    update_starch_prices,
+    update_size_prices, 
+    update_organization_profile as update_org_profile, 
+    get_organization_address as get_org_address
+)
+# We might need to import some models from routers if not in common
+# But let's try to keep it clean.
 
 router = APIRouter(
     prefix="/platform-admin",
     tags=["Platform Admin"],
 )
 
-# --- DEPENDENCY: STRICT ADMIN CHECK ---
 def verify_super_admin(payload: Dict[str, Any] = Depends(get_current_user_payload)):
     """
     1. Validates the Token (via get_current_user_payload).
     2. Checks if the role is explicitly a Platform Admin.
-    3. Checks if the source is 'platform_admins' to prevent impersonation.
     """
     role = payload.get("role")
-    source = payload.get("source")
-
-    # Verify the user is actually a platform admin and comes from the right table
-    if role not in ["platform_admin", "Platform Admin", "super_admin"] or source != "platform_admins":
-         raise HTTPException(
+    # Verify the user is actually a platform admin
+    if role not in ["platform_admin", "Platform Admin", "super_admin"]:
+        raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access restricted to Platform Administrators only."
         )
     return payload
+
+def resolve_org_id(
+    target_org_id: int = Query(..., description="Target store org ID"),
+    admin: Dict = Depends(verify_super_admin)
+) -> Dict:
+    modified = dict(admin)
+    modified["organization_id"] = target_org_id
+    modified["role"] = "org_owner"          # keep this so org handlers pass role checks
+    modified["_platform_admin_proxy"] = True # bypass marker
+    return modified
 
 # --- PYDANTIC MODELS ---
 
@@ -293,7 +370,7 @@ def get_all_stores(
     List all stores including their Active status and Owner email.
     """
     query = text("""
-        SELECT o.id, o.name, o.phone, o.address, o.created_at, o.is_active,
+        SELECT o.id, o.name, o.phone, o.address, o.org_type, o.created_at, o.is_active,
                (SELECT email FROM allUsers WHERE organization_id = o.id AND role = 'org_owner' LIMIT 1) as owner_email,
                (SELECT COUNT(*) FROM tickets WHERE organization_id = o.id) as ticket_count,
                (SELECT COALESCE(SUM(paid_amount), 0) FROM tickets WHERE organization_id = o.id) as total_revenue
@@ -818,75 +895,373 @@ def get_all_audit_logs(
     logs = db.execute(text(query_str), params).fetchall()
     return [dict(row._mapping) for row in logs]
 
-@router.get("/audit-logs/summary")
-def get_audit_log_summary(
+
+
+@router.get("/proxy/racks", tags=["Platform Admin — Store Proxy"])
+async def proxy_get_racks(
+    target_org_id: int = Query(...),
     db: Session = Depends(get_db),
     admin: Dict = Depends(verify_super_admin)
 ):
-    """
-    Returns aggregate counts grouped by action type and organization.
-    """
     query = text("""
-        SELECT 
-            o.name as org_name, 
-            al.action, 
-            COUNT(*) as count 
-        FROM audit_logs al 
-        JOIN organizations o ON al.organization_id = o.id 
-        GROUP BY o.name, al.action 
-        ORDER BY count DESC
+        SELECT r.id, r.organization_id, r.number, r.is_occupied, 
+               r.ticket_id, r.updated_at
+        FROM racks r
+        WHERE r.organization_id = :org_id
+        ORDER BY r.number ASC
     """)
-    results = db.execute(query).fetchall()
-    return [dict(row._mapping) for row in results]
+    rows = db.execute(query, {"org_id": target_org_id}).fetchall()
+    return {"racks": [dict(r._mapping) for r in rows]}
 
-@router.get("/stores/{store_id}/audit-logs")
-def get_store_audit_logs(
-    store_id: int,
-    action: Optional[str] = None,
-    actor_role: Optional[str] = None,
-    date_from: Optional[date] = None,
-    date_to: Optional[date] = None,
-    limit: int = 100,
-    offset: int = 0,
+# -- CLOTHING TYPES --
+
+@router.get("/proxy/clothing-types", tags=["Platform Admin — Store Proxy"])
+async def proxy_get_clothing_types(
+    target_org_id: int = Query(...),
     db: Session = Depends(get_db),
     admin: Dict = Depends(verify_super_admin)
 ):
-    """
-    Get audit logs for a specific store.
-    """
-    query_str = """
-        SELECT 
-            al.id, 
-            al.organization_id, 
-            o.name as organization_name, 
-            al.actor_id, 
-            al.actor_name, 
-            al.actor_role, 
-            al.action, 
-            al.details, 
-            al.created_at, 
-            al.ticket_id, 
-            al.customer_id
-        FROM audit_logs al
-        JOIN organizations o ON al.organization_id = o.id
-        WHERE al.organization_id = :store_id
-    """
-    params = {"store_id": store_id, "limit": limit, "offset": offset}
+    query = text("""
+        SELECT id, name, plant_price, margin, total_price, 
+               image_url, organization_id, created_at, pieces, category
+        FROM clothing_types
+        WHERE organization_id = :org_id
+        ORDER BY category ASC, name ASC
+    """)
+    rows = db.execute(query, {"org_id": target_org_id}).fetchall()
+    from collections import OrderedDict
+    grouped = {}
+    for r in rows:
+        cat = r.category or "Uncategorized"
+        if cat not in grouped:
+            grouped[cat] = []
+        grouped[cat].append(dict(r._mapping))
+    return dict(OrderedDict(sorted(grouped.items())))
 
-    if action:
-        query_str += " AND al.action = :action"
-        params["action"] = action
-    if actor_role:
-        query_str += " AND al.actor_role = :actor_role"
-        params["actor_role"] = actor_role
-    if date_from:
-        query_str += " AND al.created_at >= :date_from"
-        params["date_from"] = date_from
-    if date_to:
-        query_str += " AND al.created_at <= :date_to"
-        params["date_to"] = date_to
+# -- ALTERATION TYPES --
 
-    query_str += " ORDER BY al.created_at DESC LIMIT :limit OFFSET :offset"
-    
-    logs = db.execute(text(query_str), params).fetchall()
-    return [dict(row._mapping) for row in logs]
+@router.get("/proxy/alteration-types", tags=["Platform Admin — Store Proxy"])
+async def proxy_get_alteration_types(db=Depends(get_db), payload=Depends(resolve_org_id)):
+    return await get_alteration_types(db=db, payload=payload)
+
+@router.post("/proxy/alteration-types", tags=["Platform Admin — Store Proxy"])
+async def proxy_create_alteration_type(data: AlterationTypeCreate, db=Depends(get_db), payload=Depends(resolve_org_id)):
+    return await create_alteration_type(data=data, db=db, payload=payload)
+
+@router.patch("/proxy/alteration-types/{alt_id}", tags=["Platform Admin — Store Proxy"])
+async def proxy_update_alteration_type(alt_id: int, data: AlterationTypeCreate, db=Depends(get_db), payload=Depends(resolve_org_id)):
+    return await update_alteration_type(alt_id=alt_id, data=data, db=db, payload=payload)
+
+@router.delete("/proxy/alteration-types/{alt_id}", tags=["Platform Admin — Store Proxy"])
+async def proxy_delete_alteration_type(alt_id: int, db=Depends(get_db), payload=Depends(resolve_org_id)):
+    return await delete_alteration_type(alt_id=alt_id, db=db, payload=payload)
+
+# -- CUSTOMERS --
+
+@router.get("/proxy/customers", tags=["Platform Admin — Store Proxy"])
+async def proxy_get_customers(
+    target_org_id: int = Query(...),
+    db: Session = Depends(get_db),
+    admin: Dict = Depends(verify_super_admin)
+):
+    query = text("""
+        SELECT id, first_name, last_name, email, phone, 
+               joined_at, is_deactivated, address
+        FROM allusers
+        WHERE organization_id = :org_id AND role = 'customer'
+          AND is_deactivated = FALSE
+        ORDER BY first_name ASC
+    """)
+    rows = db.execute(query, {"org_id": target_org_id}).fetchall()
+    return [dict(r._mapping) for r in rows]
+
+@router.get("/proxy/customers/search", tags=["Platform Admin — Store Proxy"])
+async def proxy_search_customers(q: str = "", db=Depends(get_db), payload=Depends(resolve_org_id)):
+    return await search_customers(q=q, db=db, payload=payload)
+
+@router.get("/proxy/customers/{customer_id}", tags=["Platform Admin — Store Proxy"])
+def proxy_get_customer_details(customer_id: int, db=Depends(get_db), payload=Depends(resolve_org_id)):
+    return get_customer_details(customer_id=customer_id, db=db, payload=payload)
+
+@router.post("/proxy/customers", tags=["Platform Admin — Store Proxy"])
+async def proxy_create_customer(
+    data: dict,
+    db: Session = Depends(get_db),
+    admin: Dict = Depends(verify_super_admin),
+    target_org_id: int = Query(...)
+):
+    from utils.common import hash_password
+    import secrets
+    exists = db.execute(text("SELECT 1 FROM allusers WHERE email = :email AND organization_id = :org_id"),
+        {"email": data.get("email"), "org_id": target_org_id}).fetchone()
+    if exists:
+        raise HTTPException(status_code=400, detail="Customer already exists.")
+    user_id = db.execute(text("""
+        INSERT INTO allusers (organization_id, first_name, last_name, email, phone, 
+                              address, role, password_hash, joined_at, is_deactivated)
+        VALUES (:org_id, :fname, :lname, :email, :phone, :address, 
+                'customer', :pw, NOW(), FALSE)
+        RETURNING id
+    """), {
+        "org_id": target_org_id, "fname": data.get("first_name"), 
+        "lname": data.get("last_name"), "email": data.get("email"),
+        "phone": data.get("phone", ""), "address": data.get("address", ""),
+        "pw": hash_password(secrets.token_hex(16))
+    }).scalar()
+    db.commit()
+    return {"message": "Customer created.", "customer_id": user_id}
+
+@router.put("/proxy/customers/{customer_id}", tags=["Platform Admin — Store Proxy"])
+def proxy_update_customer(customer_id: int, data: CustomerUpdate, db=Depends(get_db), payload=Depends(resolve_org_id)):
+    return update_customer(customer_id=customer_id, data=data, db=db, payload=payload)
+
+# -- TICKETS --
+
+@router.get("/proxy/tickets", tags=["Platform Admin — Store Proxy"])
+async def proxy_get_tickets(
+    target_org_id: int = Query(...),
+    db: Session = Depends(get_db),
+    admin: Dict = Depends(verify_super_admin)
+):
+    query = text("""
+        SELECT t.id, t.ticket_number, t.customer_id, t.status, 
+               t.total_amount, t.paid_amount, t.rack_number,
+               t.special_instructions, t.pickup_date, t.created_at,
+               t.is_void, t.is_refunded,
+               CONCAT(u.first_name, ' ', u.last_name) as customer_name,
+               u.phone as customer_phone
+        FROM tickets t
+        LEFT JOIN allusers u ON t.customer_id = u.id
+        WHERE t.organization_id = :org_id
+        ORDER BY t.created_at DESC
+        LIMIT 200
+    """)
+    rows = db.execute(query, {"org_id": target_org_id}).fetchall()
+    return [dict(r._mapping) for r in rows]
+
+@router.post("/proxy/tickets", status_code=201, tags=["Platform Admin — Store Proxy"])
+async def proxy_create_ticket(
+    data: TicketCreate,
+    db: Session = Depends(get_db),
+    admin: Dict = Depends(verify_super_admin),
+    target_org_id: int = Query(...)
+):
+    # Build a fake payload and call the real create_ticket handler
+    # passing it explicitly so it skips its own Depends
+    from .org_functions import create_ticket as _create_ticket
+    from fastapi import BackgroundTasks
+    bt = BackgroundTasks()
+    fake_payload = {"organization_id": target_org_id, "role": "org_owner", "sub_id": str(admin.get("sub_id", 0))}
+    return _create_ticket(data=data, background_tasks=bt, db=db, payload=fake_payload)
+
+@router.get("/proxy/tickets/search", tags=["Platform Admin — Store Proxy"])
+async def proxy_search_tickets(q: str = "", db=Depends(get_db), payload=Depends(resolve_org_id)):
+    return await search_tickets(q=q, db=db, payload=payload)
+
+@router.get("/proxy/tickets/validate/{ticket_number}", tags=["Platform Admin — Store Proxy"])
+async def proxy_validate_ticket(
+    ticket_number: str,
+    target_org_id: int = Query(...),
+    db: Session = Depends(get_db),
+    admin: Dict = Depends(verify_super_admin)
+):
+    row = db.execute(text("""
+        SELECT t.id as ticket_id, t.ticket_number,
+               CONCAT(u.first_name, ' ', u.last_name) as customer_name,
+               t.total_amount, t.paid_amount,
+               (t.total_amount - t.paid_amount) as balance_due
+        FROM tickets t
+        LEFT JOIN allusers u ON t.customer_id = u.id
+        WHERE t.ticket_number = :tn AND t.organization_id = :org_id
+    """), {"tn": ticket_number, "org_id": target_org_id}).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Ticket not found.")
+    return dict(row._mapping)
+
+@router.get("/proxy/tickets/{ticket_id}", tags=["Platform Admin — Store Proxy"])
+async def proxy_get_ticket_detail(
+    ticket_id: int,
+    target_org_id: int = Query(...),
+    db: Session = Depends(get_db),
+    admin: Dict = Depends(verify_super_admin)
+):
+    ticket = db.execute(text("""
+        SELECT t.*, CONCAT(u.first_name, ' ', u.last_name) as customer_name,
+               u.phone as customer_phone
+        FROM tickets t
+        LEFT JOIN allusers u ON t.customer_id = u.id
+        WHERE t.id = :tid AND t.organization_id = :org_id
+    """), {"tid": ticket_id, "org_id": target_org_id}).fetchone()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found.")
+    items = db.execute(text("""
+        SELECT ti.*, ct.name as clothing_name
+        FROM ticket_items ti
+        LEFT JOIN clothing_types ct ON ti.clothing_type_id = ct.id
+        WHERE ti.ticket_id = :tid
+    """), {"tid": ticket_id}).fetchall()
+    result = dict(ticket._mapping)
+    result["items"] = [dict(i._mapping) for i in items]
+    return result
+
+@router.put("/proxy/tickets/{ticket_id}/rack", tags=["Platform Admin — Store Proxy"])
+async def proxy_assign_rack(
+    ticket_id: int,
+    data: RackAssignmentRequest,
+    db: Session = Depends(get_db),
+    admin: Dict = Depends(verify_super_admin),
+    target_org_id: int = Query(...)
+):
+    result = db.execute(text("""
+        UPDATE tickets SET rack_number = :rack WHERE id = :tid 
+        AND organization_id = :org_id RETURNING id
+    """), {"rack": data.rack_number, "tid": ticket_id, "org_id": target_org_id})
+    db.commit()
+    if result.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Ticket not found.")
+    return {"message": "Rack assigned.", "ticket_id": ticket_id, "rack_number": data.rack_number}
+
+@router.put("/proxy/tickets/{ticket_id}/pickup", tags=["Platform Admin — Store Proxy"])
+async def proxy_pickup(
+    ticket_id: int,
+    data: TicketPickupRequest,
+    db: Session = Depends(get_db),
+    admin: Dict = Depends(verify_super_admin),
+    target_org_id: int = Query(...)
+):
+    ticket = db.execute(text("""
+        SELECT id, total_amount, paid_amount FROM tickets 
+        WHERE id = :tid AND organization_id = :org_id
+    """), {"tid": ticket_id, "org_id": target_org_id}).fetchone()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found.")
+    new_paid = float(ticket.paid_amount) + float(data.amount_paid)
+    db.execute(text("""
+        UPDATE tickets SET paid_amount = :paid, status = 'picked_up',
+        pickup_date = NOW() WHERE id = :tid
+    """), {"paid": new_paid, "tid": ticket_id})
+    db.commit()
+    return {"success": True, "message": "Pickup processed.", "ticket_id": ticket_id, 
+            "new_total_paid": new_paid, "new_status": "picked_up"}
+
+@router.patch("/proxy/tickets/{ticket_id}/void", tags=["Platform Admin — Store Proxy"])
+async def proxy_void_ticket(ticket_id: int, db=Depends(get_db), payload=Depends(resolve_org_id)):
+    return await toggle_void_ticket(ticket_id=ticket_id, db=db, payload=payload)
+
+@router.patch("/proxy/tickets/{ticket_id}/refund", tags=["Platform Admin — Store Proxy"])
+async def proxy_refund_ticket(ticket_id: int, db=Depends(get_db), payload=Depends(resolve_org_id)):
+    return await toggle_refund_ticket(ticket_id=ticket_id, db=db, payload=payload)
+
+@router.put("/proxy/tickets/{ticket_id}/items", tags=["Platform Admin — Store Proxy"])
+async def proxy_edit_ticket_items(ticket_id: int, data: Request, db=Depends(get_db), payload=Depends(resolve_org_id)):
+    return await edit_ticket_items(ticket_id=ticket_id, request=data, db=db, payload=payload)
+
+# -- ANALYTICS --
+
+@router.get("/proxy/analytics/dashboard", tags=["Platform Admin — Store Proxy"])
+async def proxy_analytics_dashboard(db=Depends(get_db), payload=Depends(resolve_org_id)):
+    return await get_dashboard_analytics(db=db, payload=payload)
+
+@router.get("/proxy/analytics/charts", tags=["Platform Admin — Store Proxy"])
+async def proxy_analytics_charts(db=Depends(get_db), payload=Depends(resolve_org_id)):
+    return await get_chart_analytics(db=db, payload=payload)
+
+@router.get("/proxy/analytics/stats", tags=["Platform Admin — Store Proxy"])
+async def proxy_analytics_stats(db=Depends(get_db), payload=Depends(resolve_org_id)):
+    return await get_analytics_stats(db=db, payload=payload)
+
+@router.get("/proxy/analytics/ledger", tags=["Platform Admin — Store Proxy"])
+async def proxy_analytics_ledger(db=Depends(get_db), payload=Depends(resolve_org_id)):
+    return await get_analytics_ledger(db=db, payload=payload)
+
+# -- CUSTOMER FINANCIALS --
+
+@router.get("/proxy/customers/{customer_id}/financials", tags=["Platform Admin — Store Proxy"])
+async def proxy_customer_financials(customer_id: int, db=Depends(get_db), payload=Depends(resolve_org_id)):
+    return await get_customer_financials(customer_id=customer_id, db=db, payload=payload)
+
+@router.get("/proxy/customers/{customer_id}/checkout-profile", tags=["Platform Admin — Store Proxy"])
+def proxy_checkout_profile(customer_id: int, db=Depends(get_db), payload=Depends(resolve_org_id)):
+    return get_customer_checkout_profile(customer_id=customer_id, db=db, payload=payload)
+
+# -- TRANSACTION HISTORY --
+
+@router.get("/proxy/analytics/transactions/dropoffs", tags=["Platform Admin — Store Proxy"])
+async def proxy_tx_dropoffs(limit: int = 100, offset: int = 0, db=Depends(get_db), payload=Depends(resolve_org_id)):
+    return await get_dropoff_transactions(limit=limit, offset=offset, db=db, payload=payload)
+
+@router.get("/proxy/analytics/transactions/pickups", tags=["Platform Admin — Store Proxy"])
+async def proxy_tx_pickups(limit: int = 100, offset: int = 0, db=Depends(get_db), payload=Depends(resolve_org_id)):
+    return await get_pickup_transactions(limit=limit, offset=offset, db=db, payload=payload)
+
+@router.get("/proxy/analytics/transactions/rack-assignments", tags=["Platform Admin — Store Proxy"])
+async def proxy_tx_racks(limit: int = 100, offset: int = 0, db=Depends(get_db), payload=Depends(resolve_org_id)):
+    return await get_rack_assignments(limit=limit, offset=offset, db=db, payload=payload)
+
+@router.get("/proxy/analytics/transactions/clothing", tags=["Platform Admin — Store Proxy"])
+async def proxy_tx_clothing(limit: int = 100, offset: int = 0, db=Depends(get_db), payload=Depends(resolve_org_id)):
+    return await get_clothing_transactions(limit=limit, offset=offset, db=db, payload=payload)
+
+@router.get("/proxy/analytics/transactions/customers", tags=["Platform Admin — Store Proxy"])
+async def proxy_tx_customers(limit: int = 100, offset: int = 0, db=Depends(get_db), payload=Depends(resolve_org_id)):
+    return await get_customer_transactions(limit=limit, offset=offset, db=db, payload=payload)
+
+# -- TRANSFERS --
+
+@router.get("/proxy/my-branches", tags=["Platform Admin — Store Proxy"])
+def proxy_my_branches(db=Depends(get_db), payload=Depends(resolve_org_id)):
+    return get_my_branches(db=db, payload=payload)
+
+@router.post("/proxy/tickets/batch-transfer", tags=["Platform Admin — Store Proxy"])
+async def proxy_batch_transfer(data: Request, db=Depends(get_db), payload=Depends(resolve_org_id)):
+    return await batch_transfer_tickets(request=data, db=db, payload=payload)
+
+@router.get("/proxy/incoming", tags=["Platform Admin — Store Proxy"])
+async def proxy_incoming_transfers(db=Depends(get_db), payload=Depends(resolve_org_id)):
+    return await get_incoming_transfers(db=db, payload=payload)
+
+@router.post("/proxy/batch-receive", tags=["Platform Admin — Store Proxy"])
+async def proxy_batch_receive(data: Request, db=Depends(get_db), payload=Depends(resolve_org_id)):
+    return await batch_receive_tickets(request=data, db=db, payload=payload)
+
+@router.get("/proxy/plant/inventory", tags=["Platform Admin — Store Proxy"])
+async def proxy_plant_inventory(db=Depends(get_db), payload=Depends(resolve_org_id)):
+    return await get_plant_inventory(db=db, payload=payload)
+
+@router.get("/proxy/tickets-transfer-tracker", tags=["Platform Admin — Store Proxy"])
+async def proxy_transfer_tracker(db=Depends(get_db), payload=Depends(resolve_org_id)):
+    return await get_transfer_tracker(db=db, payload=payload)
+
+# -- ORG SETTINGS --
+
+@router.get("/proxy/settings", tags=["Platform Admin — Store Proxy"])
+def proxy_get_settings(db=Depends(get_db), payload=Depends(resolve_org_id)):
+    return get_org_settings(db=db, payload=payload)
+
+@router.put("/proxy/settings/branding", tags=["Platform Admin — Store Proxy"])
+async def proxy_update_branding(data: Request, db=Depends(get_db), payload=Depends(resolve_org_id)):
+    return await update_branding(request=data, db=db, payload=payload)
+
+@router.get("/proxy/settings/branches", tags=["Platform Admin — Store Proxy"])
+def proxy_get_branches(db=Depends(get_db), payload=Depends(resolve_org_id)):
+    return get_branches(db=db, payload=payload)
+
+@router.post("/proxy/settings/branches", tags=["Platform Admin — Store Proxy"])
+async def proxy_create_branch(data: Request, db=Depends(get_db), payload=Depends(resolve_org_id)):
+    return await create_branch(request=data, db=db, payload=payload)
+
+@router.put("/proxy/settings/starch-prices", tags=["Platform Admin — Store Proxy"])
+async def proxy_starch_prices(data: Request, db=Depends(get_db), payload=Depends(resolve_org_id)):
+    return await update_starch_prices(request=data, db=db, payload=payload)
+
+@router.put("/proxy/settings/size-prices", tags=["Platform Admin — Store Proxy"])
+async def proxy_size_prices(data: Request, db=Depends(get_db), payload=Depends(resolve_org_id)):
+    return await update_size_prices(request=data, db=db, payload=payload)
+
+@router.put("/proxy/settings/organization/profile", tags=["Platform Admin — Store Proxy"])
+async def proxy_org_profile(data: Request, db=Depends(get_db), payload=Depends(resolve_org_id)):
+    return await update_org_profile(request=data, db=db, payload=payload)
+
+@router.get("/proxy/settings/organization/address", tags=["Platform Admin — Store Proxy"])
+async def proxy_org_address(db=Depends(get_db), payload=Depends(resolve_org_id)):
+    return await get_org_address(db=db, payload=payload)

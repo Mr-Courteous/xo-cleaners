@@ -449,6 +449,7 @@ async def platform_admin_login(
         "admin_id": str(admin["id"]),
         "organization_id": None,
         "organization_name": "Platform Admin",
+        "source": "platform_admins"
     }
     access_token = create_access_token(data=token_data, expires_delta=None)  # ✅ Never expires
 

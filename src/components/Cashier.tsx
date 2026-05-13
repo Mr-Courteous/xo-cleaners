@@ -1,15 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { 
-  Package, Clock, CheckCircle, MapPin, Users, FileText, RefreshCw, Tag, 
-  AlertCircle, X, Search, Menu, Send, Truck 
+import {
+  Package, Clock, CheckCircle, MapPin, Users, FileText, RefreshCw, Tag,
+  AlertCircle, X, Search, Menu, Send, Truck
 } from 'lucide-react';
 import Header from './Header';
 import baseURL from '../lib/config';
 import { ColorsScope, useColors } from '../state/ColorsContext';
 import DropOff from './DropOff';
 import PickUp from './PickUp';
-import RackManagement from './RackManagement'; 
+import RackManagement from './RackManagement';
 import ClothingManagement from './ClothingManagement';
 
 // --- Import components ---
@@ -29,7 +29,7 @@ interface TicketSummary {
   customer_phone?: string;
   total_amount: number;
   paid_amount: number;
-  status: string; 
+  status: string;
   rack_number?: string;
   pickup_date?: string;
   created_at: string;
@@ -71,7 +71,7 @@ interface TicketResponse {
 
 export default function CashierDashboard() {
   const { colors } = useColors();
-  
+
   // --- Navigation State ---
   const [activeTab, setActiveTab] = useState<'dashboard' | 'drop-off' | 'pick-up' | 'assign-rack' | 'clothing' | 'status' | 'customers' | 'directory' | 'tickets' | 'tags' | 'outgoing-transfers' | 'incoming-transfers'>('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -125,7 +125,7 @@ export default function CashierDashboard() {
       const available = racks.length - occupied;
 
       const ticketsData: TicketSummary[] = ticketsResponse.data || [];
-      setTickets(ticketsData); 
+      setTickets(ticketsData);
 
       setStats({
         total_tickets: ticketsData.length,
@@ -178,7 +178,7 @@ export default function CashierDashboard() {
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setSelectedTicketDetails(response.data);
-    } catch (err: any) { 
+    } catch (err: any) {
       setDetailError("Failed to load ticket details.");
     } finally {
       setIsDetailLoading(false);
@@ -203,16 +203,16 @@ export default function CashierDashboard() {
   const DashboardHome = () => (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <h1 className="text-2xl sm:text-3xl font-black text-gray-800 tracking-tight">Dashboard Overview</h1>
-          <button
-            onClick={handleRefresh}
-            disabled={isRefreshing}
-            style={{ backgroundColor: 'var(--primary-color)' }}
-            className="flex items-center gap-2 px-6 py-2.5 text-white rounded-xl shadow-md hover:opacity-90 transition-all active:scale-95 disabled:opacity-50 w-full sm:w-auto justify-center font-bold"
-          >
-            <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-            {isRefreshing ? 'Syncing...' : 'Refresh Data'}
-          </button>
+        <h1 className="text-2xl sm:text-3xl font-black text-gray-800 tracking-tight">Dashboard Overview</h1>
+        <button
+          onClick={handleRefresh}
+          disabled={isRefreshing}
+          style={{ backgroundColor: 'var(--primary-color)' }}
+          className="flex items-center gap-2 px-6 py-2.5 text-white rounded-xl shadow-md hover:opacity-90 transition-all active:scale-95 disabled:opacity-50 w-full sm:w-auto justify-center font-bold"
+        >
+          <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+          {isRefreshing ? 'Syncing...' : 'Refresh Data'}
+        </button>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 sm:gap-6">
@@ -262,15 +262,15 @@ export default function CashierDashboard() {
             </thead>
             <tbody className="bg-white divide-y divide-gray-50">
               {filteredTickets.length > 0 ? (
-                filteredTickets.slice(0, 8).map((ticket) => ( 
+                filteredTickets.slice(0, 8).map((ticket) => (
                   <tr key={ticket.id} onClick={() => handleTicketClick(ticket.id)} className="cursor-pointer hover:bg-gray-50/80 transition-colors">
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-black" style={{ color: 'var(--primary-color)' }}>{ticket.ticket_number}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 font-bold">{ticket.customer_name}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <span 
+                      <span
                         className="px-3 py-1 inline-flex text-[10px] font-black rounded-lg uppercase tracking-widest"
                         style={
-                            ticket.status.includes('ready') 
+                          ticket.status.includes('ready')
                             ? { backgroundColor: `${colors.secondaryColor}15`, color: 'var(--secondary-color)' }
                             : { backgroundColor: '#f3f4f6', color: '#6b7280' }
                         }
@@ -296,142 +296,140 @@ export default function CashierDashboard() {
   const NavButton = ({ tab, icon: Icon, label }: { tab: string, icon: any, label: string }) => {
     const isActive = activeTab === tab;
     return (
-        <button
-          onClick={() => handleTabChange(tab)}
-          className={`w-full flex items-center px-4 py-3 text-sm font-bold rounded-xl transition-all border shadow-sm mb-2 ${
-            isActive 
-              ? 'bg-white border-transparent' 
-              : 'bg-white border-gray-100 text-gray-400 hover:border-gray-300 hover:text-gray-600'
+      <button
+        onClick={() => handleTabChange(tab)}
+        className={`w-full flex items-center px-4 py-3 text-sm font-bold rounded-xl transition-all border shadow-sm mb-2 ${isActive
+            ? 'bg-white border-transparent'
+            : 'bg-white border-gray-100 text-gray-400 hover:border-gray-300 hover:text-gray-600'
           }`}
-          style={isActive ? { color: 'var(--primary-color)' } : {}}
-        >
-          <Icon className="w-5 h-5 mr-3" style={isActive ? { color: 'var(--primary-color)' } : { color: '#d1d5db' }} />
-          {label}
-        </button>
+        style={isActive ? { color: 'var(--primary-color)' } : {}}
+      >
+        <Icon className="w-5 h-5 mr-3" style={isActive ? { color: 'var(--primary-color)' } : { color: '#d1d5db' }} />
+        {label}
+      </button>
     );
   };
 
   return (
     <ColorsScope>
-    <div className="flex h-screen font-sans overflow-hidden transition-colors duration-700" style={{ backgroundColor: `${colors.primaryColor}1F` }}>
-      
-      {isMobileMenuOpen && (
-        <div className="fixed inset-0 z-20 bg-black/40 backdrop-blur-sm md:hidden" onClick={() => setIsMobileMenuOpen(false)}></div>
-      )}
+      <div className="flex h-screen font-sans overflow-hidden transition-colors duration-700" style={{ backgroundColor: `${colors.primaryColor}1F` }}>
 
-      {/* --- SIDEBAR --- */}
-      <div 
-        className={`fixed inset-y-0 left-0 z-30 w-72 flex flex-col transform transition-transform duration-300 ease-in-out md:relative md:translate-x-0 border-r border-black/5 ${
-          isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
-        style={{ backgroundColor: `${colors.primaryColor}10` }} 
-      >
-        <div className="p-8 flex justify-between items-center">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-8 rounded-full" style={{ backgroundColor: 'var(--primary-color)' }}></div>
-            <h2 className="text-2xl font-black tracking-tighter" style={{ color: 'var(--primary-color)' }}>CleanPOS</h2>
+        {isMobileMenuOpen && (
+          <div className="fixed inset-0 z-20 bg-black/40 backdrop-blur-sm md:hidden" onClick={() => setIsMobileMenuOpen(false)}></div>
+        )}
+
+        {/* --- SIDEBAR --- */}
+        <div
+          className={`fixed inset-y-0 left-0 z-30 w-72 flex flex-col transform transition-transform duration-300 ease-in-out md:relative md:translate-x-0 border-r border-black/5 ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+            }`}
+          style={{ backgroundColor: `${colors.primaryColor}10` }}
+        >
+          <div className="p-8 flex justify-between items-center">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-8 rounded-full" style={{ backgroundColor: 'var(--primary-color)' }}></div>
+              <h2 className="text-2xl font-black tracking-tighter" style={{ color: 'var(--primary-color)' }}>CleanPOS</h2>
+            </div>
+            <button onClick={() => setIsMobileMenuOpen(false)} className="md:hidden text-gray-400 hover:text-gray-600 transition-colors">
+              <X size={24} />
+            </button>
           </div>
-          <button onClick={() => setIsMobileMenuOpen(false)} className="md:hidden text-gray-400 hover:text-gray-600 transition-colors">
-            <X size={24} />
-          </button>
+
+          <nav className="mt-2 px-6 space-y-1 overflow-y-auto flex-1 custom-scrollbar">
+            <NavButton tab="dashboard" icon={FileText} label="Dashboard" />
+            <NavButton tab="drop-off" icon={Package} label="Drop Off" />
+            <NavButton tab="pick-up" icon={CheckCircle} label="Pick Up" />
+            <NavButton tab="tickets" icon={FileText} label="Tickets" />
+            <NavButton tab="assign-rack" icon={RefreshCw} label="Assign Rack" />
+            <NavButton tab="customers" icon={Users} label="Customers" />
+            <NavButton tab="outgoing-transfers" icon={Send} label="Outgoing Transfers" />
+            <NavButton tab="incoming-transfers" icon={Truck} label="Incoming Transfers" />
+
+            <div className="pt-8">
+              <p className="px-4 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4">Operations</p>
+              <NavButton tab="clothing" icon={Tag} label="Clothing Types" />
+              <NavButton tab="tags" icon={Tag} label="Tag Management" />
+              <NavButton tab="status" icon={Clock} label="Ticket Status" />
+            </div>
+          </nav>
         </div>
 
-        <nav className="mt-2 px-6 space-y-1 overflow-y-auto flex-1 custom-scrollbar">
-          <NavButton tab="dashboard" icon={FileText} label="Dashboard" />
-          <NavButton tab="drop-off" icon={Package} label="Drop Off" />
-          <NavButton tab="pick-up" icon={CheckCircle} label="Pick Up" />
-          <NavButton tab="tickets" icon={FileText} label="Tickets" />
-          <NavButton tab="assign-rack" icon={RefreshCw} label="Assign Rack" />
-          <NavButton tab="customers" icon={Users} label="Customers" />
-          <NavButton tab="outgoing-transfers" icon={Send} label="Outgoing Transfers" />
-          <NavButton tab="incoming-transfers" icon={Truck} label="Incoming Transfers" />
-
-          <div className="pt-8">
-            <p className="px-4 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4">Operations</p>
-            <NavButton tab="clothing" icon={Tag} label="Clothing Types" />
-            <NavButton tab="tags" icon={Tag} label="Tag Management" />
-            <NavButton tab="status" icon={Clock} label="Ticket Status" />
+        <div className="flex-1 flex flex-col overflow-hidden w-full">
+          <div className="md:hidden bg-white/80 backdrop-blur-md border-b border-gray-100 p-3 flex items-center">
+            <button onClick={() => setIsMobileMenuOpen(true)} className="p-2 text-gray-600"><Menu size={24} /></button>
+            <span className="font-black text-gray-800 ml-2 tracking-tight">CASHIER DASHBOARD</span>
           </div>
-        </nav>
-      </div>
 
-      <div className="flex-1 flex flex-col overflow-hidden w-full">
-        <div className="md:hidden bg-white/80 backdrop-blur-md border-b border-gray-100 p-3 flex items-center">
-           <button onClick={() => setIsMobileMenuOpen(true)} className="p-2 text-gray-600"><Menu size={24} /></button>
-           <span className="font-black text-gray-800 ml-2 tracking-tight">CASHIER DASHBOARD</span>
+          <Header />
+
+          <main className="flex-1 overflow-x-hidden overflow-y-auto relative">
+            <div className="max-w-7xl mx-auto p-4 sm:p-8">
+              {activeTab === 'dashboard' && !loading && <DashboardHome />}
+              {activeTab === 'drop-off' && <DropOff key={refreshKey} />}
+              {activeTab === 'pick-up' && <PickUp key={refreshKey} />}
+              {activeTab === 'assign-rack' && <RackManagement key={refreshKey} />}
+              {activeTab === 'clothing' && <ClothingManagement key={refreshKey} />}
+              {activeTab === 'status' && <StatusManagement key={refreshKey} />}
+              {activeTab === 'customers' && <CustomerManagement key={refreshKey} />}
+              {activeTab === 'tickets' && <TicketManagement key={refreshKey} />}
+              {activeTab === 'tags' && <TagManagement key={refreshKey} />}
+              {activeTab === 'directory' && <CustomerDirectory key={refreshKey} />}
+              {activeTab === 'outgoing-transfers' && <BatchTransfer key={refreshKey} />}
+              {activeTab === 'incoming-transfers' && <TicketTransfersProcess key={refreshKey} />}
+            </div>
+          </main>
         </div>
 
-        <Header /> 
-
-        <main className="flex-1 overflow-x-hidden overflow-y-auto relative">
-          <div className="max-w-7xl mx-auto p-4 sm:p-8">
-            {activeTab === 'dashboard' && !loading && <DashboardHome />}
-            {activeTab === 'drop-off' && <DropOff key={refreshKey} />}
-            {activeTab === 'pick-up' && <PickUp key={refreshKey} />}
-            {activeTab === 'assign-rack' && <RackManagement key={refreshKey} />}
-            {activeTab === 'clothing' && <ClothingManagement key={refreshKey} />}
-            {activeTab === 'status' && <StatusManagement key={refreshKey} />}
-            {activeTab === 'customers' && <CustomerManagement key={refreshKey} />}
-            {activeTab === 'tickets' && <TicketManagement key={refreshKey} />}
-            {activeTab === 'tags' && <TagManagement key={refreshKey} />}
-            {activeTab === 'directory' && <CustomerDirectory key={refreshKey} />}
-            {activeTab === 'outgoing-transfers' && <BatchTransfer key={refreshKey} />}
-            {activeTab === 'incoming-transfers' && <TicketTransfersProcess key={refreshKey} />}
-          </div>
-        </main>
-      </div>
-
-      {/* --- TICKET DETAIL MODAL --- */}
-      {isDetailModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm transition-opacity" onClick={() => setIsDetailModalOpen(false)}></div>
-          <div className="relative transform overflow-hidden rounded-3xl bg-white shadow-2xl transition-all w-full max-w-lg max-h-[85vh] flex flex-col border border-gray-100">
-            <div className="px-8 pt-8 pb-6 border-b border-gray-50 flex justify-between items-center">
+        {/* --- TICKET DETAIL MODAL --- */}
+        {isDetailModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm transition-opacity" onClick={() => setIsDetailModalOpen(false)}></div>
+            <div className="relative transform overflow-hidden rounded-3xl bg-white shadow-2xl transition-all w-full max-w-lg max-h-[85vh] flex flex-col border border-gray-100">
+              <div className="px-8 pt-8 pb-6 border-b border-gray-50 flex justify-between items-center">
                 <h3 className="text-xl font-black text-gray-900 tracking-tight">Order Details</h3>
                 <button onClick={() => setIsDetailModalOpen(false)} className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-400"><X className="h-6 w-6" /></button>
-            </div>
+              </div>
 
-            <div className="px-8 py-6 overflow-y-auto flex-1 custom-scrollbar">
-              {isDetailLoading ? (
-                <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-2 border-gray-100" style={{ borderTopColor: 'var(--primary-color)' }}></div></div>
-              ) : selectedTicketDetails && (
-                <div className="space-y-6">
-                  <div className="flex justify-between items-start bg-gray-50 p-6 rounded-2xl">
-                    <div>
-                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Ticket ID</p>
-                      <p className="text-2xl font-black" style={{ color: 'var(--primary-color)' }}>{selectedTicketDetails.ticket_number}</p>
+              <div className="px-8 py-6 overflow-y-auto flex-1 custom-scrollbar">
+                {isDetailLoading ? (
+                  <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-2 border-gray-100" style={{ borderTopColor: 'var(--primary-color)' }}></div></div>
+                ) : selectedTicketDetails && (
+                  <div className="space-y-6">
+                    <div className="flex justify-between items-start bg-gray-50 p-6 rounded-2xl">
+                      <div>
+                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Ticket ID</p>
+                        <p className="text-2xl font-black" style={{ color: 'var(--primary-color)' }}>{selectedTicketDetails.ticket_number}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Customer</p>
+                        <p className="font-bold text-gray-900">{selectedTicketDetails.customer_name}</p>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Customer</p>
-                      <p className="font-bold text-gray-900">{selectedTicketDetails.customer_name}</p>
-                    </div>
-                  </div>
 
-                  <div className="bg-gray-900 p-8 rounded-2xl text-white shadow-xl">
-                    <div className="flex justify-between items-end mb-6">
-                      <p className="text-[10px] font-black uppercase tracking-widest opacity-40">Financial Overview</p>
-                      <div className="h-px bg-white/10 flex-1 ml-4 mb-1.5"></div>
-                    </div>
-                    <div className="space-y-4">
-                      <div className="flex justify-between text-sm"><p className="opacity-60">Bill Total</p><p className="font-bold">${selectedTicketDetails.total_amount.toFixed(2)}</p></div>
-                      <div className="flex justify-between text-sm"><p className="opacity-60">Payment Made</p><p className="font-bold text-green-400">${selectedTicketDetails.paid_amount.toFixed(2)}</p></div>
-                      <div className="pt-4 border-t border-white/5 flex justify-between items-end">
-                        <p className="text-[10px] font-black uppercase tracking-widest opacity-40">Amount Remaining</p>
-                        <p className="text-3xl font-black text-red-400">${(selectedTicketDetails.total_amount - selectedTicketDetails.paid_amount).toFixed(2)}</p>
+                    <div className="bg-gray-900 p-8 rounded-2xl text-white shadow-xl">
+                      <div className="flex justify-between items-end mb-6">
+                        <p className="text-[10px] font-black uppercase tracking-widest opacity-40">Financial Overview</p>
+                        <div className="h-px bg-white/10 flex-1 ml-4 mb-1.5"></div>
+                      </div>
+                      <div className="space-y-4">
+                        <div className="flex justify-between text-sm"><p className="opacity-60">Bill Total</p><p className="font-bold">${selectedTicketDetails.total_amount.toFixed(2)}</p></div>
+                        <div className="flex justify-between text-sm"><p className="opacity-60">Payment Made</p><p className="font-bold text-green-400">${selectedTicketDetails.paid_amount.toFixed(2)}</p></div>
+                        <div className="pt-4 border-t border-white/5 flex justify-between items-end">
+                          <p className="text-[10px] font-black uppercase tracking-widest opacity-40">Amount Remaining</p>
+                          <p className="text-3xl font-black text-red-400">${(selectedTicketDetails.total_amount - selectedTicketDetails.paid_amount).toFixed(2)}</p>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
 
-            <div className="p-8 bg-gray-50/50 border-t border-gray-50">
-              <button className="w-full py-4 bg-white border border-gray-200 rounded-2xl shadow-sm text-sm font-black uppercase tracking-widest text-gray-500 hover:text-gray-900 hover:bg-gray-50 active:scale-[0.98] transition-all" onClick={() => setIsDetailModalOpen(false)}>Close Summary</button>
+              <div className="p-8 bg-gray-50/50 border-t border-gray-50">
+                <button className="w-full py-4 bg-white border border-gray-200 rounded-2xl shadow-sm text-sm font-black uppercase tracking-widest text-gray-500 hover:text-gray-900 hover:bg-gray-50 active:scale-[0.98] transition-all" onClick={() => setIsDetailModalOpen(false)}>Close Summary</button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
     </ColorsScope>
   );
 }
