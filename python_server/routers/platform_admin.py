@@ -992,10 +992,12 @@ async def proxy_create_customer(
 ):
     from utils.common import hash_password
     import secrets
-    exists = db.execute(text("SELECT 1 FROM allusers WHERE email = :email AND organization_id = :org_id"),
-        {"email": data.get("email"), "org_id": target_org_id}).fetchone()
-    if exists:
-        raise HTTPException(status_code=400, detail="Customer already exists.")
+    email = data.get("email")
+    if email:
+        exists = db.execute(text("SELECT 1 FROM allusers WHERE email = :email AND organization_id = :org_id"),
+            {"email": email, "org_id": target_org_id}).fetchone()
+        if exists:
+            raise HTTPException(status_code=400, detail="Customer already exists.")
     user_id = db.execute(text("""
         INSERT INTO allusers (organization_id, first_name, last_name, email, phone, 
                               address, role, password_hash, joined_at, is_deactivated)
@@ -1010,6 +1012,19 @@ async def proxy_create_customer(
     }).scalar()
     db.commit()
     return {"message": "Customer created.", "customer_id": user_id}
+
+# --- ADD CUSTOMER REGISTRATION PROXY ---
+@router.post("/proxy/customers/register", tags=["Platform Admin — Store Proxy"])
+async def proxy_register_customer(
+    data: Request, 
+    db: Session = Depends(get_db), 
+    payload: dict = Depends(resolve_org_id)
+):
+    """
+    Proxies customer registration to the targeted organization context.
+    """
+    from .org_functions import register_customer
+    return await register_customer(request=data, db=db, payload=payload)
 
 @router.put("/proxy/customers/{customer_id}", tags=["Platform Admin — Store Proxy"])
 def proxy_update_customer(customer_id: int, data: CustomerUpdate, db=Depends(get_db), payload=Depends(resolve_org_id)):
@@ -1039,20 +1054,49 @@ async def proxy_get_tickets(
     rows = db.execute(query, {"org_id": target_org_id}).fetchall()
     return [dict(r._mapping) for r in rows]
 
-@router.post("/proxy/tickets", status_code=201, tags=["Platform Admin — Store Proxy"])
+# --- UPDATE OR REPLACE TICKET CREATION PROXY ---
+@router.post("/proxy/tickets", tags=["Platform Admin — Store Proxy"])
 async def proxy_create_ticket(
-    data: TicketCreate,
-    db: Session = Depends(get_db),
-    admin: Dict = Depends(verify_super_admin),
-    target_org_id: int = Query(...)
+    data: Request, 
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db), 
+    payload: dict = Depends(resolve_org_id)
 ):
-    # Build a fake payload and call the real create_ticket handler
-    # passing it explicitly so it skips its own Depends
-    from .org_functions import create_ticket as _create_ticket
-    from fastapi import BackgroundTasks
-    bt = BackgroundTasks()
-    fake_payload = {"organization_id": target_org_id, "role": "org_owner", "sub_id": str(admin.get("sub_id", 0))}
-    return _create_ticket(data=data, background_tasks=bt, db=db, payload=fake_payload)
+    """
+    Proxies ticket creation to the targeted organization context.
+    """
+    from .org_functions import create_ticket
+    from utils.common import TicketCreate
+    import inspect
+    
+    # 1. Capture the raw dictionary payload directly from the front-end
+    body_json = await data.json()
+    
+    # 2. Extract or remove fields that might trigger errors in structural code dependencies
+    # Remove 'rack_number' if your create_ticket doesn't want it in the pydantic model context
+    rack_number = body_json.pop("rack_number", None)
+    
+    # 3. Create the Pydantic validator representation using the cleaned up dictionary map
+    ticket_data = TicketCreate(**body_json)
+    
+    # 4. Invoke create_ticket dynamically to match whatever signature parameters the backend function expects (e.g. ticket_data/ticket_req, background_tasks, sync/async coroutines)
+    sig = inspect.signature(create_ticket)
+    kwargs = {"db": db, "payload": payload}
+    
+    ticket_param = "ticket_data"
+    for name in sig.parameters:
+        if name in ("ticket_req", "ticket_data", "ticket"):
+            ticket_param = name
+            break
+    kwargs[ticket_param] = ticket_data
+    
+    if "background_tasks" in sig.parameters:
+        kwargs["background_tasks"] = background_tasks
+        
+    if inspect.iscoroutinefunction(create_ticket):
+        return await create_ticket(**kwargs)
+    else:
+        return create_ticket(**kwargs)
 
 @router.get("/proxy/tickets/search", tags=["Platform Admin — Store Proxy"])
 async def proxy_search_tickets(q: str = "", db=Depends(get_db), payload=Depends(resolve_org_id)):
