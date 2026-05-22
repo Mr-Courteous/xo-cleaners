@@ -13,12 +13,17 @@ export const handlePrintJob = (htmlContent: string) => {
         <title>Print</title>
         <style>
           @page { size: 55mm auto; margin: 0; }
-          @media print { 
-            html, body { margin: 0; padding: 0; } 
+          @media print {
+            html, body { margin: 0; padding: 0; }
+            .page-break-receipt {
+              page-break-after: always;
+              break-after: page;
+              page-break-inside: avoid;
+            }
           }
-          body { 
-            font-family: 'Courier New', Courier, monospace; 
-            width: 55mm; 
+          body {
+            font-family: 'Courier New', Courier, monospace;
+            width: 55mm;
             max-width: 55mm;
           }
         </style>

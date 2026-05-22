@@ -37,6 +37,11 @@ export default function PrintPreviewModal({
             @page { size: 55mm auto; margin: 0; }
             @media print {
               html, body { height: 100%; margin: 0; padding: 0; }
+              .page-break-receipt {
+                page-break-after: always;
+                break-after: page;
+                page-break-inside: avoid;
+              }
             }
             body {
               font-family: Arial, sans-serif;
