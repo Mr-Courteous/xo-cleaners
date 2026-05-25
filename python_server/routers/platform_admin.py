@@ -976,8 +976,46 @@ async def proxy_get_customers(
     return [dict(r._mapping) for r in rows]
 
 @router.get("/proxy/customers/search", tags=["Platform Admin — Store Proxy"])
-async def proxy_search_customers(q: str = "", db=Depends(get_db), payload=Depends(resolve_org_id)):
-    return await search_customers(q=q, db=db, payload=payload)
+def proxy_search_customers(
+    q: str = Query(default="", min_length=2, description="Search term (name, phone, or email)"),
+    db: Session = Depends(get_db),
+    payload: Dict = Depends(resolve_org_id)
+):
+    """
+    Search customers by name, phone, or email within the target organization.
+    Returns first_name and last_name as separate fields for frontend display.
+    """
+    org_id = payload.get("organization_id")
+    pattern = f"%{q}%"
+
+    rows = db.execute(text("""
+        SELECT id, first_name, last_name, phone, email, address, joined_at, is_deactivated
+        FROM allusers
+        WHERE organization_id = :org_id
+          AND role = 'customer'
+          AND is_deactivated = FALSE
+          AND (
+              (first_name || ' ' || COALESCE(last_name, '')) ILIKE :pattern
+              OR phone ILIKE :pattern
+              OR email ILIKE :pattern
+          )
+        ORDER BY first_name ASC
+        LIMIT 50
+    """), {"org_id": org_id, "pattern": pattern}).fetchall()
+
+    return [
+        {
+            "id": r.id,
+            "first_name": r.first_name or "",
+            "last_name": r.last_name or "",
+            "phone": r.phone,
+            "email": r.email,
+            "address": r.address,
+            "joined_at": r.joined_at,
+            "is_deactivated": r.is_deactivated,
+        }
+        for r in rows
+    ]
 
 @router.get("/proxy/customers/{customer_id}", tags=["Platform Admin — Store Proxy"])
 def proxy_get_customer_details(customer_id: int, db=Depends(get_db), payload=Depends(resolve_org_id)):
@@ -1022,9 +1060,12 @@ async def proxy_register_customer(
 ):
     """
     Proxies customer registration to the targeted organization context.
+    Parses the raw request body into a NewCustomerRequest before delegating.
     """
-    from .org_functions import register_customer
-    return await register_customer(request=data, db=db, payload=payload)
+    from .org_functions import register_customer, NewCustomerRequest
+    body = await data.json()
+    customer_data = NewCustomerRequest(**body)
+    return await register_customer(data=customer_data, db=db, payload=payload)
 
 @router.put("/proxy/customers/{customer_id}", tags=["Platform Admin — Store Proxy"])
 def proxy_update_customer(customer_id: int, data: CustomerUpdate, db=Depends(get_db), payload=Depends(resolve_org_id)):
@@ -1279,8 +1320,8 @@ async def proxy_transfer_tracker(db=Depends(get_db), payload=Depends(resolve_org
 # -- ORG SETTINGS --
 
 @router.get("/proxy/settings", tags=["Platform Admin — Store Proxy"])
-def proxy_get_settings(db=Depends(get_db), payload=Depends(resolve_org_id)):
-    return get_org_settings(db=db, payload=payload)
+async def proxy_get_settings(db=Depends(get_db), payload=Depends(resolve_org_id)):
+    return await get_org_settings(db=db, payload=payload)
 
 @router.put("/proxy/settings/branding", tags=["Platform Admin — Store Proxy"])
 async def proxy_update_branding(data: Request, db=Depends(get_db), payload=Depends(resolve_org_id)):

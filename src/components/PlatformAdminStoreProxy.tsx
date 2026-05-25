@@ -276,6 +276,7 @@ const DropOffTab = ({ store, getHeaders, getProxyUrl, setError, showSuccess, ope
     const [showNewCustomerForm, setShowNewCustomerForm] = useState(false);
     const [newCustomer, setNewCustomer] = useState({ first_name: '', last_name: '', phone: '', email: '', address: '' });
     const [searchLoading, setSearchLoading] = useState(false);
+    const [creatingCustomer, setCreatingCustomer] = useState(false);
 
     // ---- CLOTHING TYPES / SETTINGS ----
     const [clothingTypes, setClothingTypes] = useState<any[]>([]);
@@ -365,7 +366,7 @@ const DropOffTab = ({ store, getHeaders, getProxyUrl, setError, showSuccess, ope
         setSearchLoading(true);
         try {
             const res = await axios.get(
-                getProxyUrl(`customers?search=${encodeURIComponent(query)}`),
+                getProxyUrl(`customers/search?q=${encodeURIComponent(query)}`),
                 { headers: getHeaders() }
             );
             setCustomers(Array.isArray(res.data) ? res.data : []);
@@ -377,6 +378,7 @@ const DropOffTab = ({ store, getHeaders, getProxyUrl, setError, showSuccess, ope
     }, [getProxyUrl, getHeaders]);
 
     const createCustomer = async () => {
+        setCreatingCustomer(true);
         try {
             const res = await axios.post(
                 getProxyUrl('customers/register'),
@@ -388,6 +390,8 @@ const DropOffTab = ({ store, getHeaders, getProxyUrl, setError, showSuccess, ope
             setStep('items');
         } catch (err: any) {
             setError(err.response?.data?.detail || 'Failed to create customer.');
+        } finally {
+            setCreatingCustomer(false);
         }
     };
 
@@ -860,10 +864,15 @@ const DropOffTab = ({ store, getHeaders, getProxyUrl, setError, showSuccess, ope
                                 <button onClick={() => setShowNewCustomerForm(false)} className="px-4 py-2 text-slate-400 hover:text-slate-200">Cancel</button>
                                 <button
                                     onClick={createCustomer}
-                                    disabled={!(newCustomer.email || newCustomer.phone)}
-                                    className="py-2 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold transition-all disabled:opacity-50"
+                                    disabled={creatingCustomer || !(newCustomer.email || newCustomer.phone)}
+                                    className="py-2 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold transition-all disabled:opacity-50 flex items-center gap-2"
                                 >
-                                    Create Customer
+                                    {creatingCustomer ? (
+                                        <>
+                                            <Loader2 size={14} className="animate-spin" />
+                                            Creating...
+                                        </>
+                                    ) : 'Create Customer'}
                                 </button>
                             </div>
                         </div>
@@ -1949,12 +1958,18 @@ export default function PlatformAdminStoreProxy({ store, onExit }: PlatformAdmin
     const [customerPlantHtmlState, setCustomerPlantHtmlState] = useState('');
     const [tagHtmlState, setTagHtmlState] = useState('');
 
+    const centerReceiptItems = (html: string) => html
+        .replace(/display:flex; justify-content:space-between; align-items:flex-start;/g, 'display:flex; flex-direction:column; align-items:center; justify-content:center;')
+        .replace(/text-align:left;/g, 'text-align:center;')
+        .replace(/text-align: right;/g, 'text-align:center;')
+        .replace(/padding-left:0px;/g, 'padding-left:0px; text-align:center;');
+
     const openPrintPreview = async (detail: any) => {
         try {
             const orgAddress = await getOrgAddress();
-            const customerHtml = renderReceiptHtml(detail, undefined, orgAddress);
-            const plantHtml = renderPlantReceiptHtml(detail, undefined, orgAddress);
-            const customerPlantHtml = renderCustomerPlantReceiptHtml(detail, undefined, orgAddress);
+            const customerHtml = centerReceiptItems(renderReceiptHtml(detail, undefined, orgAddress));
+            const plantHtml = centerReceiptItems(renderPlantReceiptHtml(detail, undefined, orgAddress));
+            const customerPlantHtml = centerReceiptItems(renderCustomerPlantReceiptHtml(detail, undefined, orgAddress));
             const tagHtml = generateTagHtml(detail);
 
             const combinedAll = `\n  <div class="page-break-receipt">${customerHtml}</div>\n  <div class="page-break-receipt">${plantHtml}</div>\n  <div class="page-break-receipt">${customerPlantHtml}</div>\n`;

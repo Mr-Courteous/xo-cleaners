@@ -67,6 +67,7 @@ function AdminLogin({ onLoginSuccess }: AdminLoginProps) {
             localStorage.setItem('platformAdminEmail', email);
 
             onLoginSuccess();
+            window.location.reload();
         } catch (err: any) {
             console.error(err);
             setError(err.response?.data?.detail || 'Login failed. Check credentials.');

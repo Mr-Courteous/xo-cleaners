@@ -714,12 +714,14 @@ async def search_customers(
         for row in result:
             customers.append({
                 "id": row.id,
-                "name": f"{row.first_name or ''} {row.last_name or ''}".strip(), 
+                "first_name": row.first_name or "",
+                "last_name": row.last_name or "",
+                "name": f"{row.first_name or ''} {row.last_name or ''}".strip(),
                 "phone": row.phone,
                 "email": row.email,
-                "address": row.address,              # ✅ Already present
-                "is_deactivated": row.is_deactivated,# ✅ Added
-                "joined_at": row.joined_at,          # ✅ Matches schema
+                "address": row.address,
+                "is_deactivated": row.is_deactivated,
+                "joined_at": row.joined_at,
                 "last_visit_date": row.last_visit_date
             })
             
