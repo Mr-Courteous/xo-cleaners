@@ -1193,41 +1193,114 @@ async def proxy_get_ticket_detail(
 async def proxy_assign_rack(
     ticket_id: int,
     data: RackAssignmentRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    admin: Dict = Depends(verify_super_admin),
-    target_org_id: int = Query(...)
+    payload: Dict = Depends(resolve_org_id)
 ):
-    result = db.execute(text("""
-        UPDATE tickets SET rack_number = :rack WHERE id = :tid 
-        AND organization_id = :org_id RETURNING id
-    """), {"rack": data.rack_number, "tid": ticket_id, "org_id": target_org_id})
-    db.commit()
-    if result.rowcount == 0:
-        raise HTTPException(status_code=404, detail="Ticket not found.")
-    return {"message": "Rack assigned.", "ticket_id": ticket_id, "rack_number": data.rack_number}
+    return await assign_rack_to_ticket(
+        ticket_id=ticket_id,
+        req=data,
+        background_tasks=background_tasks,
+        db=db,
+        payload=payload
+    )
 
 @router.put("/proxy/tickets/{ticket_id}/pickup", tags=["Platform Admin — Store Proxy"])
 async def proxy_pickup(
     ticket_id: int,
     data: TicketPickupRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     admin: Dict = Depends(verify_super_admin),
-    target_org_id: int = Query(...)
+    target_org_id: int = Query(...),
 ):
+    """
+    Platform-admin pickup proxy.
+    - Accepts payment regardless of current ticket status.
+    - Sets status to 'picked_up' when fully paid.
+    - Clears the rack (is_occupied=false, ticket_id=NULL) on full pickup.
+    """
+    import decimal
+    from datetime import datetime
+
+    # 1. Fetch ticket
     ticket = db.execute(text("""
-        SELECT id, total_amount, paid_amount FROM tickets 
-        WHERE id = :tid AND organization_id = :org_id
+        SELECT t.id, t.total_amount, t.paid_amount, t.status, t.rack_number,
+               CONCAT(u.first_name, ' ', u.last_name) as customer_name
+        FROM tickets t
+        LEFT JOIN allusers u ON t.customer_id = u.id
+        WHERE t.id = :tid AND t.organization_id = :org_id
     """), {"tid": ticket_id, "org_id": target_org_id}).fetchone()
+
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found.")
-    new_paid = float(ticket.paid_amount) + float(data.amount_paid)
+
+    if ticket.status == "picked_up":
+        raise HTTPException(
+            status_code=400,
+            detail="This ticket has already been picked up."
+        )
+
+    # 2. Calculate financials using stored total_amount
+    final_total = decimal.Decimal(str(ticket.total_amount or 0))
+    # Note: ticket.total_amount already includes env charge and tax as stored in the DB.
+    # We still retrieve subtotal for possible future extensions but do not use it for payment comparison.
+    items = db.execute(text("""
+        SELECT COALESCE(SUM(item_total), 0) as subtotal
+        FROM ticket_items WHERE ticket_id = :tid
+    """), {"tid": ticket_id}).fetchone()
+    subtotal = decimal.Decimal(str(items.subtotal or 0))
+
+    current_paid = decimal.Decimal(str(ticket.paid_amount or 0))
+    amount_paying_now = decimal.Decimal(str(data.amount_paid))
+
+    if amount_paying_now < decimal.Decimal("0"):
+        raise HTTPException(status_code=400, detail="Payment amount cannot be negative.")
+
+    new_total_paid = min(current_paid + amount_paying_now, final_total)
+    is_fully_paid = new_total_paid >= (final_total - decimal.Decimal("0.01"))
+
+    new_status = "picked_up" if is_fully_paid else ticket.status
+    pickup_date_value = datetime.now() if is_fully_paid else None
+
+    # 3. Update ticket
     db.execute(text("""
-        UPDATE tickets SET paid_amount = :paid, status = 'picked_up',
-        pickup_date = NOW() WHERE id = :tid
-    """), {"paid": new_paid, "tid": ticket_id})
+        UPDATE tickets
+        SET status = :status,
+            paid_amount = :paid_amount,
+            pickup_date = COALESCE(:pickup_date, pickup_date)
+        WHERE id = :tid AND organization_id = :org_id
+    """), {
+        "status": new_status,
+        "paid_amount": float(new_total_paid),
+        "pickup_date": pickup_date_value,
+        "tid": ticket_id,
+        "org_id": target_org_id
+    })
+
+    # 4. Free rack if fully paid
+    if is_fully_paid and ticket.rack_number:
+        db.execute(text("""
+            UPDATE racks
+            SET is_occupied = false, ticket_id = NULL
+            WHERE number = :rack_number AND organization_id = :org_id
+        """), {"rack_number": ticket.rack_number, "org_id": target_org_id})
+
     db.commit()
-    return {"success": True, "message": "Pickup processed.", "ticket_id": ticket_id, 
-            "new_total_paid": new_paid, "new_status": "picked_up"}
+
+    return {
+        "success": True,
+        "ticket_id": ticket_id,
+        "new_status": new_status,
+        "new_total_paid": float(new_total_paid),
+        "rack_cleared": is_fully_paid and ticket.rack_number is not None,
+        "message": (
+            f"Ticket picked up successfully. Rack #{ticket.rack_number} freed."
+            if is_fully_paid and ticket.rack_number
+            else "Pickup processed." if is_fully_paid
+            else f"Partial payment recorded. Balance remaining: ${float(final_total - new_total_paid):.2f}"
+        )
+    }
 
 @router.patch("/proxy/tickets/{ticket_id}/void", tags=["Platform Admin — Store Proxy"])
 async def proxy_void_ticket(ticket_id: int, db=Depends(get_db), payload=Depends(resolve_org_id)):

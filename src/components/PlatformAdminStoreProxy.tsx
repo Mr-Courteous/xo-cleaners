@@ -660,10 +660,10 @@ const DropOffTab = ({ store, getHeaders, getProxyUrl, setError, showSuccess, ope
                                                 <td className="px-6 py-4 font-medium">{t.customer_name}</td>
                                                 <td className="px-6 py-4">
                                                     <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-widest ${t.status === 'ready_for_pickup'
-                                                            ? 'bg-emerald-400/10 text-emerald-400'
-                                                            : t.status === 'picked_up'
-                                                                ? 'bg-slate-600/30 text-slate-400'
-                                                                : 'bg-amber-400/10 text-amber-400'
+                                                        ? 'bg-emerald-400/10 text-emerald-400'
+                                                        : t.status === 'picked_up'
+                                                            ? 'bg-slate-600/30 text-slate-400'
+                                                            : 'bg-amber-400/10 text-amber-400'
                                                         }`}>
                                                         {t.status?.replace(/_/g, ' ')}
                                                     </span>
@@ -1711,7 +1711,7 @@ const TicketsTab = ({ getHeaders, getProxyUrl, setError }: TabProps) => {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2 bg-slate-800 rounded-2xl border border-slate-700/50 shadow-xl overflow-hidden">
+                <div className="lg:col-span-2 bg-slate-800 rounded-2xl border border-slate-700/50 shadow-xl overflow-y-auto max-h-[70vh]">
                     {localLoading ? (
                         <div className="flex flex-col items-center justify-center py-20 text-slate-400">
                             <Loader2 className="animate-spin mb-3 text-indigo-400" size={32} />
@@ -1973,7 +1973,7 @@ export default function PlatformAdminStoreProxy({ store, onExit }: PlatformAdmin
             const tagHtml = generateTagHtml(detail);
 
             const combinedAll = `\n  <div class="page-break-receipt">${customerHtml}</div>\n  <div class="page-break-receipt">${plantHtml}</div>\n  <div class="page-break-receipt">${customerPlantHtml}</div>\n`;
-            try { handlePrintJob(combinedAll); } catch {}
+            try { handlePrintJob(combinedAll); } catch { }
 
             setPrintContent(customerHtml);
             setPlantHtmlState(plantHtml);

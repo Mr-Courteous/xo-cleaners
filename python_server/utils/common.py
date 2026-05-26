@@ -350,7 +350,7 @@ class RackAssignmentRequest(BaseModel):
     Specific model for the rack assignment UI.
     Matches the body: JSON.stringify({ rack_number: parseInt(assignRackNumber) })
     """
-    number: int
+    rack_number: int
 
 class GeneralTicketUpdateRequest(BaseModel):
     """

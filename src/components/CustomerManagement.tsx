@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Search, User, Phone, Mail, MapPin, Plus, 
+import {
+  Search, User, Phone, Mail, MapPin, Plus,
   ChevronRight, X, Save, ArrowLeft, Edit2, Trash2,
   CheckCircle, AlertCircle, Calendar, ArrowUp, ArrowDown
 } from 'lucide-react';
@@ -29,7 +29,7 @@ export default function CustomerManagement() {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | 'none'>('none');
-  
+
   // Form State
   const [formData, setFormData] = useState({
     first_name: '',
@@ -41,7 +41,7 @@ export default function CustomerManagement() {
 
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
-  const [notification, setNotification] = useState<{type: 'success'|'error', message: string} | null>(null);
+  const [notification, setNotification] = useState<{ type: 'success' | 'error', message: string } | null>(null);
 
   // --- 1. FETCH CUSTOMERS ---
   useEffect(() => {
@@ -57,7 +57,7 @@ export default function CustomerManagement() {
     setLoading(true);
     try {
       const token = localStorage.getItem('accessToken');
-      const url = searchQuery 
+      const url = searchQuery
         ? `${baseURL}/api/organizations/customers/search?query=${encodeURIComponent(searchQuery)}`
         : `${baseURL}/api/organizations/customers`;
 
@@ -79,25 +79,25 @@ export default function CustomerManagement() {
     setActionLoading(true);
     try {
       const token = localStorage.getItem("accessToken");
-      
+
       // Sanitize Phone: Remove non-digits
-      const cleanPhone = formData.phone.replace(/\D/g, ''); 
+      const cleanPhone = formData.phone.replace(/\D/g, '');
 
       const payload = {
         first_name: formData.first_name,
         last_name: formData.last_name,
         email: formData.email,
         address: formData.address,
-        phone: cleanPhone, 
+        phone: cleanPhone,
         password: cleanPhone || "123456" // Default password
       };
 
       await axios.post(
-        `${baseURL}/api/organizations/register-customers`, 
-        payload, 
+        `${baseURL}/api/organizations/register-customers`,
+        payload,
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      
+
       showNotification('success', 'Customer created successfully!');
       resetForm();
       setViewMode('list');
@@ -113,74 +113,74 @@ export default function CustomerManagement() {
   // --- 3. UPDATE CUSTOMER ---
   const handleUpdateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     // Safety check
     if (!selectedCustomer) {
-        showNotification('error', 'No customer selected.');
-        return;
+      showNotification('error', 'No customer selected.');
+      return;
     }
-    
+
     setActionLoading(true);
-    
+
     try {
-        const token = localStorage.getItem("accessToken");
-        if (!token) {
-            showNotification('error', 'Authentication token missing. Please login again.');
-            return;
+      const token = localStorage.getItem("accessToken");
+      if (!token) {
+        showNotification('error', 'Authentication token missing. Please login again.');
+        return;
+      }
+
+      // 1. Clean data to match Backend Sanitization
+      // Backend: clean_phone = ''.join(filter(str.isdigit, data.phone))
+      const cleanPhone = formData.phone.replace(/\D/g, '');
+
+      // 2. Construct Payload matching 'CustomerUpdate' Pydantic model
+      const payload = {
+        first_name: formData.first_name.trim(),
+        last_name: formData.last_name.trim(),
+        email: formData.email.trim(),
+        // Backend SQL expects a value for address. Send empty string if null.
+        address: formData.address ? formData.address.trim() : "",
+        phone: cleanPhone
+      };
+
+      // 3. Send PUT Request
+      // Ensure 'baseURL' includes '/api/organizations' if your router is prefixed that way
+      const response = await axios.put(
+        `${baseURL}/api/organizations/customers/${selectedCustomer.id}`,
+        payload,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
         }
+      );
 
-        // 1. Clean data to match Backend Sanitization
-        // Backend: clean_phone = ''.join(filter(str.isdigit, data.phone))
-        const cleanPhone = formData.phone.replace(/\D/g, '');
+      // 4. Handle Success
+      // The backend returns the updated customer object directly (updated_customer._mapping)
+      setSelectedCustomer(response.data);
+      showNotification('success', 'Customer updated successfully!');
+      setViewMode('details'); // Switch back to view mode
 
-        // 2. Construct Payload matching 'CustomerUpdate' Pydantic model
-        const payload = {
-            first_name: formData.first_name.trim(),
-            last_name: formData.last_name.trim(),
-            email: formData.email.trim(),
-            // Backend SQL expects a value for address. Send empty string if null.
-            address: formData.address ? formData.address.trim() : "", 
-            phone: cleanPhone
-        };
-
-        // 3. Send PUT Request
-        // Ensure 'baseURL' includes '/api/organizations' if your router is prefixed that way
-        const response = await axios.put(
-            `${baseURL}/api/organizations/customers/${selectedCustomer.id}`, 
-            payload, 
-            { 
-                headers: { 
-                    Authorization: `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                } 
-            }
-        );
-      
-        // 4. Handle Success
-        // The backend returns the updated customer object directly (updated_customer._mapping)
-        setSelectedCustomer(response.data); 
-        showNotification('success', 'Customer updated successfully!');
-        setViewMode('details'); // Switch back to view mode
-      
-        // 5. Refresh the main list so the table updates immediately
-        if (typeof fetchCustomers === 'function') {
-            fetchCustomers(); 
-        }
+      // 5. Refresh the main list so the table updates immediately
+      if (typeof fetchCustomers === 'function') {
+        fetchCustomers();
+      }
 
     } catch (error: any) {
-        console.error("Update failed", error);
-      
-        // 6. Intelligent Error Handling
-        // Captures backend 409 errors (Duplicate Email/Phone) or 403 (Permission denied)
-        const msg = error.response?.data?.detail || "Failed to update customer.";
-        showNotification('error', msg);
-        
+      console.error("Update failed", error);
+
+      // 6. Intelligent Error Handling
+      // Captures backend 409 errors (Duplicate Email/Phone) or 403 (Permission denied)
+      const msg = error.response?.data?.detail || "Failed to update customer.";
+      showNotification('error', msg);
+
     } finally {
-        setActionLoading(false);
+      setActionLoading(false);
     }
-};
+  };
   // --- HELPER FUNCTIONS ---
-  const showNotification = (type: 'success'|'error', message: string) => {
+  const showNotification = (type: 'success' | 'error', message: string) => {
     setNotification({ type, message });
     setTimeout(() => setNotification(null), 3000);
   };
@@ -191,12 +191,12 @@ export default function CustomerManagement() {
 
   const getSortedCustomers = () => {
     let sorted = [...customers];
-    
+
     if (sortOrder !== 'none') {
       sorted.sort((a, b) => {
         const nameA = (a.first_name ? `${a.first_name} ${a.last_name || ''}` : a.name || '').toLowerCase().trim();
         const nameB = (b.first_name ? `${b.first_name} ${b.last_name || ''}` : b.name || '').toLowerCase().trim();
-        
+
         if (sortOrder === 'asc') {
           return nameA.localeCompare(nameB);
         } else {
@@ -204,7 +204,7 @@ export default function CustomerManagement() {
         }
       });
     }
-    
+
     return sorted;
   };
 
@@ -327,32 +327,29 @@ export default function CustomerManagement() {
         <div className="flex gap-2">
           <button
             onClick={() => setSortOrder('none')}
-            className={`flex items-center gap-1 px-4 py-2 rounded-lg font-medium text-sm transition-all ${
-              sortOrder === 'none' 
-                ? 'bg-gray-200 text-gray-900' 
+            className={`flex items-center gap-1 px-4 py-2 rounded-lg font-medium text-sm transition-all ${sortOrder === 'none'
+                ? 'bg-gray-200 text-gray-900'
                 : 'bg-gray-100 text-gray-600 hover:bg-gray-150'
-            }`}
+              }`}
           >
             None
           </button>
           <button
             onClick={() => setSortOrder('asc')}
-            className={`flex items-center gap-1 px-4 py-2 rounded-lg font-medium text-sm transition-all ${
-              sortOrder === 'asc' 
-                ? 'text-white' 
+            className={`flex items-center gap-1 px-4 py-2 rounded-lg font-medium text-sm transition-all ${sortOrder === 'asc'
+                ? 'text-white'
                 : 'bg-gray-100 text-gray-600 hover:bg-gray-150'
-            }`}
+              }`}
             style={sortOrder === 'asc' ? { backgroundColor: colors.primaryColor } : {}}
           >
             <ArrowUp size={16} /> A - Z
           </button>
           <button
             onClick={() => setSortOrder('desc')}
-            className={`flex items-center gap-1 px-4 py-2 rounded-lg font-medium text-sm transition-all ${
-              sortOrder === 'desc' 
-                ? 'text-white' 
+            className={`flex items-center gap-1 px-4 py-2 rounded-lg font-medium text-sm transition-all ${sortOrder === 'desc'
+                ? 'text-white'
                 : 'bg-gray-100 text-gray-600 hover:bg-gray-150'
-            }`}
+              }`}
             style={sortOrder === 'desc' ? { backgroundColor: colors.primaryColor } : {}}
           >
             <ArrowDown size={16} /> Z - A
@@ -363,7 +360,7 @@ export default function CustomerManagement() {
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden min-h-[300px]">
         {loading ? (
           <div className="flex justify-center items-center h-64">
-             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
           </div>
         ) : customers.length === 0 ? (
           <div className="p-12 text-center text-gray-500">
@@ -418,13 +415,13 @@ export default function CustomerManagement() {
   // 2. DETAILS VIEW
   const renderDetails = () => {
     if (!selectedCustomer) return null;
-    const displayName = selectedCustomer.first_name 
-        ? `${selectedCustomer.first_name} ${selectedCustomer.last_name || ''}` 
-        : selectedCustomer.name;
+    const displayName = selectedCustomer.first_name
+      ? `${selectedCustomer.first_name} ${selectedCustomer.last_name || ''}`
+      : selectedCustomer.name;
 
     return (
       <div className="max-w-3xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-300">
-        <button 
+        <button
           onClick={() => setViewMode('list')}
           className="mb-6 flex items-center text-gray-600 hover:text-blue-600 transition-colors"
         >
@@ -434,7 +431,7 @@ export default function CustomerManagement() {
 
         <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
           {/* Header */}
-            <div className="bg-gradient-to-r from-slate-700 to-slate-800 p-6 text-white flex justify-between items-start">
+          <div className="bg-gradient-to-r from-slate-700 to-slate-800 p-6 text-white flex justify-between items-start">
             <div className="flex items-center gap-4">
               <div className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center backdrop-blur-sm border-2 border-white/20 text-2xl font-bold">
                 {displayName?.charAt(0).toUpperCase()}
@@ -442,14 +439,14 @@ export default function CustomerManagement() {
               <div>
                 <h2 className="text-2xl font-bold">{displayName}</h2>
                 <div className="flex items-center mt-2 gap-2">
-                   <span className="px-3 py-1 rounded-full text-xs font-bold bg-white/20 border border-white/10">
-                     {selectedCustomer.tenure || 'Customer'}
-                   </span>
+                  <span className="px-3 py-1 rounded-full text-xs font-bold bg-white/20 border border-white/10">
+                    {selectedCustomer.tenure || 'Customer'}
+                  </span>
                 </div>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <button 
+              <button
                 onClick={initEditMode}
                 className="p-2 bg-white/10 hover:bg-white/20 rounded-full transition text-white"
                 title="Edit Customer"
@@ -497,16 +494,16 @@ export default function CustomerManagement() {
             <div className="space-y-6">
               <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider border-b pb-2">Account Details</h3>
               <div className="bg-gray-50 p-4 rounded-lg border border-gray-100">
-                 <div className="flex items-center gap-2 mb-2">
-                    <Calendar className="w-4 h-4 text-blue-500" />
-                    <span className="text-sm font-semibold text-gray-700">Joined Date</span>
-                 </div>
-                 <p className="text-sm text-gray-600 pl-6">
-                    {selectedCustomer.joined_at 
-                      ? new Date(selectedCustomer.joined_at).toLocaleDateString() 
-                      : 'N/A'
-                    }
-                 </p>
+                <div className="flex items-center gap-2 mb-2">
+                  <Calendar className="w-4 h-4 text-blue-500" />
+                  <span className="text-sm font-semibold text-gray-700">Joined Date</span>
+                </div>
+                <p className="text-sm text-gray-600 pl-6">
+                  {selectedCustomer.joined_at
+                    ? new Date(selectedCustomer.joined_at).toLocaleDateString()
+                    : 'N/A'
+                  }
+                </p>
               </div>
             </div>
           </div>
@@ -523,7 +520,7 @@ export default function CustomerManagement() {
 
     return (
       <div className="max-w-2xl mx-auto animate-in zoom-in-95 duration-200">
-        <button 
+        <button
           onClick={() => setViewMode(isEdit ? 'details' : 'list')}
           className="mb-6 flex items-center text-gray-600 hover:text-blue-600 transition-colors"
         >
@@ -535,12 +532,12 @@ export default function CustomerManagement() {
           <div className="p-6 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
             <h2 className="text-xl font-bold text-gray-900">{title}</h2>
             {isEdit && (
-               <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded font-mono">
-                 ID: {selectedCustomer?.id}
-               </span>
+              <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded font-mono">
+                ID: {selectedCustomer?.id}
+              </span>
             )}
           </div>
-          
+
           <div className="p-6">
             <form onSubmit={submitHandler} className="space-y-6">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
@@ -550,7 +547,7 @@ export default function CustomerManagement() {
                     type="text"
                     required
                     value={formData.first_name}
-                    onChange={(e) => setFormData({...formData, first_name: e.target.value})}
+                    onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
                     className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                   />
                 </div>
@@ -559,7 +556,7 @@ export default function CustomerManagement() {
                   <input
                     type="text"
                     value={formData.last_name}
-                    onChange={(e) => setFormData({...formData, last_name: e.target.value})}
+                    onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
                     className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                   />
                 </div>
@@ -575,7 +572,7 @@ export default function CustomerManagement() {
                     type="tel"
                     required
                     value={formData.phone}
-                    onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                     className="block w-full pl-10 border border-gray-300 rounded-md py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                     placeholder="(555) 123-4567"
                   />
@@ -591,7 +588,7 @@ export default function CustomerManagement() {
                   <input
                     type="email"
                     value={formData.email}
-                    onChange={(e) => setFormData({...formData, email: e.target.value})}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     className="block w-full pl-10 border border-gray-300 rounded-md py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                     placeholder="customer@example.com"
                   />
@@ -607,7 +604,7 @@ export default function CustomerManagement() {
                   <input
                     type="text"
                     value={formData.address}
-                    onChange={(e) => setFormData({...formData, address: e.target.value})}
+                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                     className="block w-full pl-10 border border-gray-300 rounded-md py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                     placeholder="123 Main St..."
                   />
@@ -645,9 +642,8 @@ export default function CustomerManagement() {
   return (
     <div className="p-4 sm:p-6 bg-gray-50 min-h-screen">
       {notification && (
-        <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg flex items-center gap-2 animate-in slide-in-from-top-2 ${
-          notification.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-        }`}>
+        <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg flex items-center gap-2 animate-in slide-in-from-top-2 ${notification.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+          }`}>
           {notification.type === 'success' ? <CheckCircle size={18} /> : <AlertCircle size={18} />}
           <span className="text-sm font-medium">{notification.message}</span>
         </div>
