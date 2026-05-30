@@ -630,12 +630,12 @@ export default function TicketManagement() {
         viewMode === 'list' ? (
           <div className="space-y-4">
             {filteredTickets.map((ticket) => {
-              const isVoid = ticket.is_void || false;
+              const isVoid = ticket.is_void || ticket.status === 'voided' || false;
               const isRefunded = ticket.is_refunded || false;
 
               let cardClasses = 'bg-white border-gray-200';
               if (isVoid) {
-                cardClasses = 'bg-red-50 border-red-200';
+                cardClasses = 'bg-red-100 border-red-400 border-l-4';
               } else if (isRefunded) {
                 cardClasses = 'bg-purple-50 border-purple-200';
               }
@@ -686,7 +686,10 @@ export default function TicketManagement() {
                         Created: {new Date(ticket.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                       </div>
                       <div>
-                        Status: <span className="font-medium">{ticket.status.replace('_', ' ').toUpperCase()}</span>
+                        Status:{' '}
+                        <span className={`font-medium ${ticket.status === 'voided' || isVoid ? 'text-red-600 font-black' : ''}`}>
+                          {ticket.status.replace('_', ' ').toUpperCase()}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -746,7 +749,7 @@ export default function TicketManagement() {
             <button onClick={() => setSelectedTicket(null)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
             <div className="flex items-center gap-2 mb-4">
               <h3 className="text-xl font-bold">Ticket #{selectedTicket.ticket_number}</h3>
-              {selectedTicket.is_void && <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded text-sm font-bold">VOID</span>}
+              {selectedTicket.is_void || selectedTicket.status === 'voided' ? <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded text-sm font-bold">VOID</span> : null}
               {selectedTicket.is_refunded && <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-sm font-bold">REFUNDED</span>}
             </div>
 
@@ -759,7 +762,7 @@ export default function TicketManagement() {
                 </div>
                 <div className="text-right">
                   <p className="text-gray-500 text-sm">Status</p>
-                  <p className="font-semibold">{selectedTicket.status.replace('_', ' ').toUpperCase()}</p>
+                  <p className="font-semibold" style={selectedTicket.is_void || selectedTicket.status === 'voided' ? { color: '#dc2626' } : undefined}>{selectedTicket.status.replace('_', ' ').toUpperCase()}</p>
                   <p className="text-sm">Rack: {selectedTicket.rack_number || 'N/A'}</p>
                 </div>
               </div>
@@ -783,6 +786,8 @@ export default function TicketManagement() {
                               <span className="bg-purple-100 text-purple-700 px-1.5 rounded-sm">Alt: {i.alteration_name || i.alterations}</span>
                             </div>
                           )}
+                          {i.additional_charge > 0 && <div className="text-[10px] font-black uppercase text-green-600 mt-0.5">UPCHARGE +${i.additional_charge.toFixed(2)}</div>}
+                          {i.additional_charge < 0 && <div className="text-[10px] font-black uppercase text-red-600 mt-0.5">DISCOUNT ${i.additional_charge.toFixed(2)}</div>}
                         </td>
                         <td className="px-4 py-2 text-right">{i.quantity}</td>
                         <td className="px-4 py-2 text-right">${i.item_total.toFixed(2)}</td>

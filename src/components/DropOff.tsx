@@ -166,8 +166,8 @@ const UpchargeSelector = ({ currentCharge, onUpdate, disabled }: UpchargeProps) 
     <div className="flex flex-col mt-2 pt-2 border-t border-gray-100" onClick={(e) => e.stopPropagation()}>
       <div className="flex justify-between items-center mb-1">
         <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-          Price Adjustment: <span className={currentCharge >= 0 ? "text-red-600" : "text-green-600"}>
-            $ {Math.abs(currentCharge).toFixed(2)}
+          Price Adjustment: <span className={currentCharge > 0 ? "text-green-600" : currentCharge < 0 ? "text-red-600" : "text-gray-400"}>
+            {currentCharge > 0 ? '+' : ''}{currentCharge.toFixed(2)}
           </span>
         </span>
         {currentCharge !== 0 && (
@@ -181,30 +181,30 @@ const UpchargeSelector = ({ currentCharge, onUpdate, disabled }: UpchargeProps) 
       </div>
 
       <div className="flex flex-wrap gap-2 items-center">
-        {/* DISCOUNTS (Minus) */}
+        {/* ADD TO PRICE (Green = positive) */}
         <div className="flex gap-1 bg-green-50 p-1 rounded">
-          {[0.10, 0.50, 1.00, 5.00].map((inc) => (
-            <button
-              key={`minus-${inc}`}
-              type="button"
-              onClick={() => handleAdd(-inc)}
-              className="px-2 py-1 text-[10px] font-bold rounded bg-white border border-green-200 text-green-700 hover:bg-green-100"
-            >
-              ${inc.toFixed(2)}
-            </button>
-          ))}
-        </div>
-
-        {/* EXTRA CHARGES (Plus) */}
-        <div className="flex gap-1 bg-red-50 p-1 rounded">
           {[0.10, 0.50, 1.00, 5.00].map((inc) => (
             <button
               key={`plus-${inc}`}
               type="button"
               onClick={() => handleAdd(inc)}
+              className="px-2 py-1 text-[10px] font-bold rounded bg-white border border-green-200 text-green-700 hover:bg-green-100"
+            >
+              +${inc.toFixed(2)}
+            </button>
+          ))}
+        </div>
+
+        {/* DISCOUNT (Red = negative) */}
+        <div className="flex gap-1 bg-red-50 p-1 rounded">
+          {[0.10, 0.50, 1.00, 5.00].map((inc) => (
+            <button
+              key={`minus-${inc}`}
+              type="button"
+              onClick={() => handleAdd(-inc)}
               className="px-2 py-1 text-[10px] font-bold rounded bg-white border border-red-200 text-red-700 hover:bg-red-100"
             >
-              ${inc.toFixed(2)}
+              -${inc.toFixed(2)}
             </button>
           ))}
         </div>
@@ -707,7 +707,12 @@ export default function DropOff() {
     const sizeCharge = updatedItem.size_charge || 0;
     const alterationCharge = updatedItem.alteration_price || 0;
 
-    const totalBeforeFloor = (basePrice * qty) + altCharge + instCharge + starchCharge + sizeCharge + alterationCharge;
+    const itemBaseValue = (basePrice * qty) + instCharge + starchCharge + sizeCharge + alterationCharge;
+    // Clamp discount so item_total never goes below zero
+    updatedItem.additional_charge = Math.max(altCharge, -itemBaseValue);
+    const clampedAltCharge = updatedItem.additional_charge;
+
+    const totalBeforeFloor = (basePrice * qty) + clampedAltCharge + instCharge + starchCharge + sizeCharge + alterationCharge;
     updatedItem.item_total = Math.max(0, totalBeforeFloor);
 
     setItems(newItems);
@@ -1400,8 +1405,22 @@ export default function DropOff() {
                     key={index}
                     onClick={() => setSelectedTicketIndex(index)}
                     className={`p-2 border rounded-lg cursor-pointer transition-all duration-200 group relative`}
-                    style={selectedTicketIndex === index ? { borderColor: colors.primaryColor, boxShadow: `0 0 0 1px ${colors.primaryColor}`, backgroundColor: `${colors.primaryColor}12` } : undefined}
+                    style={{
+                      ...(selectedTicketIndex === index ? { borderColor: colors.primaryColor, boxShadow: `0 0 0 1px ${colors.primaryColor}`, backgroundColor: `${colors.primaryColor}12` } : {}),
+                      ...(item.additional_charge > 0 && selectedTicketIndex !== index ? { borderColor: '#22c55e', backgroundColor: '#f0fdf4' } : {}),
+                      ...(item.additional_charge < 0 && selectedTicketIndex !== index ? { borderColor: '#ef4444', backgroundColor: '#fef2f2' } : {}),
+                    }}
                   >
+                    {item.additional_charge > 0 && (
+                      <span className="absolute -top-1.5 -right-1.5 text-[8px] font-black uppercase tracking-wider bg-green-500 text-white px-1.5 py-0.5 rounded shadow-sm animate-in zoom-in-50 duration-200">
+                        UPCHARGE
+                      </span>
+                    )}
+                    {item.additional_charge < 0 && (
+                      <span className="absolute -top-1.5 -right-1.5 text-[8px] font-black uppercase tracking-wider bg-red-500 text-white px-1.5 py-0.5 rounded shadow-sm animate-in zoom-in-50 duration-200">
+                        DISCOUNT
+                      </span>
+                    )}
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
                         <h4 className="font-semibold text-[11px] text-gray-900 truncate flex items-center gap-1">
@@ -1437,7 +1456,7 @@ export default function DropOff() {
                           )}
 
                           {item.additional_charge !== 0 && (
-                            <span className={item.additional_charge > 0 ? 'text-rose-700' : 'text-green-700'}>
+                            <span className={item.additional_charge > 0 ? 'text-green-700' : 'text-red-700'}>
                               {item.additional_charge > 0 ? '+' : ''}{item.additional_charge.toFixed(2)}
                             </span>
                           )}
@@ -1580,6 +1599,8 @@ export default function DropOff() {
                                 {item.starch_level !== 'no_starch' && <span className="text-[9px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded font-black uppercase border border-blue-100">{item.starch_level.replace('_', ' ')}</span>}
                                 {item.crease === 'crease' && <span className="text-[9px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-black uppercase border border-emerald-100">Crease</span>}
                                 {item.clothing_size && item.clothing_size !== 'none' && <span className="text-[9px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded font-black uppercase border border-amber-100">Size {item.clothing_size}</span>}
+                                {item.additional_charge > 0 && <span className="text-[9px] bg-green-50 text-green-700 px-1.5 py-0.5 rounded font-black uppercase border border-green-200">UPCHARGE</span>}
+                                {item.additional_charge < 0 && <span className="text-[9px] bg-red-50 text-red-700 px-1.5 py-0.5 rounded font-black uppercase border border-red-200">DISCOUNT</span>}
                               </div>
                             </td>
                             <td className="px-4 py-3 text-center">

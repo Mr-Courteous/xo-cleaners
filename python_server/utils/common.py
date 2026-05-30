@@ -333,7 +333,7 @@ class TicketSummaryResponse(BaseModel):
     total_amount: float
     paid_amount: float
     status: str
-    number: Optional[str]
+    number: Optional[str] = None
     special_instructions: Optional[str]
     pickup_date: Optional[datetime]
     created_at: datetime

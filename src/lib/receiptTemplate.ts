@@ -10,6 +10,11 @@ export function renderReceiptHtml(ticket: Ticket, organizationName: string = "Yo
   const totalMargin = items.reduce((sum, item) => sum + (Number(item.margin) || 0), 0);
   const paid = Number(ticket.paid_amount) || 0;
 
+  // --- UPCHARGE / DISCOUNT TOTALS ---
+  const totalUpcharge = items.reduce((sum, item) => sum + Math.max(0, Number(item.additional_charge) || 0), 0);
+  const totalDiscount = items.reduce((sum, item) => sum + Math.min(0, Number(item.additional_charge) || 0), 0);
+  const netCharge = totalUpcharge + totalDiscount;
+
   // Calculate Fees on top of the subtotal
   const envCharge = subtotal * 0.047;
   const tax = subtotal * 0.0825;
@@ -50,9 +55,15 @@ export function renderReceiptHtml(ticket: Ticket, organizationName: string = "Yo
     if (item.crease === true || item.crease === 'true' || item.crease === 'crease') {
       details.push('CREASE INCLUDED');
     }
+    if (item.additional_charge > 0) {
+      details.push(`UPCHARGE +$${Number(item.additional_charge).toFixed(2)}`);
+    }
+    if (item.additional_charge < 0) {
+      details.push(`DISCOUNT $${Math.abs(Number(item.additional_charge)).toFixed(2)}`);
+    }
     if (item.alterations || item.alteration_name) {
       const altText = item.alteration_name || item.alterations;
-      const altCost = Number(item.alteration_price) || Number(item.additional_charge) || 0;
+      const altCost = Number(item.alteration_price) || 0;
       const costStr = altCost > 0 ? `(+$${altCost.toFixed(2)})` : '';
       details.push(`ALT: ${altText} ${costStr}`);
     }
@@ -141,6 +152,10 @@ export function renderReceiptHtml(ticket: Ticket, organizationName: string = "Yo
         <div style="display:flex; justify-content:space-between; font-size:14pt; font-weight:700; margin-top:2px;">
           <div>PIECES:</div> <div>${totalPieces}</div>
         </div>
+
+        ${netCharge !== 0 ? `<div style="display:flex; justify-content:space-between; margin-top:4px; font-size:9pt; font-weight:400;">
+          <div>${netCharge > 0 ? 'upcharge' : 'discount'}:</div> <div style="color:${netCharge > 0 ? '#16a34a' : '#dc2626'};">${netCharge > 0 ? '+' : '-'}$${Math.abs(netCharge).toFixed(2)}</div>
+        </div>` : ''}
 
         <div style="display:flex; justify-content:space-between; margin-top:4px; font-size:10pt; font-weight:400;"> 
             <div>Paid:</div> 

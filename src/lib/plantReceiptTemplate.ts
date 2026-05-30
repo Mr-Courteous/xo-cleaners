@@ -21,6 +21,10 @@ export function renderPlantReceiptHtml(ticket: Ticket, organizationName: string 
   const tax = plantSubtotal * 0.0825;
   const finalPlantTotal = plantSubtotal + envCharge + tax;
 
+  // --- UPCHARGE / DISCOUNT TOTALS ---
+  const totalUpcharge = items.reduce((sum, item) => sum + Math.max(0, Number(item.additional_charge) || 0), 0);
+  const totalDiscount = items.reduce((sum, item) => sum + Math.min(0, Number(item.additional_charge) || 0), 0);
+  const netCharge = totalUpcharge + totalDiscount;
 
   const totalPieces = items.reduce((sum, item) => sum + (Number(item.quantity) * (Number(item.pieces) || 1)), 0);
   let createdAt = ticket.created_at || Date.now();
@@ -60,9 +64,15 @@ export function renderPlantReceiptHtml(ticket: Ticket, organizationName: string 
     if (item.crease === true || item.crease === 'true' || item.crease === 'crease') {
       details.push('CREASE INCLUDED');
     }
+    if (item.additional_charge > 0) {
+      details.push(`UPCHARGE +$${Number(item.additional_charge).toFixed(2)}`);
+    }
+    if (item.additional_charge < 0) {
+      details.push(`DISCOUNT $${Math.abs(Number(item.additional_charge)).toFixed(2)}`);
+    }
     if (item.alterations || item.alteration_name) {
       const altText = item.alteration_name || item.alterations;
-      const altCost = Number(item.alteration_price) || Number(item.additional_charge) || 0;
+      const altCost = Number(item.alteration_price) || 0;
       const costStr = altCost > 0 ? `(+$${altCost.toFixed(2)})` : '';
       details.push(`ALT: ${altText} ${costStr}`);
     }
@@ -145,6 +155,10 @@ export function renderPlantReceiptHtml(ticket: Ticket, organizationName: string 
         <div style="display:flex; justify-content:space-between; align-items:center; font-size:10pt; font-weight:800; margin-top:2px;">
             PIECES: ${totalPieces}
         </div>
+
+        ${netCharge !== 0 ? `<div style="display:flex; justify-content:space-between; margin-top:4px; font-size:9pt; font-weight:400;">
+          <div>${netCharge > 0 ? 'upcharge' : 'discount'}:</div> <div style="color:${netCharge > 0 ? '#16a34a' : '#dc2626'};">${netCharge > 0 ? '+' : '-'}$${Math.abs(netCharge).toFixed(2)}</div>
+        </div>` : ''}
 
 
       </div>

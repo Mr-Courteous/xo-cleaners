@@ -41,10 +41,13 @@ const TicketTable: React.FC<TicketTableProps> = ({ tickets }) => {
                             return (
                                 <tr
                                     key={ticket.id || index}
-                                    className="hover:bg-blue-50/50 transition-colors"
+                                    className={`hover:bg-blue-50/50 transition-colors ${(ticket as any).is_void ? 'bg-red-50 line-through text-red-600' : ''}`}
                                 >
                                     <td className="px-4 py-3 font-medium text-gray-900">
-                                        #{ticket.ticket_number}
+                                        <span className="flex items-center gap-2">
+                                            #{ticket.ticket_number}
+                                            {(ticket as any).is_void && <span className="px-1.5 py-0.5 text-[10px] font-bold text-white bg-red-600 rounded">VOID</span>}
+                                        </span>
                                     </td>
                                     <td className="px-4 py-3 text-gray-600">
                                         {ticket.customer_id}

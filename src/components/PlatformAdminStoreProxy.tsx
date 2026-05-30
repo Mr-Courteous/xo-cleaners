@@ -312,6 +312,23 @@ const DropOffTab = ({ store, getHeaders, getProxyUrl, setError, showSuccess, ope
     const [loadingTickets, setLoadingTickets] = useState(false);
     const [showTickets, setShowTickets] = useState(false);
     const [createdTicketDetail, setCreatedTicketDetail] = useState<any | null>(null);
+    const [ticketSearch, setTicketSearch] = useState('');
+    const [ticketStatusFilter, setTicketStatusFilter] = useState('all');
+
+    const filteredTickets = useMemo(() => {
+        let list = createdTickets;
+        if (ticketSearch.trim()) {
+            const q = ticketSearch.trim().toLowerCase();
+            list = list.filter((t: any) =>
+                (t.ticket_number?.toLowerCase() || '').includes(q) ||
+                (t.customer_name?.toLowerCase() || '').includes(q)
+            );
+        }
+        if (ticketStatusFilter !== 'all') {
+            list = list.filter((t: any) => t.status === ticketStatusFilter);
+        }
+        return list;
+    }, [createdTickets, ticketSearch, ticketStatusFilter]);
 
     // ---- INIT DATA ----
     const fetchInitData = useCallback(async () => {
@@ -624,6 +641,31 @@ const DropOffTab = ({ store, getHeaders, getProxyUrl, setError, showSuccess, ope
                     </button>
                 </div>
 
+                <div className="flex gap-3 items-center">
+                    <div className="relative flex-1">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
+                        <input
+                            type="text"
+                            placeholder="Search by ticket # or customer..."
+                            value={ticketSearch}
+                            onChange={e => setTicketSearch(e.target.value)}
+                            className="w-full pl-10 pr-4 py-2.5 bg-slate-800 border border-slate-700 text-slate-200 rounded-xl focus:border-indigo-500 outline-none text-sm placeholder:text-slate-500"
+                        />
+                    </div>
+                    <select
+                        value={ticketStatusFilter}
+                        onChange={e => setTicketStatusFilter(e.target.value)}
+                        className="bg-slate-800 border border-slate-700 text-slate-200 rounded-xl px-4 py-2.5 text-sm focus:border-indigo-500 outline-none cursor-pointer"
+                    >
+                        <option value="all">All Status</option>
+                        <option value="pending">Pending</option>
+                        <option value="in_progress">In Progress</option>
+                        <option value="ready_for_pickup">Ready for Pickup</option>
+                        <option value="picked_up">Picked Up</option>
+                        <option value="cancelled">Cancelled</option>
+                    </select>
+                </div>
+
                 <div className="bg-slate-800 rounded-2xl border border-slate-700/50 shadow-xl overflow-hidden">
                     {loadingTickets ? (
                         <div className="flex flex-col items-center justify-center py-20 text-slate-400">
@@ -632,7 +674,7 @@ const DropOffTab = ({ store, getHeaders, getProxyUrl, setError, showSuccess, ope
                         </div>
                     ) : (
                         <div className="grid grid-cols-1 lg:grid-cols-3">
-                            <div className="lg:col-span-2 overflow-auto">
+                            <div className="lg:col-span-2 overflow-y-auto max-h-[calc(100vh-14rem)]">
                                 <table className="w-full text-left text-sm text-slate-300">
                                     <thead className="bg-slate-900 text-slate-500 text-[10px] font-black uppercase tracking-widest border-b border-slate-700">
                                         <tr>
@@ -644,7 +686,7 @@ const DropOffTab = ({ store, getHeaders, getProxyUrl, setError, showSuccess, ope
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-700/50">
-                                        {createdTickets.map((t: any) => (
+                                        {filteredTickets.map((t: any) => (
                                             <tr key={t.id} onClick={async () => {
                                                 try {
                                                     const detailRes = await axios.get(getProxyUrl(`tickets/${t.id}`), { headers: getHeaders() });
@@ -672,7 +714,7 @@ const DropOffTab = ({ store, getHeaders, getProxyUrl, setError, showSuccess, ope
                                                 <td className="px-6 py-4 text-right font-black">${t.total_amount?.toFixed(2)}</td>
                                             </tr>
                                         ))}
-                                        {createdTickets.length === 0 && (
+                                        {filteredTickets.length === 0 && (
                                             <tr>
                                                 <td colSpan={6} className="px-6 py-16 text-center text-slate-500 italic">No tickets found.</td>
                                             </tr>
@@ -681,7 +723,7 @@ const DropOffTab = ({ store, getHeaders, getProxyUrl, setError, showSuccess, ope
                                 </table>
                             </div>
 
-                            <div className="lg:col-span-1 p-6 border-l border-slate-700/30">
+                            <div className="lg:col-span-1 p-6 border-l border-slate-700/30 overflow-y-auto max-h-[calc(100vh-14rem)]">
                                 {createdTicketDetail ? (
                                     <div>
                                         <div className="flex justify-between items-start mb-4">
@@ -714,7 +756,11 @@ const DropOffTab = ({ store, getHeaders, getProxyUrl, setError, showSuccess, ope
                                                         <div key={item.id} className="flex justify-between items-center p-4 bg-slate-800/30 rounded-xl border border-slate-700/50">
                                                             <div className="flex items-center gap-3">
                                                                 <div className="w-8 h-8 bg-indigo-500/10 text-indigo-400 rounded-lg flex items-center justify-center text-xs font-black">{item.quantity}</div>
-                                                                <p className="font-bold">{item.clothing_name || item.custom_name}</p>
+                                                                <div>
+                                                                    <p className="font-bold">{item.clothing_name || item.custom_name}</p>
+                                                                    {item.additional_charge > 0 && <span className="text-[9px] font-black uppercase text-green-400">UPCHARGE +${item.additional_charge.toFixed(2)}</span>}
+                                                                    {item.additional_charge < 0 && <span className="text-[9px] font-black uppercase text-red-400">DISCOUNT ${item.additional_charge.toFixed(2)}</span>}
+                                                                </div>
                                                             </div>
                                                             <p className="font-black text-sm">${item.item_total?.toFixed(2)}</p>
                                                         </div>
@@ -2034,7 +2080,11 @@ const TicketsTab = ({ getHeaders, getProxyUrl, setError }: TabProps) => {
                                         <div key={item.id} className="flex justify-between items-center p-4 bg-slate-800/30 rounded-xl border border-slate-700/50">
                                             <div className="flex items-center gap-3">
                                                 <div className="w-8 h-8 bg-indigo-500/10 text-indigo-400 rounded-lg flex items-center justify-center text-xs font-black">{item.quantity}</div>
-                                                <p className="font-bold">{item.clothing_name}</p>
+                                                <div>
+                                                    <p className="font-bold">{item.clothing_name}</p>
+                                                    {item.additional_charge > 0 && <span className="text-[9px] font-black uppercase text-green-400">UPCHARGE +${item.additional_charge.toFixed(2)}</span>}
+                                                    {item.additional_charge < 0 && <span className="text-[9px] font-black uppercase text-red-400">DISCOUNT ${item.additional_charge.toFixed(2)}</span>}
+                                                </div>
                                             </div>
                                             <p className="font-black text-sm">${item.item_total?.toFixed(2)}</p>
                                         </div>
@@ -2150,41 +2200,53 @@ const CustomersTab = ({ getHeaders, getProxyUrl, setError, showSuccess }: TabPro
                 </form>
             )}
 
-            <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700/50 shadow-xl space-y-6">
-                <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
-                    <input
-                        type="text"
-                        placeholder="Search by name, phone, or email..."
-                        className="w-full bg-slate-900 border border-slate-700 rounded-xl py-3 pl-10 pr-4 text-sm focus:border-indigo-500 outline-none"
-                        value={search}
-                        onChange={e => setSearch(e.target.value)}
-                    />
+            <div className="bg-slate-800 rounded-2xl border border-slate-700/50 shadow-xl overflow-hidden">
+                <div className="p-4 border-b border-slate-700/50">
+                    <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
+                        <input
+                            type="text"
+                            placeholder="Search by name, phone, or email..."
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2.5 pl-10 pr-4 text-sm focus:border-indigo-500 outline-none"
+                            value={search}
+                            onChange={e => setSearch(e.target.value)}
+                        />
+                    </div>
                 </div>
                 {localLoading ? (
                     <div className="flex justify-center py-10">
                         <Loader2 className="animate-spin text-indigo-400" size={28} />
                     </div>
                 ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {filtered.map(c => (
-                            <div key={c.id} className="bg-slate-900/50 p-4 rounded-xl border border-slate-700 hover:border-slate-500 transition-all">
-                                <div className="flex justify-between items-start">
-                                    <div className="w-10 h-10 bg-indigo-500/10 text-indigo-400 rounded-full flex items-center justify-center font-black">
-                                        {c.first_name[0]}{c.last_name ? c.last_name[0] : ''}
-                                    </div>
-                                    <span className="text-[8px] font-black uppercase tracking-widest text-slate-600">ID: {c.id}</span>
-                                </div>
-                                <h4 className="mt-4 font-bold text-slate-200">{c.first_name} {c.last_name}</h4>
-                                <div className="mt-2 space-y-1">
-                                    <p className="text-xs text-slate-500 flex items-center gap-2"><DollarSign size={12} /> {c.phone || 'No Phone'}</p>
-                                    <p className="text-xs text-slate-500 flex items-center gap-2 truncate"><Users size={12} /> {c.email || 'No Email'}</p>
-                                </div>
-                            </div>
-                        ))}
-                        {filtered.length === 0 && (
-                            <div className="col-span-3 text-center py-10 text-slate-500 italic">No customers found.</div>
-                        )}
+                    <div className="overflow-y-auto max-h-[calc(100vh-18rem)]">
+                        <table className="w-full text-left text-sm text-slate-300">
+                            <thead className="bg-slate-900 text-slate-500 text-[10px] font-black uppercase tracking-widest border-b border-slate-700 sticky top-0">
+                                <tr>
+                                    <th className="px-6 py-4">Name</th>
+                                    <th className="px-6 py-4">Phone</th>
+                                    <th className="px-6 py-4">Email</th>
+                                    <th className="px-6 py-4 text-right">ID</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-700/50">
+                                {filtered.map(c => (
+                                    <tr key={c.id} className="hover:bg-slate-700/30 transition-colors">
+                                        <td className="px-6 py-4 font-medium">
+                                            <span className="text-indigo-400 font-black">{c.first_name[0]}{c.last_name ? c.last_name[0] : ''}</span>
+                                            <span className="ml-3">{c.first_name} {c.last_name}</span>
+                                        </td>
+                                        <td className="px-6 py-4 text-slate-400">{c.phone || '—'}</td>
+                                        <td className="px-6 py-4 text-slate-400 truncate max-w-[200px]">{c.email || '—'}</td>
+                                        <td className="px-6 py-4 text-right text-slate-500 text-[10px] font-mono">#{c.id}</td>
+                                    </tr>
+                                ))}
+                                {filtered.length === 0 && (
+                                    <tr>
+                                        <td colSpan={4} className="px-6 py-16 text-center text-slate-500 italic">No customers found.</td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
                     </div>
                 )}
             </div>
