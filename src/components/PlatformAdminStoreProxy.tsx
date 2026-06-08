@@ -36,6 +36,8 @@ import { generateTagHtml } from '../lib/tagTemplates';
 import { handlePrintJob } from '../lib/printUtils';
 import { getOrgAddress } from '../lib/getOrgAddress';
 
+// ──────────────────────────────────────────
+
 // ==========================================
 // INTERFACES
 // ==========================================

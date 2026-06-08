@@ -11,6 +11,7 @@ import baseURL from '../lib/config';
 import { Ticket, TicketItem } from '../types';
 import PrintPreviewModal from './PrintPreviewModal';
 import TicketTable from './TicketTable';
+import TicketEditModal from './TicketEditModal';
 import renderReceiptHtml from '../lib/receiptTemplate';
 import renderPlantReceiptHtml from '../lib/plantReceiptTemplate';
 import renderCustomerPlantReceiptHtml from '../lib/customerPlantReceiptTemplate';
@@ -18,13 +19,10 @@ import { renderPickupReceiptHtml } from '../lib/pickupReceiptTemplate';
 import { generateTagHtml } from '../lib/tagTemplates';
 import { getOrgAddress } from '../lib/getOrgAddress';
 
-// ... (FEItem interface and BLANK_ITEM remain unchanged)
-
 export default function TicketManagement() {
   const { colors } = useColors();
   const [viewMode, setViewMode] = useState<'list' | 'table'>('list');
   const [searchQuery, setSearchQuery] = useState('');
-  // ... (rest of states)
   const [allTickets, setAllTickets] = useState<Ticket[]>([]);
   const [filteredTickets, setFilteredTickets] = useState<Ticket[]>([]);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
@@ -46,12 +44,8 @@ export default function TicketManagement() {
   const [customerPlantPrintContent, setCustomerPlantPrintContent] = useState('');
   const [tagPrintContent, setTagPrintContent] = useState('');
 
-  // Full-edit modal state
+  // Edit modal state
   const [showEditModal, setShowEditModal] = useState(false);
-  const [editItems, setEditItems] = useState<FEItem[]>([]);
-  const [editSpecialInstructions, setEditSpecialInstructions] = useState('');
-  const [editPickupDate, setEditPickupDate] = useState('');
-  const [editPaidAmount, setEditPaidAmount] = useState('0');
 
   // --- Fetch All Tickets on Mount ---
   useEffect(() => {
@@ -280,106 +274,9 @@ export default function TicketManagement() {
       });
       const full = res.data as Ticket;
       setSelectedTicket(full);
-
-      // Map existing ticket items into FEItem shape
-      const mapped: FEItem[] = (full.items || []).map((i: any) => ({
-        clothing_type_id: i.clothing_type_id ?? null,
-        clothing_name: i.clothing_name || i.custom_name || 'Custom Item',
-        quantity: i.quantity || 1,
-        plant_price: Number(i.plant_price) || 0,
-        margin: Number(i.margin) || 0,
-        item_total: Number(i.item_total) || 0,
-        starch_level: i.starch_level || 'none',
-        starch_charge: Number(i.starch_charge) || 0,
-        clothing_size: i.clothing_size || 'standard',
-        size_charge: Number(i.size_charge) || 0,
-        crease: i.crease === true || i.crease === 'crease' ? 'crease' : 'no_crease',
-        alterations: i.alterations || '',
-        item_instructions: i.item_instructions || '',
-        additional_charge: Number(i.additional_charge) || 0,
-        instruction_charge: Number(i.instruction_charge) || 0,
-        alteration_behavior: i.alteration_behavior || 'none',
-        is_custom: i.clothing_type_id == null,
-      }));
-
-      setEditItems(mapped);
-      setEditSpecialInstructions(full.special_instructions || '');
-      setEditPickupDate(full.pickup_date
-        ? new Date(full.pickup_date).toISOString().substring(0, 16)
-        : new Date(Date.now() + 3 * 86400000).toISOString().substring(0, 16)
-      );
-      setEditPaidAmount(String(full.paid_amount || 0));
       setShowEditModal(true);
     } catch (err) {
       alert('Failed to load ticket for editing.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Update a single item field and recalculate item_total
-  const updateEditItem = (idx: number, patch: Partial<FEItem>) => {
-    setEditItems(prev => {
-      const next = [...prev];
-      const item = { ...next[idx], ...patch };
-      // Always recalculate total from constituent parts
-      const base = item.is_custom
-        ? (item.plant_price + item.margin) * item.quantity
-        : item.plant_price * item.quantity;
-      const extras = item.starch_charge + item.size_charge + item.additional_charge + item.instruction_charge;
-      item.item_total = item.alteration_behavior === 'alteration_only'
-        ? extras
-        : base + extras;
-      next[idx] = item;
-      return next;
-    });
-  };
-
-  const handleFullSave = async () => {
-    if (!selectedTicket) return;
-    if (editItems.length === 0) { alert('Ticket must have at least one item.'); return; }
-    setLoading(true);
-    try {
-      const token = localStorage.getItem('accessToken');
-      if (!token) return;
-
-      const payload = {
-        special_instructions: editSpecialInstructions || null,
-        pickup_date: editPickupDate ? new Date(editPickupDate).toISOString() : null,
-        paid_amount: parseFloat(editPaidAmount) || 0,
-        items: editItems.map(i => ({
-          clothing_type_id: i.is_custom ? null : i.clothing_type_id,
-          custom_name: i.is_custom ? i.clothing_name : null,
-          quantity: i.quantity,
-          unit_price: i.plant_price,
-          margin: i.margin,
-          starch_level: i.starch_level,
-          starch_charge: i.starch_charge,
-          clothing_size: i.clothing_size,
-          size_charge: i.size_charge,
-          crease: i.crease === 'crease',
-          alterations: i.alterations || null,
-          item_instructions: i.item_instructions || null,
-          additional_charge: i.additional_charge,
-          instruction_charge: i.instruction_charge,
-          alteration_behavior: i.alteration_behavior,
-          item_total: i.item_total,
-        })),
-      };
-
-      await axios.put(
-        `${baseURL}/api/organizations/tickets/${selectedTicket.id}/full-edit`,
-        payload,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-
-      setModal({ isOpen: true, title: 'Ticket Updated', message: 'Ticket updated successfully!', type: 'success' });
-      setShowEditModal(false);
-      setSelectedTicket(null);
-      fetchAllTickets();
-    } catch (err: any) {
-      const msg = err.response?.data?.detail || err.message || 'Failed to save.';
-      setModal({ isOpen: true, title: 'Error', message: msg, type: 'error' });
     } finally {
       setLoading(false);
     }
@@ -810,241 +707,15 @@ export default function TicketManagement() {
 
       {/* --- MODAL: Full Ticket Edit --- */}
       {showEditModal && selectedTicket && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60 p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl overflow-y-auto max-h-[95vh] flex flex-col">
-            {/* Header */}
-            <div className="flex items-center justify-between p-5 border-b">
-              <div>
-                <h3 className="text-xl font-bold">Edit Ticket #{selectedTicket.ticket_number}</h3>
-                <p className="text-sm text-gray-500 mt-0.5">{selectedTicket.customer_name}</p>
-              </div>
-              <button onClick={() => { setShowEditModal(false); setSelectedTicket(null); }} className="text-gray-400 hover:text-gray-600">
-                <X size={22} />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-5 space-y-5">
-              {/* Ticket-level fields */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">Special Instructions</label>
-                  <input
-                    type="text"
-                    value={editSpecialInstructions}
-                    onChange={e => setEditSpecialInstructions(e.target.value)}
-                    placeholder="Any notes..."
-                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 outline-none"
-                    style={{ '--tw-ring-color': colors.primaryColor } as any}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">Pickup Date</label>
-                  <input
-                    type="datetime-local"
-                    value={editPickupDate}
-                    onChange={e => setEditPickupDate(e.target.value)}
-                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">Paid Amount ($)</label>
-                  <input
-                    type="number" min="0" step="0.01"
-                    value={editPaidAmount}
-                    onChange={e => setEditPaidAmount(e.target.value)}
-                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 outline-none"
-                  />
-                </div>
-              </div>
-
-              {/* Items */}
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="font-semibold text-gray-700">Items</h4>
-                  <button
-                    onClick={() => setEditItems(prev => [...prev, BLANK_ITEM()])}
-                    className="flex items-center gap-1 text-sm font-medium px-3 py-1.5 rounded-lg text-white"
-                    style={{ backgroundColor: colors.primaryColor }}
-                  >
-                    <Plus size={14} /> Add Item
-                  </button>
-                </div>
-
-                <div className="space-y-4">
-                  {editItems.map((item, idx) => (
-                    <div key={idx} className="border rounded-xl p-4 bg-gray-50 relative">
-                      {/* Remove button */}
-                      <button
-                        onClick={() => setEditItems(prev => prev.filter((_, i) => i !== idx))}
-                        className="absolute top-3 right-3 text-gray-400 hover:text-red-500"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-
-                      {/* Row 1: Name / Qty / Total */}
-                      <div className="grid grid-cols-3 gap-3 mb-3">
-                        <div className="col-span-1">
-                          <label className="block text-xs font-semibold text-gray-500 mb-1">Item Name</label>
-                          <input
-                            type="text"
-                            value={item.clothing_name}
-                            onChange={e => updateEditItem(idx, { clothing_name: e.target.value, is_custom: true, clothing_type_id: null })}
-                            className="w-full px-2 py-1.5 border rounded-lg text-sm"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-semibold text-gray-500 mb-1">Qty</label>
-                          <input
-                            type="number" min="1"
-                            value={item.quantity}
-                            onChange={e => updateEditItem(idx, { quantity: parseInt(e.target.value) || 1 })}
-                            className="w-full px-2 py-1.5 border rounded-lg text-sm"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-semibold text-gray-500 mb-1">Total ($)</label>
-                          <input
-                            type="number" min="0" step="0.01" readOnly
-                            value={item.item_total.toFixed(2)}
-                            className="w-full px-2 py-1.5 border rounded-lg text-sm bg-white cursor-not-allowed text-gray-500"
-                          />
-                        </div>
-                      </div>
-
-                      {/* Row 2: Plant Price / Margin / Additional */}
-                      <div className="grid grid-cols-3 gap-3 mb-3">
-                        <div>
-                          <label className="block text-xs font-semibold text-gray-500 mb-1">Plant Price ($)</label>
-                          <input
-                            type="number" min="0" step="0.01"
-                            value={item.plant_price}
-                            onChange={e => updateEditItem(idx, { plant_price: parseFloat(e.target.value) || 0 })}
-                            className="w-full px-2 py-1.5 border rounded-lg text-sm"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-semibold text-gray-500 mb-1">Margin ($)</label>
-                          <input
-                            type="number" min="0" step="0.01"
-                            value={item.margin}
-                            onChange={e => updateEditItem(idx, { margin: parseFloat(e.target.value) || 0 })}
-                            className="w-full px-2 py-1.5 border rounded-lg text-sm"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-semibold text-gray-500 mb-1">Alt. Charge ($)</label>
-                          <input
-                            type="number" min="0" step="0.01"
-                            value={item.additional_charge}
-                            onChange={e => updateEditItem(idx, { additional_charge: parseFloat(e.target.value) || 0 })}
-                            className="w-full px-2 py-1.5 border rounded-lg text-sm"
-                          />
-                        </div>
-                      </div>
-
-                      {/* Row 3: Starch / Size / Crease */}
-                      <div className="grid grid-cols-3 gap-3 mb-3">
-                        <div>
-                          <label className="block text-xs font-semibold text-gray-500 mb-1">Starch</label>
-                          <select
-                            value={item.starch_level}
-                            onChange={e => updateEditItem(idx, { starch_level: e.target.value })}
-                            className="w-full px-2 py-1.5 border rounded-lg text-sm"
-                          >
-                            {['none', 'light', 'medium', 'heavy', 'extra_heavy'].map(s => (
-                              <option key={s} value={s}>{s.replace('_', ' ')}</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-xs font-semibold text-gray-500 mb-1">Size</label>
-                          <select
-                            value={item.clothing_size}
-                            onChange={e => updateEditItem(idx, { clothing_size: e.target.value })}
-                            className="w-full px-2 py-1.5 border rounded-lg text-sm"
-                          >
-                            {['standard', 's', 'm', 'l', 'xl', 'xxl'].map(s => (
-                              <option key={s} value={s}>{s.toUpperCase()}</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-xs font-semibold text-gray-500 mb-1">Crease</label>
-                          <select
-                            value={item.crease}
-                            onChange={e => updateEditItem(idx, { crease: e.target.value })}
-                            className="w-full px-2 py-1.5 border rounded-lg text-sm"
-                          >
-                            <option value="no_crease">None</option>
-                            <option value="crease">Crease</option>
-                          </select>
-                        </div>
-                      </div>
-
-                      {/* Row 4: Alterations / Instructions */}
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs font-semibold text-gray-500 mb-1">Alterations</label>
-                          <input
-                            type="text"
-                            value={item.alterations}
-                            onChange={e => updateEditItem(idx, { alterations: e.target.value })}
-                            placeholder="e.g. Hem trousers"
-                            className="w-full px-2 py-1.5 border rounded-lg text-sm"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-semibold text-gray-500 mb-1">Item Instructions</label>
-                          <input
-                            type="text"
-                            value={item.item_instructions}
-                            onChange={e => updateEditItem(idx, { item_instructions: e.target.value })}
-                            placeholder="e.g. Handle with care"
-                            className="w-full px-2 py-1.5 border rounded-lg text-sm"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-
-                  {editItems.length === 0 && (
-                    <div className="text-center py-8 text-gray-400 text-sm border-2 border-dashed rounded-xl">
-                      No items. Click «Add Item» to add one.
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Running total */}
-              <div className="flex justify-end">
-                <div className="text-right">
-                  <p className="text-xs text-gray-500">New Total</p>
-                  <p className="text-2xl font-bold" style={{ color: colors.primaryColor }}>
-                    ${editItems.reduce((s, i) => s + i.item_total, 0).toFixed(2)}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="p-5 border-t flex justify-end gap-3">
-              <button
-                onClick={() => { setShowEditModal(false); setSelectedTicket(null); }}
-                className="px-5 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleFullSave}
-                disabled={loading}
-                className="px-5 py-2 text-white rounded-lg disabled:opacity-50 font-medium"
-                style={{ backgroundColor: colors.secondaryColor }}
-              >
-                {loading ? 'Saving…' : 'Save All Changes'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <TicketEditModal
+          ticket={selectedTicket}
+          colors={colors}
+          onClose={() => { setShowEditModal(false); setSelectedTicket(null); }}
+          onSaved={() => {
+            setModal({ isOpen: true, title: 'Ticket Updated', message: 'Ticket updated successfully!', type: 'success' });
+            fetchAllTickets();
+          }}
+        />
       )}
 
       {/* --- MODAL: Print Preview --- */}
