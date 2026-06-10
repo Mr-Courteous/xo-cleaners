@@ -25,6 +25,7 @@ export const handlePrintJob = (htmlContent: string) => {
             font-family: 'Courier New', Courier, monospace;
             width: 55mm;
             max-width: 55mm;
+            margin: 0 auto;
           }
         </style>
       </head>

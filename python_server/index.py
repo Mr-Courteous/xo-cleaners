@@ -102,7 +102,7 @@ app.include_router(customer_router)
 app.include_router(platform_admin_router)
 app.include_router(org_functions5_router)
 app.include_router(org_functions6_router)
-
+ 
 
 @app.get("/")
 def read_root():
