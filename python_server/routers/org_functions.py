@@ -2865,3 +2865,362 @@ async def validate_ticket_number(
         # Catch any other unexpected errors
         print(f"Error during ticket validation: {e}")
         raise HTTPException(status_code=500, detail="An unexpected error occurred.")
+
+
+
+# =======================
+# NEW: Pagination / Filtering Models
+# =======================
+
+class DashboardTotals(BaseModel):
+    gross_sales: float
+    revenue: float
+    refunds: float
+    net_revenue: float
+    outstanding: float
+    avg_ticket: float
+    ticket_count: int
+
+
+class PaginatedTicket(BaseModel):
+    id: int
+    ticket_number: str
+    customer_id: int
+    customer_name: str
+    status: str
+    transfer_status: Optional[str] = None
+    transferred_to_name: Optional[str] = None
+    rack_number: Optional[str] = None
+    is_refunded: bool
+    total_amount: float
+    paid_amount: float
+    created_at: datetime
+    transfer_timestamp: Optional[datetime] = None
+
+
+class PaginatedLedgerEntry(BaseModel):
+    id: str
+    date: datetime
+    reference: str
+    customer_name: str
+    type: str
+    amount: float
+    method: str = "Standard"
+
+
+class DashboardResponse(BaseModel):
+    totals: DashboardTotals
+    rows: List[Any]          # PaginatedTicket[] for 'operations', PaginatedLedgerEntry[] for 'financials'
+    page: int
+    page_size: int
+    total_count: int
+    total_pages: int
+
+
+class CustomerWithStats(BaseModel):
+    id: int
+    first_name: str
+    last_name: str
+    email: str
+    joined_at: Optional[datetime] = None
+    visit_count: int
+    lifetime_spend: float
+    last_visit: Optional[datetime] = None
+
+
+class PaginatedCustomersResponse(BaseModel):
+    rows: List[CustomerWithStats]
+    page: int
+    page_size: int
+    total_count: int
+    total_pages: int
+
+
+# =======================
+# NEW: /analytics/dashboard (server-side filtered + paginated)
+# =======================
+@router.get("/analytics/dashboard", response_model=DashboardResponse)
+async def get_dashboard_analytics(
+    db: Session = Depends(get_db),
+    payload: Dict[str, Any] = Depends(get_current_user_payload),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    view: str = Query("financials", pattern="^(financials|operations)$"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=500),
+):
+    """
+    Returns dashboard totals (computed over the FULL date range via SQL aggregates)
+    plus a paginated set of rows for the requested view ('financials' -> ledger,
+    'operations' -> tickets).
+    """
+    try:
+        org_id = payload.get("organization_id")
+        user_role = payload.get("role")
+
+        allowed_roles = ["cashier", "store_admin", "org_owner", "STORE_OWNER", "plant_operator"]
+        if user_role not in allowed_roles:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        offset = (page - 1) * page_size
+
+        # ---- Date range bounds ----
+        # end_date is inclusive of the whole day
+        date_filter = """
+            AND (:start_date IS NULL OR t.created_at >= :start_date)
+            AND (:end_date IS NULL OR t.created_at < (CAST(:end_date AS date) + INTERVAL '1 day'))
+        """
+        date_params = {"start_date": start_date, "end_date": end_date}
+
+        # ---- 1. TOTALS (computed over ALL matching rows, not just current page) ----
+        totals_query = text(f"""
+            SELECT
+                COUNT(*) FILTER (WHERE TRUE) as ticket_count,
+                COALESCE(SUM(paid_amount) FILTER (WHERE NOT COALESCE(is_refunded, FALSE)), 0) as revenue,
+                COALESCE(SUM(paid_amount) FILTER (WHERE COALESCE(is_refunded, FALSE)), 0) as refunds
+            FROM tickets t
+            WHERE (t.organization_id = :org_id OR t.transferred_to_org_id = :org_id)
+            {date_filter}
+        """)
+        totals_row = db.execute(totals_query, {"org_id": org_id, **date_params}).fetchone()
+
+        ticket_count = int(totals_row.ticket_count or 0)
+        revenue = float(totals_row.revenue or 0)
+        refunds = float(totals_row.refunds or 0)
+
+        gross_sales_query = text(f"""
+            SELECT COALESCE(SUM(ti.quantity * COALESCE(ct.plant_price, 0)), 0) as gross_sales
+            FROM ticket_items ti
+            JOIN tickets t ON ti.ticket_id = t.id
+            LEFT JOIN clothing_types ct ON ti.clothing_type_id = ct.id
+            WHERE (t.organization_id = :org_id OR t.transferred_to_org_id = :org_id)
+            {date_filter}
+        """)
+        gross_sales = float(db.execute(gross_sales_query, {"org_id": org_id, **date_params}).scalar() or 0)
+
+        net_revenue = revenue - refunds
+        outstanding = max(0.0, gross_sales - revenue - refunds)
+        avg_ticket = (gross_sales / ticket_count) if ticket_count > 0 else 0.0
+
+        totals = DashboardTotals(
+            gross_sales=round(gross_sales, 2),
+            revenue=round(revenue, 2),
+            refunds=round(refunds, 2),
+            net_revenue=round(net_revenue, 2),
+            outstanding=round(outstanding, 2),
+            avg_ticket=round(avg_ticket, 2),
+            ticket_count=ticket_count,
+        )
+
+        # ---- 2. PAGINATED ROWS ----
+        rows: List[Any] = []
+        total_count = 0
+
+        if view == "operations":
+            ops_query = text(f"""
+                SELECT
+                    t.id, t.ticket_number, t.customer_id, t.status, t.transfer_status,
+                    t.rack_number, COALESCE(t.is_refunded, FALSE) as is_refunded,
+                    COALESCE(t.total_amount, 0.0) as total_amount,
+                    COALESCE(t.paid_amount, 0.0) as paid_amount,
+                    t.created_at, t.updated_at as transfer_timestamp,
+                    u.first_name, u.last_name,
+                    o_dest.name as transferred_to_name,
+                    COUNT(*) OVER() as full_count
+                FROM tickets t
+                LEFT JOIN allUsers u ON t.customer_id = u.id
+                LEFT JOIN organizations o_dest ON t.transferred_to_org_id = o_dest.id
+                WHERE (t.organization_id = :org_id OR t.transferred_to_org_id = :org_id)
+                {date_filter}
+                ORDER BY t.created_at DESC
+                LIMIT :limit OFFSET :offset
+            """)
+            db_rows = db.execute(ops_query, {"org_id": org_id, **date_params, "limit": page_size, "offset": offset}).fetchall()
+
+            for r in db_rows:
+                total_count = int(r.full_count or 0)
+                c_at = r.created_at
+                if c_at and c_at.tzinfo is None:
+                    c_at = c_at.replace(tzinfo=timezone.utc)
+                t_ts = r.transfer_timestamp
+                if t_ts and t_ts.tzinfo is None:
+                    t_ts = t_ts.replace(tzinfo=timezone.utc)
+
+                rows.append(PaginatedTicket(
+                    id=r.id,
+                    ticket_number=r.ticket_number,
+                    customer_id=r.customer_id,
+                    customer_name=f"{r.first_name} {r.last_name}" if r.first_name else "Walk-in",
+                    status=r.status,
+                    transfer_status=r.transfer_status,
+                    transferred_to_name=r.transferred_to_name,
+                    rack_number=r.rack_number,
+                    is_refunded=bool(r.is_refunded),
+                    total_amount=float(r.total_amount),
+                    paid_amount=float(r.paid_amount),
+                    created_at=c_at,
+                    transfer_timestamp=t_ts,
+                ))
+
+        else:  # financials -> ledger (synthesized from tickets, paid only)
+            ledger_query = text(f"""
+                SELECT
+                    t.id, t.ticket_number, COALESCE(t.is_refunded, FALSE) as is_refunded,
+                    COALESCE(t.paid_amount, 0.0) as paid_amount,
+                    t.created_at, t.updated_at as transfer_timestamp,
+                    u.first_name, u.last_name,
+                    COUNT(*) OVER() as full_count
+                FROM tickets t
+                LEFT JOIN allUsers u ON t.customer_id = u.id
+                WHERE (t.organization_id = :org_id OR t.transferred_to_org_id = :org_id)
+                AND COALESCE(t.paid_amount, 0) <> 0
+                {date_filter}
+                ORDER BY COALESCE(t.updated_at, t.created_at) DESC
+                LIMIT :limit OFFSET :offset
+            """)
+            db_rows = db.execute(ledger_query, {"org_id": org_id, **date_params, "limit": page_size, "offset": offset}).fetchall()
+
+            for r in db_rows:
+                total_count = int(r.full_count or 0)
+                c_at = r.created_at
+                if c_at and c_at.tzinfo is None:
+                    c_at = c_at.replace(tzinfo=timezone.utc)
+                t_ts = r.transfer_timestamp
+                if t_ts and t_ts.tzinfo is None:
+                    t_ts = t_ts.replace(tzinfo=timezone.utc)
+
+                cust_name = f"{r.first_name} {r.last_name}" if r.first_name else "Walk-in"
+                is_refunded = bool(r.is_refunded)
+                rows.append(PaginatedLedgerEntry(
+                    id=f"{'ref' if is_refunded else 'pay'}_{r.id}",
+                    date=t_ts or c_at,
+                    reference=f"{'Refund' if is_refunded else 'Ticket'} #{r.ticket_number}",
+                    customer_name=cust_name,
+                    type="REFUND" if is_refunded else "INCOME",
+                    amount=-abs(float(r.paid_amount)) if is_refunded else float(r.paid_amount),
+                    method="Standard",
+                ))
+
+        total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 0
+
+        return DashboardResponse(
+            totals=totals,
+            rows=rows,
+            page=page,
+            page_size=page_size,
+            total_count=total_count,
+            total_pages=total_pages,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Dashboard Error: {e}")
+        raise HTTPException(status_code=500, detail="Dashboard sync failed.")
+
+
+# =======================
+# NEW: /analytics/customers (paginated + searchable, stats via SQL)
+# =======================
+@router.get("/analytics/customers", response_model=PaginatedCustomersResponse)
+async def get_customers_analytics(
+    db: Session = Depends(get_db),
+    payload: Dict[str, Any] = Depends(get_current_user_payload),
+    search: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=200),
+    sort: str = Query("spend", pattern="^(spend|visits|recent|name)$"),
+):
+    try:
+        org_id = payload.get("organization_id")
+        user_role = payload.get("role")
+
+        allowed_roles = ["cashier", "store_admin", "org_owner", "STORE_OWNER", "plant_operator"]
+        if user_role not in allowed_roles:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        offset = (page - 1) * page_size
+
+        order_map = {
+            "spend": "lifetime_spend DESC",
+            "visits": "visit_count DESC",
+            "recent": "last_visit DESC NULLS LAST",
+            "name": "u.first_name ASC, u.last_name ASC",
+        }
+        order_clause = order_map[sort]
+
+        search_clause = ""
+        params: Dict[str, Any] = {"org_id": org_id, "limit": page_size, "offset": offset}
+        if search:
+            search_clause = """
+                AND (
+                    LOWER(u.first_name || ' ' || u.last_name) LIKE :search
+                    OR LOWER(u.email) LIKE :search
+                )
+            """
+            params["search"] = f"%{search.lower()}%"
+
+        query = text(f"""
+            SELECT
+                u.id, u.first_name, u.last_name, u.email, u.joined_at,
+                COUNT(t.id) as visit_count,
+                COALESCE(SUM(t.paid_amount), 0) as lifetime_spend,
+                MAX(t.created_at) as last_visit,
+                COUNT(*) OVER() as full_count
+            FROM allUsers u
+            LEFT JOIN tickets t
+                ON t.customer_id = u.id
+                AND (t.organization_id = :org_id OR t.transferred_to_org_id = :org_id)
+            WHERE u.role = 'customer'
+              AND (
+                  u.organization_id = :org_id
+                  OR u.id IN (
+                      SELECT customer_id FROM tickets
+                      WHERE organization_id = :org_id OR transferred_to_org_id = :org_id
+                  )
+              )
+              {search_clause}
+            GROUP BY u.id, u.first_name, u.last_name, u.email, u.joined_at
+            ORDER BY {order_clause}
+            LIMIT :limit OFFSET :offset
+        """)
+
+        db_rows = db.execute(query, params).fetchall()
+
+        rows = []
+        total_count = 0
+        for r in db_rows:
+            total_count = int(r.full_count or 0)
+            j_at = r.joined_at
+            if j_at and j_at.tzinfo is None:
+                j_at = j_at.replace(tzinfo=timezone.utc)
+            l_visit = r.last_visit
+            if l_visit and l_visit.tzinfo is None:
+                l_visit = l_visit.replace(tzinfo=timezone.utc)
+
+            rows.append(CustomerWithStats(
+                id=r.id,
+                first_name=r.first_name or "",
+                last_name=r.last_name or "",
+                email=r.email or "",
+                joined_at=j_at,
+                visit_count=int(r.visit_count or 0),
+                lifetime_spend=round(float(r.lifetime_spend or 0), 2),
+                last_visit=l_visit,
+            ))
+
+        total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 0
+
+        return PaginatedCustomersResponse(
+            rows=rows,
+            page=page,
+            page_size=page_size,
+            total_count=total_count,
+            total_pages=total_pages,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Customers Analytics Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to load customers")

@@ -22,114 +22,10 @@ router = APIRouter(
     prefix="/api/organizations", 
     tags=["Organization Resources"]
 )
-# 2. Define the Response Model
-class DashboardAnalyticsResponse(BaseModel):
-    today_sales: float
-    month_sales: float
-    active_tickets: int
-    ready_tickets: int
-    picked_up_today: int
-    total_customers: int
-
-
-class RawTicket(BaseModel):
-    id: int
-    ticket_number: str
-    customer_id: int
-    status: str
-    transfer_status: Optional[str] = None
-    transferred_to_name: Optional[str] = None
-    transfer_timestamp: Optional[datetime] = None # Added transfer time
-    customer_name: str
-    rack_number: Optional[str] = None
-    paid_amount: float
-    is_refunded: bool
-    created_at: datetime
-    
-class RawTicketItem(BaseModel):
-    id: int
-    ticket_id: int
-    clothing_name: Optional[str] = "Unknown"
-    quantity: int
-    notes: Optional[str] = None
-    price: float = 0.0  # Added price so frontend can calculate totals
-
-class RawRack(BaseModel):
-    id: int
-    rack_number: int
-    is_occupied: bool
-
-class RawCustomer(BaseModel):
-    id: int
-    first_name: str
-    last_name: str
-    email: str
-    phone: Optional[str] = None
-    joined_at: Optional[datetime] = None
-
-class FullOrgDataResponse(BaseModel):
-    """
-    Returns ALL data related to the organization so the frontend 
-    can perform its own filtering, graphing, and analysis.
-    """
-    tickets: List[RawTicket]
-    items: List[RawTicketItem]
-    racks: List[RawRack]
-    customers: List[RawCustomer]
-    
-    
-
-
 
 # =======================
-# Response Models
+# Chart Models
 # =======================
-
-class RawTicket(BaseModel):
-    id: int
-    ticket_number: str
-    customer_id: int
-    status: str
-    transfer_status: Optional[str] = None
-    transferred_to_name: Optional[str] = None
-    transfer_timestamp: Optional[datetime] = None
-    customer_name: str
-    rack_number: Optional[str] = None
-    total_amount: float = 0.0
-    paid_amount: float = 0.0
-    is_refunded: bool
-    created_at: datetime
-    updated_at: Optional[datetime] = None
-
-class RawTicketItem(BaseModel):
-    id: int
-    ticket_id: int
-    clothing_name: Optional[str] = "Unknown"
-    quantity: int
-    price: float = 0.0
-
-class RawRack(BaseModel):
-    id: int
-    rack_number: int
-    is_occupied: bool
-
-class RawCustomer(BaseModel):
-    id: int
-    first_name: str
-    last_name: str
-    email: str
-    joined_at: Optional[datetime] = None
-
-class LedgerEntry(BaseModel):
-    id: str
-    date: datetime
-    reference: str
-    customer_name: str
-    type: str # 'PAYMENT' or 'REFUND'
-    amount: float
-    method: str = "Cash/Card"
-    
-# --- Chart Models ---
 class ChartPoint(BaseModel):
     label: str
     value: float
@@ -141,13 +37,6 @@ class ChartsResponse(BaseModel):
     daily_revenue: List[ChartPoint]
     customer_growth: List[ChartPoint]
 
-class FullOrgDataResponse(BaseModel):
-    tickets: List[RawTicket]
-    items: List[RawTicketItem]
-    racks: List[RawRack]
-    customers: List[RawCustomer]
-    ledger: List[LedgerEntry] # <--- New Financial Data
-    
 class TicketMiniSummary(BaseModel):
     id: int
     ticket_number: str
@@ -166,201 +55,7 @@ class CustomerFinancialResponse(BaseModel):
     tickets: List[TicketMiniSummary]
 
 
-# =======================
-# Analytics Endpoint
-# =======================
-def ensure_ticket_payments_table(db: Session):
-    try:
-        db.execute(text("""
-            CREATE TABLE IF NOT EXISTS ticket_payments (
-                id SERIAL PRIMARY KEY,
-                ticket_id INTEGER REFERENCES tickets(id),
-                organization_id INTEGER,
-                amount DECIMAL(12,2) NOT NULL,
-                method VARCHAR(50),
-                payment_type VARCHAR(50),
-                reference VARCHAR(255),
-                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-            )
-        """))
-        db.commit()
-    except Exception as e:
-        db.rollback()
-        print(f"Error ensuring ticket_payments table: {e}")
 
-@router.get("/analytics/dashboard", response_model=FullOrgDataResponse)
-async def get_dashboard_analytics(
-    db: Session = Depends(get_db),
-    payload: Dict[str, Any] = Depends(get_current_user_payload),
-    start_date: Optional[str] = Query(None),
-    end_date: Optional[str] = Query(None),
-):
-    """
-    Unified Dashboard: Fetches all tickets owned by OR transferred to this org.
-    Includes dual-status tracking: Production (status) vs Logistics (transfer_status).
-    """
-    try:
-        org_id = payload.get("organization_id")
-        user_role = payload.get("role")
-        
-        # Security: Only authorized staff can view analytics
-        allowed_roles = ["cashier", "store_admin", "org_owner", "STORE_OWNER", "plant_operator"]
-        if user_role not in allowed_roles:
-            raise HTTPException(status_code=403, detail="Access denied")
-
-        # THE UNIFIED QUERY
-        # Joins organizations twice to label the 'Origin' and 'Destination' clearly
-        tickets_query = text("""
-            SELECT 
-                t.id, 
-                t.ticket_number, 
-                t.customer_id, 
-                t.status,                -- 'processing', 'washing', 'ready'
-                t.transfer_status,       -- 'in_transit', 'at_plant', 'returned'
-                t.organization_id as origin_org_id,
-                t.transferred_to_org_id, 
-                t.rack_number,
-                COALESCE(t.is_refunded, FALSE) as is_refunded,
-                COALESCE(t.total_amount, 0.0) as total_amount,
-                COALESCE(t.paid_amount, 0.0) as paid_amount,
-                t.created_at, 
-                t.updated_at as transfer_timestamp,
-                u.first_name, 
-                u.last_name,
-                o_dest.name as transferred_to_name,
-                o_orig.name as origin_branch_name
-            FROM tickets t
-            LEFT JOIN allUsers u ON t.customer_id = u.id
-            LEFT JOIN organizations o_dest ON t.transferred_to_org_id = o_dest.id
-            LEFT JOIN organizations o_orig ON t.organization_id = o_orig.id
-            WHERE 
-                (t.organization_id = :org_id             -- Show tickets I OWN
-                OR t.transferred_to_org_id = :org_id)    -- Show tickets SENT TO ME
-                AND (:start_date IS NULL OR t.created_at >= :start_date)
-                AND (:end_date IS NULL OR t.created_at <= :end_date)
-            ORDER BY t.created_at DESC
-        """)
-        
-        rows = db.execute(tickets_query, {"org_id": org_id, "start_date": start_date, "end_date": end_date}).fetchall()
-        
-        tickets_data = []
-        ledger_data = []
-
-        for row in rows:
-            is_owner = row.origin_org_id == org_id
-            # Normalize datetimes to UTC-aware where possible
-            c_at = row.created_at
-            if c_at and isinstance(c_at, datetime) and c_at.tzinfo is None:
-                c_at = c_at.replace(tzinfo=timezone.utc)
-
-            t_ts = row.transfer_timestamp
-            if t_ts and isinstance(t_ts, datetime) and t_ts.tzinfo is None:
-                t_ts = t_ts.replace(tzinfo=timezone.utc)
-
-            tickets_data.append({
-                "id": row.id,
-                "ticket_number": row.ticket_number,
-                "customer_id": row.customer_id,
-                "status": row.status,
-                "transfer_status": row.transfer_status,
-                "transferred_to_org_id": row.transferred_to_org_id,
-                "transferred_to_name": row.transferred_to_name,
-                "origin_branch_name": row.origin_branch_name,
-                "transfer_timestamp": t_ts,
-                "rack_number": row.rack_number,
-                "is_refunded": bool(row.is_refunded),
-                "created_at": c_at,
-                "total_amount": float(row.total_amount),
-                "paid_amount": float(row.paid_amount),
-                "customer_name": f"{row.first_name} {row.last_name}" if row.first_name else "Walk-in"
-            })
-
-            # --- Population of the Ledger strictly from Ticket Activity ---
-            # We track actual cash movements: Income and Refunds
-            cust_name = f"{row.first_name} {row.last_name}" if row.first_name else "Walk-in"
-
-            if row.is_refunded:
-                 ledger_data.append(LedgerEntry(
-                    id=f"ref_{row.id}",
-                    date=t_ts or c_at,
-                    reference=f"Refund #{row.ticket_number}",
-                    customer_name=cust_name,
-                    type="REFUND",
-                    amount=-abs(float(row.paid_amount or 0)),
-                    method="Standard"
-                ))
-            elif float(row.paid_amount or 0) > 0:
-                ledger_data.append(LedgerEntry(
-                    id=f"pay_{row.id}",
-                    date=t_ts or c_at,
-                    reference=f"Ticket #{row.ticket_number}",
-                    customer_name=cust_name,
-                    type="INCOME",
-                    amount=float(row.paid_amount),
-                    method="Standard"
-                ))
-
-        # Shared Visibility for items/customers
-        items_data = [
-            RawTicketItem(id=r.id, ticket_id=r.ticket_id, clothing_name=r.clothing_name or "Custom", 
-                          quantity=r.quantity, price=float(r.price)) 
-            for r in db.execute(text("""
-                SELECT ti.id, ti.ticket_id, ti.quantity, ct.name as clothing_name, COALESCE(ct.plant_price, 0.0) as price
-                FROM ticket_items ti
-                JOIN tickets t ON ti.ticket_id = t.id
-                LEFT JOIN clothing_types ct ON ti.clothing_type_id = ct.id
-                WHERE t.organization_id = :org_id OR t.transferred_to_org_id = :org_id
-            """), {"org_id": org_id}).fetchall()
-        ]
-
-        # --- Fetch customers for this organization ---
-        # BROADER: Fetch everyone who is in our org OR has submitted a ticket to us
-        customers_rows = db.execute(text("""
-            SELECT DISTINCT u.id, u.first_name, u.last_name, u.email, u.phone, u.joined_at
-            FROM allUsers u
-            WHERE (u.organization_id = :org_id AND u.role = 'customer')
-               OR u.id IN (
-                   SELECT customer_id FROM tickets 
-                   WHERE organization_id = :org_id OR transferred_to_org_id = :org_id
-               )
-        """), {"org_id": org_id}).fetchall()
-
-        customers_data = []
-        for c in customers_rows:
-            j_at = c.joined_at
-            if j_at and isinstance(j_at, datetime) and j_at.tzinfo is None:
-                j_at = j_at.replace(tzinfo=timezone.utc)
-            customers_data.append(RawCustomer(
-                id=c.id,
-                first_name=c.first_name or "",
-                last_name=c.last_name or "",
-                email=c.email or "",
-                joined_at=j_at
-            ))
-
-        # --- Fetch racks for this organization ---
-        racks_rows = db.execute(text("""
-            SELECT id, number as rack_number, is_occupied
-            FROM racks
-            WHERE organization_id = :org_id
-        """), {"org_id": org_id}).fetchall()
-
-        racks_data = [RawRack(id=r.id, rack_number=r.rack_number, is_occupied=bool(r.is_occupied)) for r in racks_rows]
-
-        # Sort ledger newest-first
-        ledger_sorted = sorted(ledger_data, key=lambda x: x.date or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
-
-        return FullOrgDataResponse(
-            tickets=tickets_data,
-            items=items_data,
-            racks=racks_data,
-            customers=customers_data,
-            ledger=ledger_sorted
-        )
-
-    except Exception as e:
-        print(f"Sync Error: {e}")
-        raise HTTPException(status_code=500, detail="Dashboard sync failed.")
 # =======================
 # NEW CHART DATA ROUTE
 # =======================
@@ -1104,3 +799,361 @@ async def get_customer_financials(
     except Exception as e:
         print(f"Error fetching customer financials: {e}")
         raise HTTPException(status_code=500, detail="Failed to load customer financial history.")
+
+
+# =======================
+# NEW: Pagination / Filtering Models
+# =======================
+
+class DashboardTotals(BaseModel):
+    gross_sales: float
+    revenue: float
+    refunds: float
+    net_revenue: float
+    outstanding: float
+    avg_ticket: float
+    ticket_count: int
+
+
+class PaginatedTicket(BaseModel):
+    id: int
+    ticket_number: str
+    customer_id: int
+    customer_name: str
+    status: str
+    transfer_status: Optional[str] = None
+    transferred_to_name: Optional[str] = None
+    rack_number: Optional[str] = None
+    is_refunded: bool
+    total_amount: float
+    paid_amount: float
+    created_at: datetime
+    transfer_timestamp: Optional[datetime] = None
+
+
+class PaginatedLedgerEntry(BaseModel):
+    id: str
+    date: datetime
+    reference: str
+    customer_name: str
+    type: str
+    amount: float
+    method: str = "Standard"
+
+
+class DashboardResponse(BaseModel):
+    totals: DashboardTotals
+    rows: List[Any]          # PaginatedTicket[] for 'operations', PaginatedLedgerEntry[] for 'financials'
+    page: int
+    page_size: int
+    total_count: int
+    total_pages: int
+
+
+class CustomerWithStats(BaseModel):
+    id: int
+    first_name: str
+    last_name: str
+    email: str
+    joined_at: Optional[datetime] = None
+    visit_count: int
+    lifetime_spend: float
+    last_visit: Optional[datetime] = None
+
+
+class PaginatedCustomersResponse(BaseModel):
+    rows: List[CustomerWithStats]
+    page: int
+    page_size: int
+    total_count: int
+    total_pages: int
+
+
+# =======================
+# NEW: /analytics/dashboard (server-side filtered + paginated)
+# =======================
+@router.get("/analytics/dashboard", response_model=DashboardResponse)
+async def get_dashboard_analytics(
+    db: Session = Depends(get_db),
+    payload: Dict[str, Any] = Depends(get_current_user_payload),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    view: str = Query("financials", pattern="^(financials|operations)$"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=500),
+):
+    """
+    Returns dashboard totals (computed over the FULL date range via SQL aggregates)
+    plus a paginated set of rows for the requested view ('financials' -> ledger,
+    'operations' -> tickets).
+    """
+    try:
+        org_id = payload.get("organization_id")
+        user_role = payload.get("role")
+
+        allowed_roles = ["cashier", "store_admin", "org_owner", "STORE_OWNER", "plant_operator"]
+        if user_role not in allowed_roles:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        offset = (page - 1) * page_size
+
+        # ---- Date range bounds ----
+        # end_date is inclusive of the whole day
+        date_filter = """
+            AND (:start_date IS NULL OR t.created_at >= :start_date)
+            AND (:end_date IS NULL OR t.created_at < (CAST(:end_date AS date) + INTERVAL '1 day'))
+        """
+        date_params = {"start_date": start_date, "end_date": end_date}
+
+        # ---- 1. TOTALS (computed over ALL matching rows, not just current page) ----
+        totals_query = text(f"""
+            SELECT
+                COUNT(*) FILTER (WHERE TRUE) as ticket_count,
+                COALESCE(SUM(paid_amount) FILTER (WHERE NOT COALESCE(is_refunded, FALSE)), 0) as revenue,
+                COALESCE(SUM(paid_amount) FILTER (WHERE COALESCE(is_refunded, FALSE)), 0) as refunds
+            FROM tickets t
+            WHERE (t.organization_id = :org_id OR t.transferred_to_org_id = :org_id)
+            {date_filter}
+        """)
+        totals_row = db.execute(totals_query, {"org_id": org_id, **date_params}).fetchone()
+
+        ticket_count = int(totals_row.ticket_count or 0)
+        revenue = float(totals_row.revenue or 0)
+        refunds = float(totals_row.refunds or 0)
+
+        gross_sales_query = text(f"""
+            SELECT COALESCE(SUM(ti.quantity * COALESCE(ct.plant_price, 0)), 0) as gross_sales
+            FROM ticket_items ti
+            JOIN tickets t ON ti.ticket_id = t.id
+            LEFT JOIN clothing_types ct ON ti.clothing_type_id = ct.id
+            WHERE (t.organization_id = :org_id OR t.transferred_to_org_id = :org_id)
+            {date_filter}
+        """)
+        gross_sales = float(db.execute(gross_sales_query, {"org_id": org_id, **date_params}).scalar() or 0)
+
+        net_revenue = revenue - refunds
+        outstanding = max(0.0, gross_sales - revenue - refunds)
+        avg_ticket = (gross_sales / ticket_count) if ticket_count > 0 else 0.0
+
+        totals = DashboardTotals(
+            gross_sales=round(gross_sales, 2),
+            revenue=round(revenue, 2),
+            refunds=round(refunds, 2),
+            net_revenue=round(net_revenue, 2),
+            outstanding=round(outstanding, 2),
+            avg_ticket=round(avg_ticket, 2),
+            ticket_count=ticket_count,
+        )
+
+        # ---- 2. PAGINATED ROWS ----
+        rows: List[Any] = []
+        total_count = 0
+
+        if view == "operations":
+            ops_query = text(f"""
+                SELECT
+                    t.id, t.ticket_number, t.customer_id, t.status, t.transfer_status,
+                    t.rack_number, COALESCE(t.is_refunded, FALSE) as is_refunded,
+                    COALESCE(t.total_amount, 0.0) as total_amount,
+                    COALESCE(t.paid_amount, 0.0) as paid_amount,
+                    t.created_at, t.updated_at as transfer_timestamp,
+                    u.first_name, u.last_name,
+                    o_dest.name as transferred_to_name,
+                    COUNT(*) OVER() as full_count
+                FROM tickets t
+                LEFT JOIN allUsers u ON t.customer_id = u.id
+                LEFT JOIN organizations o_dest ON t.transferred_to_org_id = o_dest.id
+                WHERE (t.organization_id = :org_id OR t.transferred_to_org_id = :org_id)
+                {date_filter}
+                ORDER BY t.created_at DESC
+                LIMIT :limit OFFSET :offset
+            """)
+            db_rows = db.execute(ops_query, {"org_id": org_id, **date_params, "limit": page_size, "offset": offset}).fetchall()
+
+            for r in db_rows:
+                total_count = int(r.full_count or 0)
+                c_at = r.created_at
+                if c_at and c_at.tzinfo is None:
+                    c_at = c_at.replace(tzinfo=timezone.utc)
+                t_ts = r.transfer_timestamp
+                if t_ts and t_ts.tzinfo is None:
+                    t_ts = t_ts.replace(tzinfo=timezone.utc)
+
+                rows.append(PaginatedTicket(
+                    id=r.id,
+                    ticket_number=r.ticket_number,
+                    customer_id=r.customer_id,
+                    customer_name=f"{r.first_name} {r.last_name}" if r.first_name else "Walk-in",
+                    status=r.status,
+                    transfer_status=r.transfer_status,
+                    transferred_to_name=r.transferred_to_name,
+                    rack_number=r.rack_number,
+                    is_refunded=bool(r.is_refunded),
+                    total_amount=float(r.total_amount),
+                    paid_amount=float(r.paid_amount),
+                    created_at=c_at,
+                    transfer_timestamp=t_ts,
+                ))
+
+        else:  # financials -> ledger (synthesized from tickets, paid only)
+            ledger_query = text(f"""
+                SELECT
+                    t.id, t.ticket_number, COALESCE(t.is_refunded, FALSE) as is_refunded,
+                    COALESCE(t.paid_amount, 0.0) as paid_amount,
+                    t.created_at, t.updated_at as transfer_timestamp,
+                    u.first_name, u.last_name,
+                    COUNT(*) OVER() as full_count
+                FROM tickets t
+                LEFT JOIN allUsers u ON t.customer_id = u.id
+                WHERE (t.organization_id = :org_id OR t.transferred_to_org_id = :org_id)
+                AND COALESCE(t.paid_amount, 0) <> 0
+                {date_filter}
+                ORDER BY COALESCE(t.updated_at, t.created_at) DESC
+                LIMIT :limit OFFSET :offset
+            """)
+            db_rows = db.execute(ledger_query, {"org_id": org_id, **date_params, "limit": page_size, "offset": offset}).fetchall()
+
+            for r in db_rows:
+                total_count = int(r.full_count or 0)
+                c_at = r.created_at
+                if c_at and c_at.tzinfo is None:
+                    c_at = c_at.replace(tzinfo=timezone.utc)
+                t_ts = r.transfer_timestamp
+                if t_ts and t_ts.tzinfo is None:
+                    t_ts = t_ts.replace(tzinfo=timezone.utc)
+
+                cust_name = f"{r.first_name} {r.last_name}" if r.first_name else "Walk-in"
+                is_refunded = bool(r.is_refunded)
+                rows.append(PaginatedLedgerEntry(
+                    id=f"{'ref' if is_refunded else 'pay'}_{r.id}",
+                    date=t_ts or c_at,
+                    reference=f"{'Refund' if is_refunded else 'Ticket'} #{r.ticket_number}",
+                    customer_name=cust_name,
+                    type="REFUND" if is_refunded else "INCOME",
+                    amount=-abs(float(r.paid_amount)) if is_refunded else float(r.paid_amount),
+                    method="Standard",
+                ))
+
+        total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 0
+
+        return DashboardResponse(
+            totals=totals,
+            rows=rows,
+            page=page,
+            page_size=page_size,
+            total_count=total_count,
+            total_pages=total_pages,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Dashboard Error: {e}")
+        raise HTTPException(status_code=500, detail="Dashboard sync failed.")
+
+
+# =======================
+# NEW: /analytics/customers (paginated + searchable, stats via SQL)
+# =======================
+@router.get("/analytics/customers", response_model=PaginatedCustomersResponse)
+async def get_customers_analytics(
+    db: Session = Depends(get_db),
+    payload: Dict[str, Any] = Depends(get_current_user_payload),
+    search: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=200),
+    sort: str = Query("spend", pattern="^(spend|visits|recent|name)$"),
+):
+    try:
+        org_id = payload.get("organization_id")
+        user_role = payload.get("role")
+
+        allowed_roles = ["cashier", "store_admin", "org_owner", "STORE_OWNER", "plant_operator"]
+        if user_role not in allowed_roles:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        offset = (page - 1) * page_size
+
+        order_map = {
+            "spend": "lifetime_spend DESC",
+            "visits": "visit_count DESC",
+            "recent": "last_visit DESC NULLS LAST",
+            "name": "u.first_name ASC, u.last_name ASC",
+        }
+        order_clause = order_map[sort]
+
+        search_clause = ""
+        params: Dict[str, Any] = {"org_id": org_id, "limit": page_size, "offset": offset}
+        if search:
+            search_clause = """
+                AND (
+                    LOWER(u.first_name || ' ' || u.last_name) LIKE :search
+                    OR LOWER(u.email) LIKE :search
+                )
+            """
+            params["search"] = f"%{search.lower()}%"
+
+        query = text(f"""
+            SELECT
+                u.id, u.first_name, u.last_name, u.email, u.joined_at,
+                COUNT(t.id) as visit_count,
+                COALESCE(SUM(t.paid_amount), 0) as lifetime_spend,
+                MAX(t.created_at) as last_visit,
+                COUNT(*) OVER() as full_count
+            FROM allUsers u
+            LEFT JOIN tickets t
+                ON t.customer_id = u.id
+                AND (t.organization_id = :org_id OR t.transferred_to_org_id = :org_id)
+            WHERE u.role = 'customer'
+              AND (
+                  u.organization_id = :org_id
+                  OR u.id IN (
+                      SELECT customer_id FROM tickets
+                      WHERE organization_id = :org_id OR transferred_to_org_id = :org_id
+                  )
+              )
+              {search_clause}
+            GROUP BY u.id, u.first_name, u.last_name, u.email, u.joined_at
+            ORDER BY {order_clause}
+            LIMIT :limit OFFSET :offset
+        """)
+
+        db_rows = db.execute(query, params).fetchall()
+
+        rows = []
+        total_count = 0
+        for r in db_rows:
+            total_count = int(r.full_count or 0)
+            j_at = r.joined_at
+            if j_at and j_at.tzinfo is None:
+                j_at = j_at.replace(tzinfo=timezone.utc)
+            l_visit = r.last_visit
+            if l_visit and l_visit.tzinfo is None:
+                l_visit = l_visit.replace(tzinfo=timezone.utc)
+
+            rows.append(CustomerWithStats(
+                id=r.id,
+                first_name=r.first_name or "",
+                last_name=r.last_name or "",
+                email=r.email or "",
+                joined_at=j_at,
+                visit_count=int(r.visit_count or 0),
+                lifetime_spend=round(float(r.lifetime_spend or 0), 2),
+                last_visit=l_visit,
+            ))
+
+        total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 0
+
+        return PaginatedCustomersResponse(
+            rows=rows,
+            page=page,
+            page_size=page_size,
+            total_count=total_count,
+            total_pages=total_pages,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Customers Analytics Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to load customers")
