@@ -604,7 +604,7 @@ export default function DashboardAnalytics() {
                                             <td className="px-6 py-3 font-medium text-blue-600 sticky left-0 bg-white group-hover:bg-blue-50/50 z-10 border-r border-transparent group-hover:border-blue-100">#{row.ticket_number}</td>
                                             <td className="px-6 py-3 text-gray-700">{row.customer_name}</td>
                                             <td className="px-6 py-3 text-gray-500">{formatDate(row.created_at)}</td>
-                                            <td className="px-6 py-3"><span className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-[10px] uppercase font-bold">{row.status.replace(/_/g, ' ')}</span></td>
+                                            <td className="px-6 py-3"><span className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-[10px] uppercase font-bold">{(row.status || 'unknown').replace(/_/g, ' ')}</span></td>
                                             <td className="px-6 py-3 text-right font-bold text-gray-900">{formatCurrency(row.paid_amount || 0)}</td>
                                         </tr>
                                     ))}
